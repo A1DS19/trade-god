@@ -60,10 +60,19 @@ def run():
     last_summary_date = None
     indicator_cache: dict[str, dict] = {}
 
-    # Initial coin list
-    log.info("Fetching top %d coins by market cap...", config.TOP_N_COINS)
-    coins = get_top_coins(client)
-    state["coin_list"] = {"date": datetime.now(timezone.utc).date().isoformat(), "coins": coins}
+    # Initial coin list — only fetch from CoinGecko if today's list isn't cached
+    today_str = datetime.now(timezone.utc).date().isoformat()
+    if state["coin_list"]["date"] == today_str and state["coin_list"]["coins"]:
+        coins = state["coin_list"]["coins"]
+        log.info("Using cached coin list from DB")
+    else:
+        log.info("Fetching top %d coins by market cap...", config.TOP_N_COINS)
+        try:
+            coins = get_top_coins(client)
+            state["coin_list"] = {"date": today_str, "coins": coins}
+        except Exception as e:
+            log.warning("Could not fetch coin list: %s — using previous list", e)
+            coins = state["coin_list"]["coins"] or ["BTC", "ETH", "SOL", "BNB", "XRP"]
     ensure_coin_slots(state, coins)
     log.info("Watching: %s", ", ".join(coins))
 
