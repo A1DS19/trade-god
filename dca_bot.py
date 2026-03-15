@@ -24,7 +24,6 @@ Coin selection:
 """
 
 import os
-import json
 import time
 import logging
 from datetime import datetime, timedelta, timezone
@@ -32,6 +31,7 @@ from dotenv import load_dotenv
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 import requests
+import db
 
 # ─────────────────────────────────────────────────────────
 #  LOAD CONFIG  (credentials from .env, never config.json)
@@ -76,7 +76,6 @@ RSI_BUY_THRESHOLD = 45  # Only buy when RSI(14) is below this (oversold)
 VOLUME_SPIKE_RATIO = 2.0  # Skip buy if volume is this many × the 20-day average
 INDICATOR_TTL_SECS = 3600  # Cache daily indicators for 1 hour (they're slow-moving)
 
-STATE_FILE = "bot_state.json"
 LOG_FILE = "bot.log"
 
 # ─────────────────────────────────────────────────────────
@@ -112,30 +111,14 @@ def send_telegram(msg: str):
 
 
 # ─────────────────────────────────────────────────────────
-#  STATE  (persisted to bot_state.json between restarts)
+#  STATE  (persisted to PostgreSQL via db.py)
 # ─────────────────────────────────────────────────────────
 def empty_coin_state():
     return {"avg_buy": 0.0, "qty": 0.0, "last_buy": None}
 
 
-def load_state() -> dict:
-    try:
-        with open(STATE_FILE) as f:
-            saved = json.load(f)
-        if "daily_spend" not in saved:
-            saved["daily_spend"] = {"date": None, "amount": 0.0}
-        if "coin_list" not in saved:
-            saved["coin_list"] = {"date": None, "coins": []}
-        return saved
-    except FileNotFoundError:
-        return {
-            "daily_spend": {"date": None, "amount": 0.0},
-            "coin_list":   {"date": None, "coins": []},
-        }
-
-
 def ensure_coin_slots(state: dict, coins: list[str]):
-    """Add state slots for any coins not yet tracked."""
+    """Add in-memory slots for any coins not yet in the working state."""
     for coin in coins:
         if coin not in state:
             state[coin] = empty_coin_state()
@@ -151,13 +134,6 @@ def active_coins(state: dict) -> list[str]:
              if isinstance(data, dict) and data.get("qty", 0) > 0
              and coin not in ("daily_spend", "coin_list")}
     return list(watch | held)
-
-
-def save_state(state: dict):
-    tmp = STATE_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(state, f, indent=2)
-    os.replace(tmp, STATE_FILE)  # atomic on Linux — no corruption on crash
 
 
 # ─────────────────────────────────────────────────────────
@@ -342,8 +318,9 @@ def send_daily_summary(client: Client, state: dict):
 #  MAIN LOOP
 # ─────────────────────────────────────────────────────────
 def run():
+    db.init_db()
     client = Client(BINANCE_API_KEY, BINANCE_SECRET_KEY)
-    state = load_state()
+    state = db.load_state()
     last_summary_date = None
 
     # indicator_cache[coin] = {"ema200": x, "rsi14": x, "vol_ratio": x, "cached_at": datetime}
@@ -553,7 +530,7 @@ def run():
                 except Exception as e:
                     log.error("Unexpected error [%s]: %s", coin, e)
 
-            save_state(state)
+            db.save_state(state)
             log.info("Cycle done. Sleeping %ds...", CHECK_INTERVAL)
             time.sleep(CHECK_INTERVAL)
 
