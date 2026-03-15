@@ -1,6 +1,0 @@
-{
-  "binance_api_key": "YOUR_BINANCE_API_KEY",
-  "binance_secret_key": "YOUR_BINANCE_SECRET_KEY",
-  "telegram_bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
-  "telegram_chat_id": "YOUR_TELEGRAM_CHAT_ID"
-}
