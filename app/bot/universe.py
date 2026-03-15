@@ -1,6 +1,7 @@
 """Coin universe — fetches top coins by market cap from CoinGecko."""
 
 import logging
+import time
 import requests
 from binance.client import Client
 from app.config import TOP_N_COINS, COIN_BLACKLIST
@@ -17,18 +18,27 @@ def get_top_coins(client: Client) -> list[str]:
     BTC is always included as it doubles as the market filter.
     """
     # Step 1 — top coins by market cap (no API key needed)
-    resp = requests.get(
-        COINGECKO_URL,
-        params={
-            "vs_currency": "usd",
-            "order":       "market_cap_desc",
-            "per_page":    60,
-            "page":        1,
-            "sparkline":   False,
-        },
-        timeout=15,
-    )
-    resp.raise_for_status()
+    for attempt in range(5):
+        resp = requests.get(
+            COINGECKO_URL,
+            params={
+                "vs_currency": "usd",
+                "order":       "market_cap_desc",
+                "per_page":    60,
+                "page":        1,
+                "sparkline":   False,
+            },
+            timeout=15,
+        )
+        if resp.status_code == 429:
+            wait = 30 * (attempt + 1)
+            log.warning("CoinGecko rate limited — retrying in %ds", wait)
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+        break
+    else:
+        raise RuntimeError("CoinGecko rate limit exceeded after 5 attempts")
     cg_coins = [row["symbol"].upper() for row in resp.json()]
 
     # Step 2 — active USDT spot pairs on Binance
