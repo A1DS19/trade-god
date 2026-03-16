@@ -6,6 +6,7 @@ import requests
 from binance.client import Client
 from app.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, MAX_DAILY_SPEND
 from app.bot.exchange import get_price, get_usdt_balance
+from app.db.models import Position, Session, engine
 
 log = logging.getLogger(__name__)
 
@@ -29,9 +30,17 @@ def send_daily_summary(client: Client, state: dict, coins: list[str]):
         "📊 <b>Daily Portfolio Summary</b>",
         f"🕗 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC\n",
     ]
+
+    with Session(engine) as session:
+        positions = {
+            pos.coin: {"qty": pos.qty, "avg_buy": pos.avg_buy}
+            for pos in session.query(Position).filter(Position.qty > 0).all()
+        }
+
+    all_coins = sorted(set(coins) | set(positions.keys()))
     held_value = 0.0
-    for coin in coins:
-        data = state.get(coin, {})
+    for coin in all_coins:
+        data = positions.get(coin, {})
         if data.get("qty", 0) > 0 and data.get("avg_buy", 0) > 0:
             try:
                 price = get_price(client, coin)
