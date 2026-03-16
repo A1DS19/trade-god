@@ -13,6 +13,7 @@ from app import db
 from app.bot import heartbeat
 from app.bot.exchange import (
     get_price, get_24h_high, get_usdt_balance, buy_market, sell_market,
+    BelowMinQtyError,
 )
 from app.bot.healthcheck import start_health_server
 from app.bot.indicators import get_cached_indicators
@@ -184,36 +185,44 @@ def run():
                         drop_from_peak   = (data["peak_price"] - price) / data["peak_price"]
 
                         if pnl >= take_profit:
-                            order           = sell_market(client, coin, data["qty"])
-                            filled_sell_qty = float(order["executedQty"])
-                            profit_usd      = filled_sell_qty * (price - data["avg_buy"])
-                            send_telegram(
-                                f"✅ <b>SOLD {coin}</b>  (Take Profit)\n"
-                                f"Price:      ${price:,.4f}\n"
-                                f"Peak:       ${data['peak_price']:,.4f}\n"
-                                f"P&L:        <b>+{pnl * 100:.2f}% (${profit_usd:.2f})</b>"
-                            )
-                            log.info("SELL %s @ %.4f | +%.2f%%", coin, price, pnl * 100)
-                            _clear_position(data, filled_sell_qty, coin)
+                            try:
+                                order           = sell_market(client, coin, data["qty"])
+                                filled_sell_qty = float(order["executedQty"])
+                                profit_usd      = filled_sell_qty * (price - data["avg_buy"])
+                                send_telegram(
+                                    f"✅ <b>SOLD {coin}</b>  (Take Profit)\n"
+                                    f"Price:      ${price:,.4f}\n"
+                                    f"Peak:       ${data['peak_price']:,.4f}\n"
+                                    f"P&L:        <b>+{pnl * 100:.2f}% (${profit_usd:.2f})</b>"
+                                )
+                                log.info("SELL %s @ %.4f | +%.2f%%", coin, price, pnl * 100)
+                                _clear_position(data, filled_sell_qty, coin)
+                            except BelowMinQtyError as e:
+                                log.warning("Dust position cleared %s: %s", coin, e)
+                                data["qty"] = 0.0
                             if data["qty"] == 0:
                                 db.delete_position(coin)
 
                         elif price <= stop_price:
-                            order           = sell_market(client, coin, data["qty"])
-                            filled_sell_qty = float(order["executedQty"])
-                            loss_usd        = filled_sell_qty * abs(price - data["avg_buy"])
-                            send_telegram(
-                                f"🛑 <b>TRAILING STOP {coin}</b>\n"
-                                f"Price:      ${price:,.4f}\n"
-                                f"Peak:       ${data['peak_price']:,.4f}  "
-                                f"(-{drop_from_peak * 100:.1f}% from peak)\n"
-                                f"Avg buy:    ${data['avg_buy']:,.4f}\n"
-                                f"P&L:        <b>{pnl * 100:.2f}%  "
-                                f"({'−' if pnl < 0 else '+'}${loss_usd:.2f})</b>"
-                            )
-                            log.info("TRAIL %s @ %.4f | pnl=%.2f%% peak=%.4f",
-                                     coin, price, pnl * 100, data["peak_price"])
-                            _clear_position(data, filled_sell_qty, coin)
+                            try:
+                                order           = sell_market(client, coin, data["qty"])
+                                filled_sell_qty = float(order["executedQty"])
+                                loss_usd        = filled_sell_qty * abs(price - data["avg_buy"])
+                                send_telegram(
+                                    f"🛑 <b>TRAILING STOP {coin}</b>\n"
+                                    f"Price:      ${price:,.4f}\n"
+                                    f"Peak:       ${data['peak_price']:,.4f}  "
+                                    f"(-{drop_from_peak * 100:.1f}% from peak)\n"
+                                    f"Avg buy:    ${data['avg_buy']:,.4f}\n"
+                                    f"P&L:        <b>{pnl * 100:.2f}%  "
+                                    f"({'−' if pnl < 0 else '+'}${loss_usd:.2f})</b>"
+                                )
+                                log.info("TRAIL %s @ %.4f | pnl=%.2f%% peak=%.4f",
+                                         coin, price, pnl * 100, data["peak_price"])
+                                _clear_position(data, filled_sell_qty, coin)
+                            except BelowMinQtyError as e:
+                                log.warning("Dust position cleared %s: %s", coin, e)
+                                data["qty"] = 0.0
                             if data["qty"] == 0:
                                 db.delete_position(coin)
 

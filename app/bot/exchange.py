@@ -86,13 +86,20 @@ def buy_market(client: Client, coin: str, usdt_amount: float) -> dict:
     )
 
 
+class BelowMinQtyError(Exception):
+    """Raised when qty is below the exchange minimum lot size."""
+
+
 @binance_retry(codes=_RETRYABLE_CODES_ORDER)
 def sell_market(client: Client, coin: str, qty: float) -> dict:
     """Market sell, truncating qty to the symbol's valid lot size."""
     info = client.get_symbol_info(f"{coin}USDT")
     lot = next(f for f in info["filters"] if f["filterType"] == "LOT_SIZE")
     step = float(lot["stepSize"])
+    min_qty = float(lot["minQty"])
     if step > 0:
         precision = max(0, len(f"{step:.10f}".rstrip("0").split(".")[-1]))
         qty = round(qty - (qty % step), precision)
+    if qty < min_qty:
+        raise BelowMinQtyError(f"{coin}: qty {qty} below minQty {min_qty}")
     return client.order_market_sell(symbol=f"{coin}USDT", quantity=qty)
