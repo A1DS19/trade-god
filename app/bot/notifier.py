@@ -48,6 +48,8 @@ def send_daily_summary(client: Client, state: dict, coins: list[str]):
     usdt_free = get_usdt_balance(client)
     total = held_value + usdt_free
     lines.append(f"\n💵 Free USDT: ${usdt_free:.2f}")
-    lines.append(f"📉 Daily spent: ${state['daily_spend']['amount']:.2f} / ${MAX_DAILY_SPEND:.2f}")
+    lines.append(
+        f"📉 Daily spent: ${state['daily_spend']['amount']:.2f} / ${MAX_DAILY_SPEND:.2f}"
+    )
     lines.append(f"💰 <b>Total est. value: ${total:.2f}</b>")
     send_telegram("\n".join(lines))

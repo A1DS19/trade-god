@@ -1,6 +1,7 @@
 """Main trading loop — buy/sell logic and state management."""
 
 import logging
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -9,9 +10,15 @@ from binance.exceptions import BinanceAPIException
 
 from app import config
 from app import db
+from app.bot import heartbeat
 from app.bot.exchange import (
-    get_price, get_24h_high, get_usdt_balance, buy_market, sell_market,
+    get_price,
+    get_24h_high,
+    get_usdt_balance,
+    buy_market,
+    sell_market,
 )
+from app.bot.healthcheck import start_health_server
 from app.bot.indicators import get_cached_indicators
 from app.bot.notifier import send_telegram, send_daily_summary
 from app.bot.universe import get_top_coins
@@ -33,8 +40,9 @@ def ensure_coin_slots(state: dict, coins: list[str]):
 def active_coins(state: dict) -> list[str]:
     """Watch list + any coins with an open position (never drops held coins)."""
     watch = set(state["coin_list"]["coins"])
-    held  = {
-        coin for coin, data in state.items()
+    held = {
+        coin
+        for coin, data in state.items()
         if isinstance(data, dict)
         and data.get("qty", 0) > 0
         and coin not in ("daily_spend", "coin_list")
@@ -45,20 +53,65 @@ def active_coins(state: dict) -> list[str]:
 def _clear_position(data: dict, filled_sell_qty: float, coin: str):
     remaining = data["qty"] - filled_sell_qty
     if data["qty"] == 0 or remaining / data["qty"] < 0.001:
-        data["qty"]     = 0.0
+        data["qty"] = 0.0
         data["avg_buy"] = 0.0
     else:
         data["qty"] = remaining
         log.warning("Partial sell %s: %.6f remaining", coin, remaining)
 
 
+# ── Watchdog ──────────────────────────────────────────────
+def _watchdog_loop(start_time: datetime):
+    timeout = timedelta(minutes=config.WATCHDOG_TIMEOUT_MINS)
+    alerted = False
+    while True:
+        time.sleep(60)
+        last = heartbeat.get()
+        now = datetime.now(timezone.utc)
+
+        # Don't alert until the bot has had time to complete its first cycle
+        if last is None:
+            if now - start_time > timeout:
+                if not alerted:
+                    send_telegram(
+                        f"⚠️ <b>Watchdog Alert</b>\n"
+                        f"No cycle completed in >{config.WATCHDOG_TIMEOUT_MINS} minutes."
+                    )
+                    log.error("Watchdog: no heartbeat since startup")
+                    alerted = True
+            continue
+
+        age = now - last
+        if age > timeout:
+            if not alerted:
+                send_telegram(
+                    f"⚠️ <b>Watchdog Alert</b>\n"
+                    f"No cycle in {int(age.total_seconds() // 60)} minutes. Bot may be stuck."
+                )
+                log.error(
+                    "Watchdog: no heartbeat for %.0f seconds", age.total_seconds()
+                )
+                alerted = True
+        else:
+            alerted = False  # reset so alert fires again on next silence window
+
+
+def _start_watchdog(start_time: datetime):
+    thread = threading.Thread(target=_watchdog_loop, args=(start_time,), daemon=True)
+    thread.start()
+
+
 # ── Main loop ─────────────────────────────────────────────
 def run():
     db.init_db()
     client = Client(config.BINANCE_API_KEY, config.BINANCE_SECRET_KEY)
-    state  = db.load_state()
+    state = db.load_state()
     last_summary_date = None
     indicator_cache: dict[str, dict] = {}
+    start_time = datetime.now(timezone.utc)
+
+    start_health_server(config.HEALTH_PORT)
+    _start_watchdog(start_time)
 
     # Initial coin list — only fetch from CoinGecko if today's list isn't cached
     today_str = datetime.now(timezone.utc).date().isoformat()
@@ -89,7 +142,7 @@ def run():
 
     while True:
         try:
-            now       = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
             today_str = now.date().isoformat()
 
             # Reset daily spend at UTC midnight
@@ -105,7 +158,9 @@ def run():
                     log.info("Coin list refreshed: %s", ", ".join(coins))
                     send_telegram(f"🔄 <b>Coin list updated</b>\n👀 {', '.join(coins)}")
                 except Exception as e:
-                    log.error("Failed to refresh coin list: %s — keeping previous list", e)
+                    log.error(
+                        "Failed to refresh coin list: %s — keeping previous list", e
+                    )
 
             # Daily summary
             if now.hour == config.DAILY_REPORT_HOUR and now.date() != last_summary_date:
@@ -116,12 +171,14 @@ def run():
 
             # BTC market filter — computed once per cycle
             btc_ind = get_cached_indicators(client, "BTC", indicator_cache, now)
-            btc_uptrend = btc_ind is not None and get_price(client, "BTC") > btc_ind["ema200"]
+            btc_uptrend = (
+                btc_ind is not None and get_price(client, "BTC") > btc_ind["ema200"]
+            )
 
             for coin in active_coins(state):
                 data = state[coin]
                 try:
-                    price    = get_price(client, coin)
+                    price = get_price(client, coin)
                     high_24h = get_24h_high(client, coin)
 
                     # ── Sell logic ───────────────────────────────────
@@ -129,9 +186,9 @@ def run():
                         pnl = (price - data["avg_buy"]) / data["avg_buy"]
 
                         if pnl >= config.TAKE_PROFIT:
-                            order           = sell_market(client, coin, data["qty"])
+                            order = sell_market(client, coin, data["qty"])
                             filled_sell_qty = float(order["executedQty"])
-                            profit_usd      = filled_sell_qty * (price - data["avg_buy"])
+                            profit_usd = filled_sell_qty * (price - data["avg_buy"])
                             send_telegram(
                                 f"✅ <b>SOLD {coin}</b>  (Take Profit)\n"
                                 f"Price: ${price:,.4f}\n"
@@ -141,9 +198,9 @@ def run():
                             _clear_position(data, filled_sell_qty, coin)
 
                         elif pnl <= -config.STOP_LOSS:
-                            order           = sell_market(client, coin, data["qty"])
+                            order = sell_market(client, coin, data["qty"])
                             filled_sell_qty = float(order["executedQty"])
-                            loss_usd        = filled_sell_qty * (data["avg_buy"] - price)
+                            loss_usd = filled_sell_qty * (data["avg_buy"] - price)
                             send_telegram(
                                 f"🛑 <b>STOP LOSS {coin}</b>\n"
                                 f"Price: ${price:,.4f}\n"
@@ -164,14 +221,15 @@ def run():
                         else:
                             last_buy_dt = None
 
-                        cooldown_ok   = last_buy_dt is None or (
-                            now - last_buy_dt >= timedelta(hours=config.BUY_COOLDOWN_HRS)
+                        cooldown_ok = last_buy_dt is None or (
+                            now - last_buy_dt
+                            >= timedelta(hours=config.BUY_COOLDOWN_HRS)
                         )
-                        position_ok   = (
+                        position_ok = (
                             data["avg_buy"] * data["qty"] + config.TRADE_AMOUNT_USDT
                             <= config.MAX_POSITION_USDT
                         )
-                        daily_ok      = (
+                        daily_ok = (
                             state["daily_spend"]["amount"] + config.TRADE_AMOUNT_USDT
                             <= config.MAX_DAILY_SPEND
                         )
@@ -185,8 +243,8 @@ def run():
                             log.warning("No indicators for %s, skipping.", coin)
                             continue
 
-                        trend_ok  = price > ind["ema200"]
-                        rsi_ok    = ind["rsi14"] < config.RSI_BUY_THRESHOLD
+                        trend_ok = price > ind["ema200"]
+                        rsi_ok = ind["rsi14"] < config.RSI_BUY_THRESHOLD
                         volume_ok = ind["vol_ratio"] < config.VOLUME_SPIKE_RATIO
 
                         if (
@@ -196,29 +254,54 @@ def run():
                             and usdt_balance >= config.TRADE_AMOUNT_USDT
                         ):
                             if not btc_uptrend:
-                                log.info("SKIP %s — BTC below 200 EMA (bear market)", coin)
+                                log.info(
+                                    "SKIP %s — BTC below 200 EMA (bear market)", coin
+                                )
                             elif not trend_ok:
-                                log.info("SKIP %s — below 200 EMA | EMA=%.2f price=%.2f", coin, ind["ema200"], price)
+                                log.info(
+                                    "SKIP %s — below 200 EMA | EMA=%.2f price=%.2f",
+                                    coin,
+                                    ind["ema200"],
+                                    price,
+                                )
                             elif not rsi_ok:
-                                log.info("SKIP %s — RSI %.1f not oversold (>%d)", coin, ind["rsi14"], config.RSI_BUY_THRESHOLD)
+                                log.info(
+                                    "SKIP %s — RSI %.1f not oversold (>%d)",
+                                    coin,
+                                    ind["rsi14"],
+                                    config.RSI_BUY_THRESHOLD,
+                                )
                             elif not volume_ok:
-                                log.info("SKIP %s — volume spike %.1fx avg", coin, ind["vol_ratio"])
+                                log.info(
+                                    "SKIP %s — volume spike %.1fx avg",
+                                    coin,
+                                    ind["vol_ratio"],
+                                )
                             else:
-                                order        = buy_market(client, coin, config.TRADE_AMOUNT_USDT)
-                                filled_qty   = float(order["executedQty"])
-                                filled_price = float(order["cummulativeQuoteQty"]) / filled_qty
+                                order = buy_market(
+                                    client, coin, config.TRADE_AMOUNT_USDT
+                                )
+                                filled_qty = float(order["executedQty"])
+                                filled_price = (
+                                    float(order["cummulativeQuoteQty"]) / filled_qty
+                                )
 
                                 if data["qty"] > 0:
-                                    total_cost      = data["avg_buy"] * data["qty"] + config.TRADE_AMOUNT_USDT
-                                    data["qty"]    += filled_qty
+                                    total_cost = (
+                                        data["avg_buy"] * data["qty"]
+                                        + config.TRADE_AMOUNT_USDT
+                                    )
+                                    data["qty"] += filled_qty
                                     data["avg_buy"] = total_cost / data["qty"]
                                 else:
-                                    data["qty"]     = filled_qty
+                                    data["qty"] = filled_qty
                                     data["avg_buy"] = filled_price
 
                                 data["last_buy"] = now.isoformat()
                                 usdt_balance -= config.TRADE_AMOUNT_USDT
-                                state["daily_spend"]["amount"] += config.TRADE_AMOUNT_USDT
+                                state["daily_spend"][
+                                    "amount"
+                                ] += config.TRADE_AMOUNT_USDT
 
                                 send_telegram(
                                     f"🟢 <b>BOUGHT {coin}</b>\n"
@@ -233,7 +316,11 @@ def run():
                                 )
                                 log.info(
                                     "BUY  %s @ %.4f | dip=%.2f%% rsi=%.1f ema=%.2f",
-                                    coin, filled_price, dip * 100, ind["rsi14"], ind["ema200"],
+                                    coin,
+                                    filled_price,
+                                    dip * 100,
+                                    ind["rsi14"],
+                                    ind["ema200"],
                                 )
 
                 except BinanceAPIException as e:
@@ -242,6 +329,7 @@ def run():
                     log.error("Unexpected error [%s]: %s", coin, e)
 
             db.save_state(state)
+            heartbeat.update()
             log.info("Cycle done. Sleeping %ds...", config.CHECK_INTERVAL)
             time.sleep(config.CHECK_INTERVAL)
 
@@ -249,6 +337,17 @@ def run():
             send_telegram("⛔ <b>Bot stopped manually.</b> Goodbye!")
             log.info("Bot stopped by user.")
             break
+        except BinanceAPIException as e:
+            if e.status_code == 503:
+                send_telegram(
+                    "🔧 <b>Binance maintenance (503)</b>\nSleeping 10 minutes..."
+                )
+                log.warning("Binance 503 — sleeping 10 minutes")
+                time.sleep(600)
+            else:
+                log.error("Binance API error in main loop: %s", e)
+                send_telegram(f"⚠️ <b>Binance API error:</b> {e}\nRetrying in 60s...")
+                time.sleep(60)
         except Exception as e:
             log.error("Main loop crash: %s", e)
             send_telegram(f"⚠️ <b>Bot error:</b> {e}\nRetrying in 60s...")

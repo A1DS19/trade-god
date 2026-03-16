@@ -20,7 +20,7 @@ def calc_ema(closes: list[float], period: int) -> float:
 def calc_rsi(closes: list[float], period: int = 14) -> float:
     """RSI using Wilder's smoothing method."""
     deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
-    gains  = [d if d > 0 else 0.0 for d in deltas]
+    gains = [d if d > 0 else 0.0 for d in deltas]
     losses = [-d if d < 0 else 0.0 for d in deltas]
 
     avg_gain = sum(gains[:period]) / period
@@ -42,17 +42,17 @@ def get_indicators(client: Client, coin: str) -> dict:
       rsi14     — RSI(14) of closing prices
       vol_ratio — today's volume vs 20-day average
     """
-    klines  = client.get_klines(
+    klines = client.get_klines(
         symbol=f"{coin}USDT",
         interval=Client.KLINE_INTERVAL_1DAY,
         limit=215,
     )
-    closes  = [float(k[4]) for k in klines]
+    closes = [float(k[4]) for k in klines]
     volumes = [float(k[5]) for k in klines]
 
-    ema200    = calc_ema(closes, 200)
-    rsi14     = calc_rsi(closes[-30:], 14)
-    avg_vol   = sum(volumes[-21:-1]) / 20
+    ema200 = calc_ema(closes, 200)
+    rsi14 = calc_rsi(closes[-30:], 14)
+    avg_vol = sum(volumes[-21:-1]) / 20
     vol_ratio = volumes[-1] / avg_vol if avg_vol > 0 else 1.0
 
     return {"ema200": ema200, "rsi14": rsi14, "vol_ratio": vol_ratio}

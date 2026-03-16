@@ -8,7 +8,7 @@ from app.config import TOP_N_COINS, COIN_BLACKLIST
 
 log = logging.getLogger(__name__)
 
-COINGECKO_URL   = "https://api.coingecko.com/api/v3/coins/markets"
+COINGECKO_URL = "https://api.coingecko.com/api/v3/coins/markets"
 COINPAPRIKA_URL = "https://api.coinpaprika.com/v1/tickers"
 
 
@@ -19,10 +19,10 @@ def _fetch_coingecko() -> list[str]:
             COINGECKO_URL,
             params={
                 "vs_currency": "usd",
-                "order":       "market_cap_desc",
-                "per_page":    60,
-                "page":        1,
-                "sparkline":   False,
+                "order": "market_cap_desc",
+                "per_page": 60,
+                "page": 1,
+                "sparkline": False,
             },
             timeout=15,
         )
