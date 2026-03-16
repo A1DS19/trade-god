@@ -45,12 +45,19 @@ MAX_POSITION_USDT = 50.0  # Max total cost basis per coin
 MAX_DAILY_SPEND = 80.0  # Max USDT to spend per UTC day
 DIP_THRESHOLD = 0.03  # Buy when price dips 3% from 24h high
 TAKE_PROFIT = 0.05  # Sell when position is up +5%
-STOP_LOSS = 0.15  # Sell when position is down -15%
+TRAILING_STOP_PCT = 0.10  # Sell if price drops 10% from position peak
 BUY_COOLDOWN_HRS = 4  # Min hours between buys for same coin
+DCA_DROP_PCT = 0.03  # Buy more if price drops 3% below avg buy price
 CHECK_INTERVAL = 300  # Seconds between market checks (5 min)
 DAILY_REPORT_HOUR = 8  # UTC hour to send daily summary
 WATCHDOG_TIMEOUT_MINS = 15  # Alert if no cycle heartbeat for this many minutes
 HEALTH_PORT = 8080  # Port for the health check HTTP server
+
+# ── Per-coin overrides ────────────────────────────────────
+# Override any strategy param per coin.
+# e.g. "BTC": {"dip_threshold": 0.02, "take_profit": 0.04, "trailing_stop_pct": 0.08}
+# e.g. "SHIB": {"dip_threshold": 0.06, "trailing_stop_pct": 0.15, "dca_drop_pct": 0.05}
+COIN_OVERRIDES: dict[str, dict] = {}
 
 # ── Quant filters ─────────────────────────────────────────
 RSI_BUY_THRESHOLD = 45  # Only buy when RSI(14) is below this

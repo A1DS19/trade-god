@@ -2,7 +2,7 @@
 SQLAlchemy models and state persistence.
 
 Tables:
-  positions   — one row per coin: avg_buy, qty, last_buy
+  positions   — one row per coin: avg_buy, qty, last_buy, peak_price
   daily_spend — one row per UTC day: total USDT spent
   coin_list   — one row per UTC day: active watch list
 """
@@ -31,23 +31,24 @@ class Base(DeclarativeBase):
 class Position(Base):
     __tablename__ = "positions"
 
-    coin = Column(String(20), primary_key=True)
-    avg_buy = Column(Float, nullable=False, default=0.0)
-    qty = Column(Float, nullable=False, default=0.0)
-    last_buy = Column(String(50), nullable=True)
+    coin        = Column(String(20), primary_key=True)
+    avg_buy     = Column(Float, nullable=False, default=0.0)
+    qty         = Column(Float, nullable=False, default=0.0)
+    last_buy    = Column(String(50), nullable=True)
+    peak_price  = Column(Float, nullable=True)
 
 
 class DailySpend(Base):
     __tablename__ = "daily_spend"
 
-    date = Column(String(10), primary_key=True)
+    date   = Column(String(10), primary_key=True)
     amount = Column(Float, nullable=False, default=0.0)
 
 
 class CoinList(Base):
     __tablename__ = "coin_list"
 
-    date = Column(String(10), primary_key=True)
+    date  = Column(String(10), primary_key=True)
     coins = Column(JSON, nullable=False)
 
 
@@ -65,20 +66,21 @@ def load_state() -> dict:
 
         for pos in session.query(Position).all():
             state[pos.coin] = {
-                "avg_buy": pos.avg_buy,
-                "qty": pos.qty,
-                "last_buy": pos.last_buy,
+                "avg_buy":    pos.avg_buy,
+                "qty":        pos.qty,
+                "last_buy":   pos.last_buy,
+                "peak_price": pos.peak_price,
             }
 
         spend = session.get(DailySpend, today)
         state["daily_spend"] = {
-            "date": today,
+            "date":   today,
             "amount": spend.amount if spend else 0.0,
         }
 
         coin_list = session.get(CoinList, today)
         state["coin_list"] = {
-            "date": coin_list.date if coin_list else None,
+            "date":  coin_list.date  if coin_list else None,
             "coins": coin_list.coins if coin_list else [],
         }
 
@@ -90,14 +92,20 @@ def save_state(state: dict):
         for key, data in state.items():
             if key in ("daily_spend", "coin_list"):
                 continue
-            session.merge(
-                Position(
+            if data["qty"] > 0:
+                # Active position — upsert
+                session.merge(Position(
                     coin=key,
                     avg_buy=data["avg_buy"],
                     qty=data["qty"],
                     last_buy=data["last_buy"],
-                )
-            )
+                    peak_price=data.get("peak_price"),
+                ))
+            else:
+                # Closed or never-bought — remove from DB to keep it clean
+                existing = session.get(Position, key)
+                if existing:
+                    session.delete(existing)
 
         ds = state["daily_spend"]
         if ds["date"]:
