@@ -195,6 +195,8 @@ def run():
                             )
                             log.info("SELL %s @ %.4f | +%.2f%%", coin, price, pnl * 100)
                             _clear_position(data, filled_sell_qty, coin)
+                            if data["qty"] == 0:
+                                db.delete_position(coin)
 
                         elif price <= stop_price:
                             order           = sell_market(client, coin, data["qty"])
@@ -212,6 +214,8 @@ def run():
                             log.info("TRAIL %s @ %.4f | pnl=%.2f%% peak=%.4f",
                                      coin, price, pnl * 100, data["peak_price"])
                             _clear_position(data, filled_sell_qty, coin)
+                            if data["qty"] == 0:
+                                db.delete_position(coin)
 
                     # ── Buy logic ────────────────────────────────────
                     else:

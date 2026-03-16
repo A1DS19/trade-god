@@ -68,7 +68,7 @@ def load_state() -> dict:
     with Session(engine) as session:
         state: dict = {}
 
-        for pos in session.query(Position).all():
+        for pos in session.query(Position).filter(Position.qty > 0).all():
             state[pos.coin] = {
                 "avg_buy":    pos.avg_buy,
                 "qty":        pos.qty,
@@ -97,7 +97,6 @@ def save_state(state: dict):
             if key in ("daily_spend", "coin_list"):
                 continue
             if data["qty"] > 0:
-                # Active position — upsert
                 session.merge(Position(
                     coin=key,
                     avg_buy=data["avg_buy"],
@@ -105,11 +104,6 @@ def save_state(state: dict):
                     last_buy=data["last_buy"],
                     peak_price=data.get("peak_price"),
                 ))
-            else:
-                # Closed or never-bought — remove from DB to keep it clean
-                existing = session.get(Position, key)
-                if existing:
-                    session.delete(existing)
 
         ds = state["daily_spend"]
         if ds["date"]:
@@ -120,3 +114,11 @@ def save_state(state: dict):
             session.merge(CoinList(date=cl["date"], coins=cl["coins"]))
 
         session.commit()
+
+
+def delete_position(coin: str):
+    with Session(engine) as session:
+        existing = session.get(Position, coin)
+        if existing:
+            session.delete(existing)
+            session.commit()
