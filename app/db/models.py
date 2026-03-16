@@ -20,7 +20,11 @@ if _url.startswith("postgres://"):
 if not _url.startswith("postgresql+"):
     _url = _url.replace("postgresql://", "postgresql+psycopg://", 1)
 
-engine = create_engine(_url, pool_pre_ping=True)
+engine = create_engine(
+    _url,
+    pool_pre_ping=True,
+    connect_args={"connect_timeout": 10},
+)
 
 
 # ── Models ────────────────────────────────────────────────

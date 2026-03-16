@@ -318,8 +318,11 @@ def run():
                 except Exception as e:
                     log.error("Unexpected error [%s]: %s", coin, e)
 
-            db.save_state(state)
             heartbeat.update()
+            try:
+                db.save_state(state)
+            except Exception as db_err:
+                log.error("DB save failed (state held in memory): %s", db_err)
             log.info("Cycle done. Sleeping %ds...", config.CHECK_INTERVAL)
             time.sleep(config.CHECK_INTERVAL)
 
