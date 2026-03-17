@@ -163,8 +163,16 @@ def run():
 
             usdt_balance = get_usdt_balance(client)
 
-            btc_ind     = get_cached_indicators(client, "BTC", indicator_cache, now)
-            btc_uptrend = btc_ind is not None and get_price(client, "BTC") > btc_ind["ema200"]
+            btc_ind = get_cached_indicators(client, "BTC", indicator_cache, now)
+            if btc_ind is not None:
+                btc_price   = get_price(client, "BTC")
+                btc_uptrend = (
+                    btc_price > btc_ind["ema200"]           # daily price above 200 EMA
+                    and btc_ind["ema200_slope"]              # 200 EMA is rising
+                    and btc_price > btc_ind["ema200_weekly"] # above 200-week EMA
+                )
+            else:
+                btc_uptrend = False
 
             for coin in active_coins(state):
                 data = state[coin]
@@ -279,7 +287,15 @@ def run():
                             and usdt_balance >= config.TRADE_AMOUNT_USDT
                         ):
                             if not btc_uptrend:
-                                log.info("SKIP %s — BTC below 200 EMA (bear market)", coin)
+                                log.info(
+                                    "SKIP %s — BTC bear filter "
+                                    "(daily_ema=%.0f slope=%s weekly_ema=%.0f price=%.0f)",
+                                    coin,
+                                    btc_ind["ema200"],
+                                    "up" if btc_ind["ema200_slope"] else "down",
+                                    btc_ind["ema200_weekly"],
+                                    btc_price,
+                                )
                             elif not trend_ok:
                                 log.info("SKIP %s — below 200 EMA | EMA=%.2f price=%.2f",
                                          coin, ind["ema200"], price)

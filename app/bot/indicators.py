@@ -37,25 +37,46 @@ def calc_rsi(closes: list[float], period: int = 14) -> float:
 
 def get_indicators(client: Client, coin: str) -> dict:
     """
-    Fetch 215 daily candles and return:
-      ema200    — 200-day EMA of closing prices
-      rsi14     — RSI(14) of closing prices
-      vol_ratio — today's volume vs 20-day average
+    Fetch daily + weekly candles and return:
+      ema200        — 200-day EMA of closing prices
+      ema200_slope  — True if 200-day EMA is higher than 20 days ago (rising)
+      ema200_weekly — 200-week EMA of closing prices
+      rsi14         — RSI(14) of closing prices
+      vol_ratio     — today's volume vs 20-day average
     """
+    # Daily candles: need 220 to compare ema200 vs 20 days ago
     klines = client.get_klines(
         symbol=f"{coin}USDT",
         interval=Client.KLINE_INTERVAL_1DAY,
-        limit=215,
+        limit=220,
     )
     closes = [float(k[4]) for k in klines]
     volumes = [float(k[5]) for k in klines]
 
-    ema200 = calc_ema(closes, 200)
+    ema200_now  = calc_ema(closes, 200)
+    ema200_prev = calc_ema(closes[:-20], 200)
+    ema200_slope = ema200_now > ema200_prev
+
     rsi14 = calc_rsi(closes[-30:], 14)
     avg_vol = sum(volumes[-21:-1]) / 20
     vol_ratio = volumes[-1] / avg_vol if avg_vol > 0 else 1.0
 
-    return {"ema200": ema200, "rsi14": rsi14, "vol_ratio": vol_ratio}
+    # Weekly candles for 200-week EMA
+    weekly = client.get_klines(
+        symbol=f"{coin}USDT",
+        interval=Client.KLINE_INTERVAL_1WEEK,
+        limit=205,
+    )
+    weekly_closes = [float(k[4]) for k in weekly]
+    ema200_weekly = calc_ema(weekly_closes, 200)
+
+    return {
+        "ema200":        ema200_now,
+        "ema200_slope":  ema200_slope,
+        "ema200_weekly": ema200_weekly,
+        "rsi14":         rsi14,
+        "vol_ratio":     vol_ratio,
+    }
 
 
 def get_cached_indicators(
