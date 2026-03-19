@@ -3,8 +3,10 @@ from .models import (
     load_state,
     save_state,
     delete_position,
+    log_trade,
     engine,
     Position,
     DailySpend,
     CoinList,
+    Trade,
 )

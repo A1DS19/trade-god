@@ -5,12 +5,13 @@ Tables:
   positions   — one row per coin: avg_buy, qty, last_buy, peak_price
   daily_spend — one row per UTC day: total USDT spent
   coin_list   — one row per UTC day: active watch list
+  trades      — append-only log of every buy and sell
 """
 
 import os
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Float, JSON, String, create_engine
+from sqlalchemy import Column, Float, Integer, JSON, String, Boolean, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session
 
 # ── Engine ────────────────────────────────────────────────
@@ -23,6 +24,8 @@ if not _url.startswith("postgresql+"):
 engine = create_engine(
     _url,
     pool_pre_ping=True,
+    pool_size=3,
+    max_overflow=2,
     connect_args={"connect_timeout": 10},
 )
 
@@ -40,6 +43,23 @@ class Position(Base):
     qty = Column(Float, nullable=False, default=0.0)
     last_buy = Column(String(50), nullable=True)
     peak_price = Column(Float, nullable=True)
+    partial_taken = Column(Boolean, nullable=False, default=False)
+
+
+class Trade(Base):
+    __tablename__ = "trades"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    coin = Column(String(20), nullable=False)
+    side = Column(String(4), nullable=False)        # BUY or SELL
+    price = Column(Float, nullable=False)
+    qty = Column(Float, nullable=False)
+    cost_usd = Column(Float, nullable=False)        # spent (buy) or received (sell)
+    avg_buy = Column(Float, nullable=True)          # position avg_buy at trade time
+    realized_pnl_usd = Column(Float, nullable=True) # sells only
+    realized_pnl_pct = Column(Float, nullable=True) # sells only
+    exit_reason = Column(String(30), nullable=True) # sells only
+    timestamp = Column(String(30), nullable=False)
 
 
 class DailySpend(Base):
@@ -74,6 +94,7 @@ def load_state() -> dict:
                 "qty": pos.qty,
                 "last_buy": pos.last_buy,
                 "peak_price": pos.peak_price,
+                "partial_taken": pos.partial_taken or False,
             }
 
         spend = session.get(DailySpend, today)
@@ -104,6 +125,7 @@ def save_state(state: dict):
                         qty=data["qty"],
                         last_buy=data["last_buy"],
                         peak_price=data.get("peak_price"),
+                        partial_taken=data.get("partial_taken", False),
                     )
                 )
 
@@ -124,3 +146,29 @@ def delete_position(coin: str):
         if existing:
             session.delete(existing)
             session.commit()
+
+
+def log_trade(
+    coin: str,
+    side: str,
+    price: float,
+    qty: float,
+    avg_buy: float | None = None,
+    realized_pnl_usd: float | None = None,
+    realized_pnl_pct: float | None = None,
+    exit_reason: str | None = None,
+):
+    with Session(engine) as session:
+        session.add(Trade(
+            coin=coin,
+            side=side,
+            price=price,
+            qty=qty,
+            cost_usd=qty * price,
+            avg_buy=avg_buy,
+            realized_pnl_usd=realized_pnl_usd,
+            realized_pnl_pct=realized_pnl_pct,
+            exit_reason=exit_reason,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        ))
+        session.commit()

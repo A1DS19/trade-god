@@ -15,6 +15,7 @@ from app.bot.exchange import (
     get_price, get_24h_high, get_usdt_balance, buy_market, sell_market,
     BelowMinQtyError,
 )
+from app.bot.commands import start_command_handler
 from app.bot.healthcheck import start_health_server
 from app.bot.indicators import get_cached_indicators
 from app.bot.notifier import send_telegram, send_daily_summary
@@ -25,7 +26,7 @@ log = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────
 def empty_coin_state() -> dict:
-    return {"avg_buy": 0.0, "qty": 0.0, "last_buy": None, "peak_price": None}
+    return {"avg_buy": 0.0, "qty": 0.0, "last_buy": None, "peak_price": None, "partial_taken": False}
 
 
 def ensure_coin_slots(state: dict, coins: list[str]):
@@ -49,6 +50,11 @@ def active_coins(state: dict) -> list[str]:
 def coin_param(coin: str, param: str, default):
     """Return per-coin override if configured, otherwise return the default."""
     return config.COIN_OVERRIDES.get(coin, {}).get(param, default)
+
+
+def _is_dust_sell_error(e: BinanceAPIException) -> bool:
+    """True when Binance rejects a sell because the balance is too small to trade."""
+    return e.code in (-2010, -1013)
 
 
 def _clear_position(data: dict, filled_sell_qty: float, coin: str):
@@ -111,6 +117,7 @@ def run():
 
     start_health_server(config.HEALTH_PORT)
     _start_watchdog(start_time)
+    start_command_handler(client)
 
     today_str = datetime.now(timezone.utc).date().isoformat()
     if state["coin_list"]["date"] == today_str and state["coin_list"]["coins"]:
@@ -192,22 +199,43 @@ def run():
                         stop_price       = data["peak_price"] * (1 - trailing_stop)
                         drop_from_peak   = (data["peak_price"] - price) / data["peak_price"]
 
-                        if pnl >= take_profit:
+                        if pnl >= take_profit and not data.get("partial_taken"):
+                            # Partial exit: sell PARTIAL_TAKE_PROFIT_PCT, let the rest ride to trailing stop
+                            partial_qty = data["qty"] * config.PARTIAL_TAKE_PROFIT_PCT
                             try:
-                                order           = sell_market(client, coin, data["qty"])
+                                order           = sell_market(client, coin, partial_qty)
                                 filled_sell_qty = float(order["executedQty"])
-                                profit_usd      = filled_sell_qty * (price - data["avg_buy"])
+                                realized_pnl    = filled_sell_qty * (price - data["avg_buy"])
+                                data["qty"]    -= filled_sell_qty
+                                data["partial_taken"] = True
+                                db.log_trade(
+                                    coin, "SELL", price, filled_sell_qty,
+                                    avg_buy=data["avg_buy"],
+                                    realized_pnl_usd=realized_pnl,
+                                    realized_pnl_pct=pnl,
+                                    exit_reason="partial_take_profit",
+                                )
                                 send_telegram(
-                                    f"✅ <b>SOLD {coin}</b>  (Take Profit)\n"
+                                    f"🟡 <b>PARTIAL SELL {coin}</b>  "
+                                    f"({config.PARTIAL_TAKE_PROFIT_PCT * 100:.0f}% taken)\n"
                                     f"Price:      ${price:,.4f}\n"
                                     f"Peak:       ${data['peak_price']:,.4f}\n"
-                                    f"P&L:        <b>+{pnl * 100:.2f}% (${profit_usd:.2f})</b>"
+                                    f"P&L so far: <b>+{pnl * 100:.2f}% (${realized_pnl:.2f})</b>\n"
+                                    f"Remaining:  {data['qty']:.6f} (trailing stop active)"
                                 )
-                                log.info("SELL %s @ %.4f | +%.2f%%", coin, price, pnl * 100)
-                                _clear_position(data, filled_sell_qty, coin)
+                                log.info(
+                                    "PARTIAL SELL %s @ %.4f | +%.2f%% pnl=$%.2f remaining=%.6f",
+                                    coin, price, pnl * 100, realized_pnl, data["qty"],
+                                )
                             except BelowMinQtyError as e:
-                                log.warning("Dust position cleared %s: %s", coin, e)
+                                log.warning("Dust position on partial sell %s: %s", coin, e)
                                 data["qty"] = 0.0
+                            except BinanceAPIException as e:
+                                if _is_dust_sell_error(e):
+                                    log.warning("Dust balance on partial sell %s — clearing position: %s", coin, e)
+                                    data["qty"] = 0.0
+                                else:
+                                    raise
                             if data["qty"] == 0:
                                 db.delete_position(coin)
 
@@ -215,7 +243,14 @@ def run():
                             try:
                                 order           = sell_market(client, coin, data["qty"])
                                 filled_sell_qty = float(order["executedQty"])
-                                loss_usd        = filled_sell_qty * abs(price - data["avg_buy"])
+                                realized_pnl    = filled_sell_qty * (price - data["avg_buy"])
+                                db.log_trade(
+                                    coin, "SELL", price, filled_sell_qty,
+                                    avg_buy=data["avg_buy"],
+                                    realized_pnl_usd=realized_pnl,
+                                    realized_pnl_pct=pnl,
+                                    exit_reason="trailing_stop",
+                                )
                                 send_telegram(
                                     f"🛑 <b>TRAILING STOP {coin}</b>\n"
                                     f"Price:      ${price:,.4f}\n"
@@ -223,7 +258,7 @@ def run():
                                     f"(-{drop_from_peak * 100:.1f}% from peak)\n"
                                     f"Avg buy:    ${data['avg_buy']:,.4f}\n"
                                     f"P&L:        <b>{pnl * 100:.2f}%  "
-                                    f"({'−' if pnl < 0 else '+'}${loss_usd:.2f})</b>"
+                                    f"({'−' if pnl < 0 else '+'}${abs(realized_pnl):.2f})</b>"
                                 )
                                 log.info("TRAIL %s @ %.4f | pnl=%.2f%% peak=%.4f",
                                          coin, price, pnl * 100, data["peak_price"])
@@ -231,6 +266,12 @@ def run():
                             except BelowMinQtyError as e:
                                 log.warning("Dust position cleared %s: %s", coin, e)
                                 data["qty"] = 0.0
+                            except BinanceAPIException as e:
+                                if _is_dust_sell_error(e):
+                                    log.warning("Dust balance on trailing stop %s — clearing position: %s", coin, e)
+                                    data["qty"] = 0.0
+                                else:
+                                    raise
                             if data["qty"] == 0:
                                 db.delete_position(coin)
 
@@ -321,6 +362,10 @@ def run():
                                 data["last_buy"] = now.isoformat()
                                 usdt_balance -= config.TRADE_AMOUNT_USDT
                                 state["daily_spend"]["amount"] += config.TRADE_AMOUNT_USDT
+                                db.log_trade(
+                                    coin, "BUY", filled_price, filled_qty,
+                                    avg_buy=data["avg_buy"],
+                                )
 
                                 buy_type = "DCA" if not is_first_buy else "Buy"
                                 send_telegram(
