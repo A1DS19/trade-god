@@ -98,12 +98,14 @@ def run():
 
                     # ── Open new position ─────────────────────────────
                     if action == "long":
-                        order = open_long(client, coin, config.POSITION_USDT, config.LEVERAGE)
+                        open_long(client, coin, config.POSITION_USDT, config.LEVERAGE)
                     else:
-                        order = open_short(client, coin, config.POSITION_USDT, config.LEVERAGE)
+                        open_short(client, coin, config.POSITION_USDT, config.LEVERAGE)
 
-                    filled_qty = float(order["executedQty"])
-                    notional   = filled_qty * price
+                    positions  = get_open_positions(client)
+                    opened_pos = positions.get(coin, {})
+                    filled_qty = opened_pos.get("qty", 0.0)
+                    notional   = opened_pos.get("notional", 0.0)
 
                     db.log_swing_open(
                         coin=coin,
@@ -116,7 +118,7 @@ def run():
                         agent_reasoning=decision["reasoning"],
                     )
                     notifier.notify_open(coin, action, price, decision)
-                    positions = get_open_positions(client)
+
 
                 except Exception as e:
                     log.error("Error processing %s: %s", coin, e)
