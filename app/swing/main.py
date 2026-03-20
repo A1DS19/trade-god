@@ -1,0 +1,129 @@
+"""Swing agent main loop — scan coins, ask LLM, execute on Binance Futures."""
+
+import logging
+import time
+from binance.client import Client
+
+from app import db
+from app.swing import config, agent, notifier, snapshot
+from app.swing.exchange import (
+    get_open_positions, get_price,
+    open_long, open_short, close_position,
+)
+
+log = logging.getLogger(__name__)
+
+
+def run():
+    db.init_db()
+    client = Client(config.BINANCE_API_KEY, config.BINANCE_SECRET_KEY)
+
+    notifier.send(
+        f"📊 <b>Swing Agent LIVE</b>\n"
+        f"Coins: {', '.join(config.COINS)}\n"
+        f"Leverage: {config.LEVERAGE}x  |  Size: ${config.POSITION_USDT}\n"
+        f"Min confidence: {config.MIN_CONFIDENCE * 100:.0f}%  |  "
+        f"Max positions: {config.MAX_OPEN}"
+    )
+
+    while True:
+        try:
+            positions = get_open_positions(client)
+            log.info("Open positions: %s", list(positions.keys()) or "none")
+
+            for coin in config.COINS:
+                try:
+                    snap     = snapshot.build(client, coin)
+                    decision = agent.decide(snap)
+                    action   = decision["action"]
+                    conf     = decision["confidence"]
+                    price    = snap["price"]
+                    pos      = positions.get(coin)
+
+                    # ── Close existing position ────────────────────────
+                    if action == "close" and pos:
+                        close_position(client, coin, positions)
+                        pnl = pos["pnl"]
+                        pnl_pct = pnl / pos["notional"] if pos["notional"] else 0.0
+                        notifier.notify_close(coin, pos, pnl, decision["reasoning"])
+                        db_trade = db.get_open_swing_trade(coin)
+                        if db_trade:
+                            db.log_swing_close(
+                                trade_id=db_trade.id,
+                                exit_price=get_price(client, coin),
+                                realized_pnl_usd=pnl,
+                                realized_pnl_pct=pnl_pct,
+                                exit_reason=decision["reasoning"][:50],
+                            )
+                        continue
+
+                    # ── Hold ──────────────────────────────────────────
+                    if action == "hold":
+                        log.info("HOLD %s (%.0f%%) — %s", coin, conf * 100, decision["reasoning"])
+                        continue
+
+                    # ── Confidence gate ───────────────────────────────
+                    if conf < config.MIN_CONFIDENCE:
+                        log.info("SKIP %s — confidence %.0f%% < %.0f%%",
+                                 coin, conf * 100, config.MIN_CONFIDENCE * 100)
+                        continue
+
+                    # ── Position cap ──────────────────────────────────
+                    if len(positions) >= config.MAX_OPEN and coin not in positions:
+                        log.info("SKIP %s — max open positions (%d) reached", coin, config.MAX_OPEN)
+                        continue
+
+                    # ── Already in same direction ─────────────────────
+                    if pos and pos["side"] == action:
+                        log.info("SKIP %s — already %s", coin, action)
+                        continue
+
+                    # ── Flip: close existing before opening opposite ───
+                    if pos and pos["side"] != action:
+                        log.info("FLIP %s — closing %s before opening %s", coin, pos["side"], action)
+                        close_position(client, coin, positions)
+                        pnl = pos["pnl"]
+                        pnl_pct = pnl / pos["notional"] if pos["notional"] else 0.0
+                        notifier.notify_close(coin, pos, pnl, f"flipping to {action}")
+                        db_trade = db.get_open_swing_trade(coin)
+                        if db_trade:
+                            db.log_swing_close(
+                                trade_id=db_trade.id,
+                                exit_price=get_price(client, coin),
+                                realized_pnl_usd=pnl,
+                                realized_pnl_pct=pnl_pct,
+                                exit_reason=f"flip to {action}",
+                            )
+                        positions = get_open_positions(client)
+
+                    # ── Open new position ─────────────────────────────
+                    if action == "long":
+                        order = open_long(client, coin, config.POSITION_USDT, config.LEVERAGE)
+                    else:
+                        order = open_short(client, coin, config.POSITION_USDT, config.LEVERAGE)
+
+                    filled_qty = float(order["executedQty"])
+                    notional   = filled_qty * price
+
+                    db.log_swing_open(
+                        coin=coin,
+                        direction=action,
+                        entry_price=price,
+                        qty=filled_qty,
+                        leverage=config.LEVERAGE,
+                        notional_usdt=notional,
+                        agent_confidence=conf,
+                        agent_reasoning=decision["reasoning"],
+                    )
+                    notifier.notify_open(coin, action, price, decision)
+                    positions = get_open_positions(client)
+
+                except Exception as e:
+                    log.error("Error processing %s: %s", coin, e)
+
+        except Exception as e:
+            log.error("Main loop error: %s", e)
+            notifier.send(f"⚠️ <b>Swing agent error:</b> {e}\nRetrying next cycle...")
+
+        log.info("Cycle done. Sleeping %ds...", config.CHECK_INTERVAL)
+        time.sleep(config.CHECK_INTERVAL)

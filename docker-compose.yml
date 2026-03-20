@@ -53,5 +53,15 @@ services:
       retries: 3
       start_period: 15s
 
+  swing:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    command: python swing_main.py
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 200m
+
 volumes:
   postgres_data:

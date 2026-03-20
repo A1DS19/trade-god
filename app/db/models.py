@@ -62,6 +62,27 @@ class Trade(Base):
     timestamp = Column(String(30), nullable=False)
 
 
+class SwingTrade(Base):
+    __tablename__ = "swing_trades"
+
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    coin             = Column(String(20), nullable=False)
+    direction        = Column(String(5), nullable=False)   # long | short
+    entry_price      = Column(Float, nullable=False)
+    exit_price       = Column(Float, nullable=True)
+    qty              = Column(Float, nullable=False)
+    leverage         = Column(Integer, nullable=False)
+    notional_usdt    = Column(Float, nullable=False)
+    entry_time       = Column(String(50), nullable=False)
+    exit_time        = Column(String(50), nullable=True)
+    realized_pnl_usd = Column(Float, nullable=True)
+    realized_pnl_pct = Column(Float, nullable=True)
+    exit_reason      = Column(String(50), nullable=True)
+    agent_confidence = Column(Float, nullable=False)
+    agent_reasoning  = Column(String(500), nullable=True)
+    status           = Column(String(6), nullable=False, default="open")  # open | closed
+
+
 class DailySpend(Base):
     __tablename__ = "daily_spend"
 
@@ -146,6 +167,65 @@ def delete_position(coin: str):
         if existing:
             session.delete(existing)
             session.commit()
+
+
+def log_swing_open(
+    coin: str,
+    direction: str,
+    entry_price: float,
+    qty: float,
+    leverage: int,
+    notional_usdt: float,
+    agent_confidence: float,
+    agent_reasoning: str,
+) -> int:
+    with Session(engine) as session:
+        row = SwingTrade(
+            coin=coin,
+            direction=direction,
+            entry_price=entry_price,
+            exit_price=None,
+            qty=qty,
+            leverage=leverage,
+            notional_usdt=notional_usdt,
+            entry_time=datetime.now(timezone.utc).isoformat(),
+            status="open",
+            agent_confidence=agent_confidence,
+            agent_reasoning=agent_reasoning,
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row.id
+
+
+def log_swing_close(
+    trade_id: int,
+    exit_price: float,
+    realized_pnl_usd: float,
+    realized_pnl_pct: float,
+    exit_reason: str,
+):
+    with Session(engine) as session:
+        row = session.get(SwingTrade, trade_id)
+        if row:
+            row.exit_price       = exit_price
+            row.exit_time        = datetime.now(timezone.utc).isoformat()
+            row.realized_pnl_usd = realized_pnl_usd
+            row.realized_pnl_pct = realized_pnl_pct
+            row.exit_reason      = exit_reason
+            row.status           = "closed"
+            session.commit()
+
+
+def get_open_swing_trade(coin: str) -> SwingTrade | None:
+    with Session(engine) as session:
+        return (
+            session.query(SwingTrade)
+            .filter(SwingTrade.coin == coin, SwingTrade.status == "open")
+            .order_by(SwingTrade.id.desc())
+            .first()
+        )
 
 
 def log_trade(
