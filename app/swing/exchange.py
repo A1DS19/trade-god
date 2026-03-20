@@ -48,7 +48,8 @@ def set_leverage(client: Client, coin: str, leverage: int):
         log.warning("Could not set leverage for %s: %s", coin, e)
 
 
-def open_long(client: Client, coin: str, usdt: float, leverage: int) -> dict:
+def open_long(client: Client, coin: str, usdt: float, leverage: int,
+              sl_pct: float = 0.0, tp_pct: float = 0.0) -> dict:
     set_leverage(client, coin, leverage)
     price = get_price(client, coin)
     raw_qty = (usdt * leverage) / price
@@ -62,10 +63,12 @@ def open_long(client: Client, coin: str, usdt: float, leverage: int) -> dict:
         quantity=qty,
     )
     log.info("OPEN LONG %s qty=%.4f", coin, qty)
+    _place_sl_tp(client, coin, "long", qty, price, sl_pct, tp_pct)
     return order
 
 
-def open_short(client: Client, coin: str, usdt: float, leverage: int) -> dict:
+def open_short(client: Client, coin: str, usdt: float, leverage: int,
+               sl_pct: float = 0.0, tp_pct: float = 0.0) -> dict:
     set_leverage(client, coin, leverage)
     price = get_price(client, coin)
     raw_qty = (usdt * leverage) / price
@@ -79,6 +82,7 @@ def open_short(client: Client, coin: str, usdt: float, leverage: int) -> dict:
         quantity=qty,
     )
     log.info("OPEN SHORT %s qty=%.4f", coin, qty)
+    _place_sl_tp(client, coin, "short", qty, price, sl_pct, tp_pct)
     return order
 
 
@@ -97,6 +101,51 @@ def close_position(client: Client, coin: str, positions: dict) -> dict | None:
     )
     log.info("CLOSE %s side=%s qty=%.4f", coin, pos["side"], pos["qty"])
     return order
+
+
+def cancel_open_orders(client: Client, coin: str):
+    try:
+        client.futures_cancel_all_open_orders(symbol=f"{coin}USDT")
+    except BinanceAPIException as e:
+        log.warning("Could not cancel open orders for %s: %s", coin, e)
+
+
+def _place_sl_tp(client: Client, coin: str, side: str, qty: float,
+                 entry: float, sl_pct: float, tp_pct: float):
+    symbol = f"{coin}USDT"
+    close_side = "SELL" if side == "long" else "BUY"
+
+    if sl_pct and sl_pct > 0:
+        sl_price = entry * (1 - sl_pct) if side == "long" else entry * (1 + sl_pct)
+        sl_price = round(sl_price, 4)
+        try:
+            client.futures_create_order(
+                symbol=symbol,
+                side=close_side,
+                type="STOP_MARKET",
+                stopPrice=sl_price,
+                quantity=qty,
+                reduceOnly=True,
+            )
+            log.info("SL placed %s @ %.4f", coin, sl_price)
+        except BinanceAPIException as e:
+            log.warning("SL placement failed for %s: %s", coin, e)
+
+    if tp_pct and tp_pct > 0:
+        tp_price = entry * (1 + tp_pct) if side == "long" else entry * (1 - tp_pct)
+        tp_price = round(tp_price, 4)
+        try:
+            client.futures_create_order(
+                symbol=symbol,
+                side=close_side,
+                type="TAKE_PROFIT_MARKET",
+                stopPrice=tp_price,
+                quantity=qty,
+                reduceOnly=True,
+            )
+            log.info("TP placed %s @ %.4f", coin, tp_price)
+        except BinanceAPIException as e:
+            log.warning("TP placement failed for %s: %s", coin, e)
 
 
 def _round_qty(client: Client, coin: str, qty: float) -> float:

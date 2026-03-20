@@ -8,7 +8,7 @@ from app import db
 from app.swing import config, agent, notifier, snapshot
 from app.swing.exchange import (
     get_open_positions, get_price,
-    open_long, open_short, close_position,
+    open_long, open_short, close_position, cancel_open_orders,
 )
 
 log = logging.getLogger(__name__)
@@ -42,6 +42,7 @@ def run():
 
                     # ── Close existing position ────────────────────────
                     if action == "close" and pos:
+                        cancel_open_orders(client, coin)
                         close_position(client, coin, positions)
                         pnl = pos["pnl"]
                         pnl_pct = pnl / pos["notional"] if pos["notional"] else 0.0
@@ -81,6 +82,7 @@ def run():
                     # ── Flip: close existing before opening opposite ───
                     if pos and pos["side"] != action:
                         log.info("FLIP %s — closing %s before opening %s", coin, pos["side"], action)
+                        cancel_open_orders(client, coin)
                         close_position(client, coin, positions)
                         pnl = pos["pnl"]
                         pnl_pct = pnl / pos["notional"] if pos["notional"] else 0.0
@@ -97,10 +99,12 @@ def run():
                         positions = get_open_positions(client)
 
                     # ── Open new position ─────────────────────────────
+                    sl = decision.get("sl_pct", 0.0) or 0.0
+                    tp = decision.get("tp_pct", 0.0) or 0.0
                     if action == "long":
-                        open_long(client, coin, config.POSITION_USDT, config.LEVERAGE)
+                        open_long(client, coin, config.POSITION_USDT, config.LEVERAGE, sl, tp)
                     else:
-                        open_short(client, coin, config.POSITION_USDT, config.LEVERAGE)
+                        open_short(client, coin, config.POSITION_USDT, config.LEVERAGE, sl, tp)
 
                     positions  = get_open_positions(client)
                     opened_pos = positions.get(coin, {})
