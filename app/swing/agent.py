@@ -62,7 +62,10 @@ If action is "hold" or "close", sl_pct and tp_pct can be 0.
 If there is already an open position:
 - "long"/"short" means flip (only if confidence >= 0.85 and trend has clearly reversed)
 - "close" means exit the current position
-- "hold" means keep current position"""
+- "hold" means keep current position — but ONLY if the position direction agrees with ema_alignment or RSI supports continuation
+- If open_position is long but ema_alignment is "bearish" or "mixed" with no bullish confirmation → return "close"
+- If open_position is short but ema_alignment is "bullish" or "mixed" with no bearish confirmation → return "close"
+- When in doubt with an open position that contradicts the trend: close, don't hold"""
 
 
 def decide(snapshot: dict) -> dict:
