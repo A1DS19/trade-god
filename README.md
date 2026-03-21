@@ -1,6 +1,15 @@
-# trade-god — DCA Crypto Bot
+# trade-god
 
-## What it does
+Two independent trading strategies running in parallel on Binance.
+
+| Strategy | Market | Style | Docs |
+|---|---|---|---|
+| **DCA Bot** | Spot | Buy dips, partial TP, trailing stop | [app/bot/README.md](app/bot/README.md) |
+| **Swing Agent** | USDT-M Futures | LLM-driven longs & shorts, hourly re-evaluation | [app/swing/README.md](app/swing/README.md) |
+
+---
+
+## DCA Bot
 
 - Watches the top 20 coins by market cap (refreshed daily from CoinGecko)
 - Buys when a coin dips 3%+ from its 24h high, RSI < 45, above 200 EMA, and BTC is in an uptrend
@@ -14,6 +23,15 @@
 - Health check endpoint at `GET /health` (port 8080)
 - Watchdog alert via Telegram if no cycle completes in 15 minutes
 
+## Swing Agent
+
+- Trades USDT-M perpetual futures (long and short)
+- LLM (Llama 3.3 70B) evaluates EMA alignment, RSI, volume, and funding rate every hour
+- Enters only when EMA stack and at least one confirming signal agree on direction
+- Places SL/TP bracket orders on Binance at entry
+- Closes positions that contradict the current trend rather than holding losers
+- Telegram notifications for every open and close
+
 ---
 
 ## Stack
@@ -22,7 +40,7 @@
 - **FastAPI + Uvicorn** — REST API (port 8000)
 - **PostgreSQL** — persists positions, trades, daily spend, coin list
 - **Alembic** — database migrations (run automatically on API startup)
-- **Docker Compose** — two services: `bot` and `api`
+- **Docker Compose** — three services: `bot`, `swing`, and `api`
 - **Binance API** — market data + order execution
 - **CoinGecko / CoinPaprika** — coin universe (CoinPaprika fallback)
 - **Telegram Bot API** — trade alerts, daily summary, commands
@@ -56,11 +74,21 @@
 Create a `.env` file in the project root:
 
 ```env
-BINANCE_API_KEY=your_key
-BINANCE_SECRET_KEY=your_secret
+# DCA Bot (spot)
+BINANCE_API_KEY=your_spot_key
+BINANCE_SECRET_KEY=your_spot_secret
+
+# Swing Agent (futures) — separate API key with Futures Trading enabled
+BINANCE_API_KEY_FUTURES=your_futures_key
+BINANCE_SECRET_KEY_FUTURES=your_futures_secret
+
+# Shared
 TELEGRAM_BOT_TOKEN=your_token
 TELEGRAM_CHAT_ID=your_chat_id
 DATABASE_URL=postgresql://tradegod:tradegod@db:5432/tradegod
+
+# Swing Agent LLM
+NVIDIA_API_KEY=your_nvidia_api_key
 ```
 
 ---
@@ -151,20 +179,29 @@ All strategy settings live in `app/config.py`:
 app/
   api/
     main.py         — FastAPI routes (/portfolio, /pnl, /trades, /stats)
-  bot/
+  bot/              — DCA spot bot (see app/bot/README.md)
     trader.py       — main loop, buy/sell logic
     commands.py     — Telegram command handler (polling)
-    exchange.py     — Binance API wrappers with retry logic
+    exchange.py     — Binance spot wrappers with retry logic
     indicators.py   — EMA, RSI, volume ratio
     universe.py     — top coin list (CoinGecko + CoinPaprika fallback)
     notifier.py     — Telegram alerts and daily summary
     heartbeat.py    — shared cycle heartbeat for watchdog + health check
     healthcheck.py  — HTTP health check server (port 8080)
+  swing/            — LLM swing agent on futures (see app/swing/README.md)
+    main.py         — main loop, trade execution
+    agent.py        — LLM decision engine (system prompt + API call)
+    snapshot.py     — market snapshot assembly
+    indicators.py   — EMA, RSI, volume ratio (4h + daily)
+    exchange.py     — Binance Futures wrappers (open/close, SL/TP)
+    notifier.py     — Telegram alerts (open, close)
+    config.py       — swing-specific strategy constants and env vars
   db/
     models.py       — SQLAlchemy models, state persistence, log_trade()
-  config.py         — all env vars and strategy constants
+  config.py         — shared env vars and DCA strategy constants
 alembic/            — database migrations
-main.py             — bot entrypoint
+main.py             — DCA bot entrypoint
+swing_main.py       — swing agent entrypoint
 api_main.py         — API entrypoint (runs migrations then starts uvicorn)
 ```
 
