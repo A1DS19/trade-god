@@ -7,6 +7,7 @@ from .models import (
     log_swing_open,
     log_swing_close,
     get_open_swing_trade,
+    get_last_closed_swing_trade,
     engine,
     Position,
     DailySpend,
