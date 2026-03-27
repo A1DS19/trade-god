@@ -2,6 +2,7 @@
 
 import logging
 import time
+from datetime import datetime, timezone
 from binance.client import Client
 
 from app import db
@@ -62,6 +63,20 @@ def run():
                     if action == "hold":
                         log.info("HOLD %s (%.0f%%) — %s", coin, conf * 100, decision["reasoning"])
                         continue
+
+                    # ── Loss cooldown ─────────────────────────────────
+                    last = db.get_last_closed_swing_trade(coin)
+                    if last and last.realized_pnl_usd is not None and last.realized_pnl_usd < 0 and last.exit_time:
+                        exit_dt = datetime.fromisoformat(last.exit_time)
+                        if exit_dt.tzinfo is None:
+                            exit_dt = exit_dt.replace(tzinfo=timezone.utc)
+                        hours_since = (datetime.now(timezone.utc) - exit_dt).total_seconds() / 3600
+                        if hours_since < config.LOSS_COOLDOWN_HRS:
+                            log.info(
+                                "SKIP %s — loss cooldown (%.1fh remaining)",
+                                coin, config.LOSS_COOLDOWN_HRS - hours_since,
+                            )
+                            continue
 
                     # ── Confidence gate ───────────────────────────────
                     if conf < config.MIN_CONFIDENCE:

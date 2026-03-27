@@ -228,6 +228,16 @@ def get_open_swing_trade(coin: str) -> SwingTrade | None:
         )
 
 
+def get_last_closed_swing_trade(coin: str) -> SwingTrade | None:
+    with Session(engine) as session:
+        return (
+            session.query(SwingTrade)
+            .filter(SwingTrade.coin == coin, SwingTrade.status == "closed")
+            .order_by(SwingTrade.id.desc())
+            .first()
+        )
+
+
 def log_trade(
     coin: str,
     side: str,

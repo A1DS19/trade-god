@@ -6,11 +6,10 @@ from app.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID  # shared credentials
 # ── Swing-specific credentials ────────────────────────────
 BINANCE_API_KEY    = os.environ["BINANCE_API_KEY_FUTURES"]
 BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY_FUTURES"]
-NVIDIA_API_KEY     = os.environ["NVIDIA_API_KEY"]
+ANTHROPIC_API_KEY  = os.environ["CLAUDE_API_KEY"]
 
-# ── NVIDIA ────────────────────────────────────────────────
-NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
-NVIDIA_MODEL    = "meta/llama-3.3-70b-instruct"
+# ── Claude ────────────────────────────────────────────────
+CLAUDE_MODEL = "claude-sonnet-4-6"
 
 # ── Coins to watch ────────────────────────────────────────
 COINS = ["ETH", "SOL", "BNB", "XRP"]
@@ -24,4 +23,5 @@ DEFAULT_TP_PCT = 0.08   # 8% take profit from entry
 MIN_CONFIDENCE = 0.70   # Skip trade if agent confidence < this
 
 # ── Loop ──────────────────────────────────────────────────
-CHECK_INTERVAL = 3600   # Seconds between scans (1 hour)
+CHECK_INTERVAL    = 3600  # Seconds between scans (1 hour)
+LOSS_COOLDOWN_HRS = 4     # Hours to skip a coin after a losing trade
