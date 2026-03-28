@@ -48,6 +48,19 @@ Use suggested_sl_pct and suggested_tp_pct (ATR-based). Min R:R = 2.0. sl_pct min
 Only flip (long↔short on existing position) if confidence >= 0.85 and both alignments have clearly reversed."""
 
 
+def _extract_json(text: str) -> str:
+    """Return the first JSON object from text, stripping fences or preamble."""
+    # Strip markdown fences
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]
+        text = text.rsplit("```", 1)[0].strip()
+    # Skip any preamble before the opening brace
+    brace = text.find("{")
+    if brace == -1:
+        return ""
+    return text[brace:]
+
+
 def decide(snapshot: dict) -> dict:
     user_msg = json.dumps(snapshot, indent=2) + "\n\nRespond with only the JSON object, no other text."
     try:
@@ -62,10 +75,10 @@ def decide(snapshot: dict) -> dict:
         if not raw:
             log.error("Agent empty response for %s (stop=%s)", snapshot["coin"], response.stop_reason)
             return _hold("empty response")
-        # Strip markdown fences if present
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[-1]
-            raw = raw.rsplit("```", 1)[0].strip()
+        raw = _extract_json(raw)
+        if not raw:
+            log.error("Agent no JSON found for %s — raw: %r", snapshot["coin"], response.content[0].text[:300])
+            return _hold("no JSON in response")
         decision, _ = json.JSONDecoder().raw_decode(raw)
         # Normalise field aliases
         if "reason" in decision and "reasoning" not in decision:
