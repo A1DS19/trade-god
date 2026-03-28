@@ -48,7 +48,7 @@ def run():
                         pnl = pos["pnl"]
                         pnl_pct = pnl / pos["notional"] if pos["notional"] else 0.0
                         log.info("NOTIFY close %s pnl=%.4f", coin, pnl)
-                    notifier.notify_close(coin, pos, pnl, decision["reasoning"])
+                        notifier.notify_close(coin, pos, pnl, decision["reasoning"])
                         db_trade = db.get_open_swing_trade(coin)
                         if db_trade:
                             db.log_swing_close(
