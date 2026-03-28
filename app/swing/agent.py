@@ -11,18 +11,22 @@ def decide(snapshot: dict) -> dict:
     regime = snapshot["market_regime"]
     pos    = snapshot.get("open_position")
 
-    ema4h    = ind["ema_alignment"]
-    ema_d    = ind["daily_ema_alignment"]
-    rsi      = ind["rsi14_4h"]
-    adx      = ind["adx14"]
-    macd     = ind["macd_hist"]
-    macd_p   = ind["macd_hist_prev"]
-    vol      = ind["vol_ratio"]
-    funding  = snapshot["funding_rate_pct"]
-    oi_chg   = ind["oi_change_4h_pct"]
+    ema4h     = ind["ema_alignment"]
+    ema_d     = ind["daily_ema_alignment"]
+    rsi       = ind["rsi14_4h"]
+    adx       = ind["adx14"]
+    macd      = ind["macd_hist"]
+    macd_p    = ind["macd_hist_prev"]
+    vol       = ind["vol_ratio"]
+    funding   = snapshot["funding_rate_pct"]
+    oi_chg    = ind["oi_change_4h_pct"]
     vs_ema200 = ind["price_vs_ema200"]
-    plus_di  = ind["plus_di"]
-    minus_di = ind["minus_di"]
+    plus_di   = ind["plus_di"]
+    minus_di  = ind["minus_di"]
+    stoch_k   = ind["stoch_rsi_k"]
+    atr_rank  = ind["atr_pct_rank"]
+    vs_vwap   = ind["price_vs_vwap"]
+    ls_ratio  = ind["ls_ratio"]
 
     # ── STEP 1: Exit check for open position ──────────────────
     if pos:
@@ -39,7 +43,7 @@ def decide(snapshot: dict) -> dict:
         # Position still valid — score hold confidence
         conf, reasons = _score_hold(side, ema4h, ema_d, rsi, macd, macd_p,
                                     adx, vol, funding, oi_chg, vs_ema200,
-                                    plus_di, minus_di)
+                                    plus_di, minus_di, stoch_k, vs_vwap)
         return _hold(conf, "; ".join(reasons))
 
     # ── STEP 2: Regime gate ────────────────────────────────────
@@ -53,7 +57,8 @@ def decide(snapshot: dict) -> dict:
 
     # ── STEP 4: Confidence scoring ─────────────────────────────
     conf, reasons = _score_entry(direction, rsi, vol, funding, oi_chg,
-                                 vs_ema200, plus_di, minus_di, macd, macd_p, regime)
+                                 vs_ema200, plus_di, minus_di, macd, macd_p, regime,
+                                 stoch_k, atr_rank, vs_vwap, ls_ratio)
     if conf < config.MIN_CONFIDENCE:
         return _hold(conf, f"Confidence {conf:.2f} < {config.MIN_CONFIDENCE} — " + "; ".join(reasons))
 
@@ -132,7 +137,8 @@ def _check_entry(regime, ema4h, ema_d, rsi, macd, adx) -> tuple[str | None, str]
 # ── Confidence scoring ─────────────────────────────────────────
 
 def _score_entry(direction, rsi, vol, funding, oi_chg, vs_ema200,
-                 plus_di, minus_di, macd, macd_p, regime) -> tuple[float, list[str]]:
+                 plus_di, minus_di, macd, macd_p, regime,
+                 stoch_k, atr_rank, vs_vwap, ls_ratio) -> tuple[float, list[str]]:
     score = 0.0
     reasons = []
 
@@ -157,6 +163,28 @@ def _score_entry(direction, rsi, vol, funding, oi_chg, vs_ema200,
     elif direction == "long" and plus_di > minus_di:
         score += 0.04; reasons.append(f"+DI {plus_di:.1f} > -DI {minus_di:.1f}")
 
+    # Stochastic RSI momentum confirmation
+    if direction == "short" and stoch_k > 80:
+        score += 0.04; reasons.append(f"StochRSI {stoch_k:.0f} overbought")
+    elif direction == "long" and stoch_k < 20:
+        score += 0.04; reasons.append(f"StochRSI {stoch_k:.0f} oversold")
+
+    # Long/short ratio — contrarian sentiment
+    if direction == "short" and ls_ratio >= 2.0:
+        score += 0.04; reasons.append(f"L/S ratio {ls_ratio:.2f} (crowded longs)")
+    elif direction == "long" and ls_ratio <= 0.5:
+        score += 0.04; reasons.append(f"L/S ratio {ls_ratio:.2f} (crowded shorts)")
+
+    # ATR percentile — volatility regime
+    if atr_rank > 70:
+        score += 0.03; reasons.append(f"ATR rank {atr_rank:.0f}% (vol expanding)")
+
+    # VWAP bias
+    if direction == "short" and vs_vwap < 0:
+        score += 0.03; reasons.append(f"price {vs_vwap:.1f}% below VWAP")
+    elif direction == "long" and vs_vwap > 0:
+        score += 0.03; reasons.append(f"price +{vs_vwap:.1f}% above VWAP")
+
     # Contradicting
     if direction == "short" and rsi < 45:
         score -= 0.05; reasons.append(f"RSI {rsi:.1f} near oversold")
@@ -172,6 +200,16 @@ def _score_entry(direction, rsi, vol, funding, oi_chg, vs_ema200,
         score -= 0.04; reasons.append("MACD hist improving (contra short)")
     elif direction == "long" and macd < macd_p:
         score -= 0.04; reasons.append("MACD hist deteriorating (contra long)")
+    if direction == "short" and stoch_k < 20:
+        score -= 0.03; reasons.append(f"StochRSI {stoch_k:.0f} already oversold (contra short)")
+    elif direction == "long" and stoch_k > 80:
+        score -= 0.03; reasons.append(f"StochRSI {stoch_k:.0f} already overbought (contra long)")
+    if atr_rank < 30:
+        score -= 0.03; reasons.append(f"ATR rank {atr_rank:.0f}% (vol compressed, poor trend)")
+    if direction == "short" and vs_vwap > 2:
+        score -= 0.02; reasons.append(f"price +{vs_vwap:.1f}% above VWAP (contra short)")
+    elif direction == "long" and vs_vwap < -2:
+        score -= 0.02; reasons.append(f"price {vs_vwap:.1f}% below VWAP (contra long)")
 
     # Borderline regime requires extra conviction
     if regime == "borderline":
@@ -191,7 +229,8 @@ def _score_entry(direction, rsi, vol, funding, oi_chg, vs_ema200,
 
 
 def _score_hold(side, ema4h, ema_d, rsi, macd, macd_p, adx,
-                vol, funding, oi_chg, vs_ema200, plus_di, minus_di) -> tuple[float, list[str]]:
+                vol, funding, oi_chg, vs_ema200, plus_di, minus_di,
+                stoch_k, vs_vwap) -> tuple[float, list[str]]:
     score = 0.07  # base: both EMA alignments confirmed (or we'd have exited)
     reasons = [f"{side} | EMA {ema4h}/{ema_d} aligned | ADX {adx:.1f}"]
 
@@ -200,19 +239,27 @@ def _score_hold(side, ema4h, ema_d, rsi, macd, macd_p, adx,
             score += 0.04; reasons.append(f"-DI {minus_di:.1f} > +DI {plus_di:.1f}")
         if vs_ema200 < 0:
             score += 0.03; reasons.append(f"price {vs_ema200:.1f}% below EMA200")
+        if vs_vwap < 0:
+            score += 0.02; reasons.append(f"price {vs_vwap:.1f}% below VWAP")
         if macd > macd_p:
             score -= 0.04; reasons.append("MACD hist rising (momentum weakening)")
         if rsi < 42:
             score -= 0.04; reasons.append(f"RSI {rsi:.1f} near exit zone")
+        if stoch_k < 25:
+            score -= 0.03; reasons.append(f"StochRSI {stoch_k:.0f} near oversold")
     else:
         if plus_di > minus_di:
             score += 0.04; reasons.append(f"+DI {plus_di:.1f} > -DI {minus_di:.1f}")
         if vs_ema200 > 0:
             score += 0.03; reasons.append(f"price +{vs_ema200:.1f}% above EMA200")
+        if vs_vwap > 0:
+            score += 0.02; reasons.append(f"price +{vs_vwap:.1f}% above VWAP")
         if macd < macd_p:
             score -= 0.04; reasons.append("MACD hist falling (momentum weakening)")
         if rsi > 58:
             score -= 0.04; reasons.append(f"RSI {rsi:.1f} near exit zone")
+        if stoch_k > 75:
+            score -= 0.03; reasons.append(f"StochRSI {stoch_k:.0f} near overbought")
 
     conf = round(min(max(0.60 + score, 0.60), 0.94), 2)
     return conf, reasons

@@ -65,18 +65,70 @@ def _wilder_smooth(data: list[float], period: int) -> list[float]:
     return result
 
 
-def calc_atr(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> float:
-    """Wilder's ATR — absolute price units."""
-    trs = [
+def calc_stoch_rsi(closes: list[float], rsi_period: int = 14, stoch_period: int = 14) -> dict:
+    """Stochastic RSI — applies Stochastic formula to a rolling RSI series.
+    %K < 20 = oversold, %K > 80 = overbought.
+    """
+    rsi_values = []
+    window_size = rsi_period * 2 + 1
+    for i in range(rsi_period, len(closes) + 1):
+        rsi_values.append(calc_rsi(closes[max(0, i - window_size):i], rsi_period))
+    if len(rsi_values) < stoch_period:
+        return {"stoch_rsi_k": 50.0, "stoch_rsi_d": 50.0}
+    k_values = []
+    for i in range(stoch_period - 1, len(rsi_values)):
+        window = rsi_values[i - stoch_period + 1: i + 1]
+        lo, hi = min(window), max(window)
+        k_values.append((rsi_values[i] - lo) / (hi - lo) * 100 if hi > lo else 50.0)
+    d = sum(k_values[-3:]) / min(3, len(k_values))
+    return {"stoch_rsi_k": round(k_values[-1], 2), "stoch_rsi_d": round(d, 2)}
+
+
+def _calc_tr_list(highs: list[float], lows: list[float], closes: list[float]) -> list[float]:
+    return [
         max(highs[i] - lows[i],
             abs(highs[i] - closes[i - 1]),
             abs(lows[i]  - closes[i - 1]))
         for i in range(1, len(closes))
     ]
+
+
+def calc_atr(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> float:
+    """Wilder's ATR — absolute price units."""
+    trs = _calc_tr_list(highs, lows, closes)
     atr = sum(trs[:period]) / period
     for tr in trs[period:]:
         atr = (atr * (period - 1) + tr) / period
     return atr
+
+
+def calc_atr_percentile(highs: list[float], lows: list[float], closes: list[float],
+                        period: int = 14, lookback: int = 100) -> float:
+    """Percentile rank of current ATR within its last `lookback` values.
+    < 30 = compressed (range), > 70 = expanding (trend/breakout).
+    """
+    trs = _calc_tr_list(highs, lows, closes)
+    if len(trs) < period + lookback:
+        return 50.0
+    atr = sum(trs[:period]) / period
+    series = [atr]
+    for tr in trs[period:]:
+        atr = (atr * (period - 1) + tr) / period
+        series.append(atr)
+    window = series[-lookback:]
+    current = window[-1]
+    rank = sum(1 for a in window if a <= current) / len(window) * 100
+    return round(rank, 1)
+
+
+def calc_vwap(klines: list, periods: int = 6) -> float:
+    """VWAP over last `periods` candles (default 6 × 4h = 24h).
+    klines row: [open_time, open, high, low, close, volume, ...]
+    """
+    candles = klines[-periods:]
+    total_pv = sum((float(k[2]) + float(k[3]) + float(k[4])) / 3 * float(k[5]) for k in candles)
+    total_v  = sum(float(k[5]) for k in candles)
+    return total_pv / total_v if total_v > 0 else 0.0
 
 
 def calc_adx(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> dict:
@@ -136,9 +188,12 @@ def get_indicators(client: Client, coin: str) -> dict:
     avg_vol   = sum(volumes_4h[-21:-1]) / 20
     vol_ratio = volumes_4h[-1] / avg_vol if avg_vol > 0 else 1.0
 
-    macd = calc_macd(closes_4h)
-    atr  = calc_atr(highs_4h, lows_4h, closes_4h)
-    adx  = calc_adx(highs_4h, lows_4h, closes_4h)
+    macd       = calc_macd(closes_4h)
+    atr        = calc_atr(highs_4h, lows_4h, closes_4h)
+    adx        = calc_adx(highs_4h, lows_4h, closes_4h)
+    stoch_rsi  = calc_stoch_rsi(closes_4h)
+    atr_pct_rank = calc_atr_percentile(highs_4h, lows_4h, closes_4h)
+    vwap       = calc_vwap(klines_4h)
 
     candles_4h = [
         {"open":  float(k[1]), "high": float(k[2]),
@@ -164,6 +219,15 @@ def get_indicators(client: Client, coin: str) -> dict:
     except Exception as e:
         log.warning("OI fetch failed for %s: %s", coin, e)
 
+    # ── Long/Short ratio ───────────────────────────────────────
+    ls_ratio = 1.0
+    try:
+        ls_data = client.futures_global_long_short_account_ratio(symbol=symbol, period="4h", limit=1)
+        if ls_data:
+            ls_ratio = float(ls_data[-1]["longShortRatio"])
+    except Exception as e:
+        log.warning("L/S ratio fetch failed for %s: %s", coin, e)
+
     return {
         "price":          closes_4h[-1],
         "ema9":           ema9,
@@ -182,4 +246,9 @@ def get_indicators(client: Client, coin: str) -> dict:
         "plus_di":        adx["plus_di"],
         "minus_di":       adx["minus_di"],
         "oi_change_pct":  round(oi_change_pct, 2),
+        "stoch_rsi_k":    stoch_rsi["stoch_rsi_k"],
+        "stoch_rsi_d":    stoch_rsi["stoch_rsi_d"],
+        "atr_pct_rank":   atr_pct_rank,
+        "vwap":           round(vwap, 6),
+        "ls_ratio":       round(ls_ratio, 4),
     }
