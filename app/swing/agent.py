@@ -66,7 +66,7 @@ def decide(snapshot: dict) -> dict:
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[-1]
             raw = raw.rsplit("```", 1)[0].strip()
-        decision = json.loads(raw)
+        decision, _ = json.JSONDecoder().raw_decode(raw)
         # Normalise field aliases
         if "reason" in decision and "reasoning" not in decision:
             decision["reasoning"] = decision.pop("reason")
