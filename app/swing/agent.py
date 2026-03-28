@@ -104,27 +104,29 @@ def _check_long_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx) -> str | None
 
 def _check_entry(regime, ema4h, ema_d, rsi, macd, adx) -> tuple[str | None, str]:
     """Returns (direction, reason). direction is None if no entry."""
+    blocks = []
     for direction in ("short", "long"):
-        req_ema    = "bearish" if direction == "short" else "bullish"
-        rsi_ok     = rsi > config.MIN_RSI_SHORT if direction == "short" else rsi < config.MAX_RSI_LONG
-        macd_ok    = macd < 0 if direction == "short" else macd > 0
-
+        req_ema = "bearish" if direction == "short" else "bullish"
+        fails = []
         if ema_d != req_ema:
-            continue
+            fails.append(f"daily={ema_d}")
         if ema4h != req_ema:
-            continue
-        if not macd_ok:
-            continue
+            fails.append(f"4h={ema4h}")
+        if direction == "short" and macd >= 0:
+            fails.append(f"MACD hist={macd:.4f}>=0")
+        if direction == "long" and macd <= 0:
+            fails.append(f"MACD hist={macd:.4f}<=0")
         if adx <= 25:
-            continue
-        if not rsi_ok:
-            continue
-        if regime == "borderline":
-            # borderline needs 3+ confirming — checked in scoring
-            pass
-        return direction, ""
+            fails.append(f"ADX={adx:.1f}<=25")
+        if direction == "short" and rsi <= config.MIN_RSI_SHORT:
+            fails.append(f"RSI={rsi:.1f}<={config.MIN_RSI_SHORT}")
+        if direction == "long" and rsi >= config.MAX_RSI_LONG:
+            fails.append(f"RSI={rsi:.1f}>={config.MAX_RSI_LONG}")
+        if not fails:
+            return direction, ""
+        blocks.append(f"{direction}: {', '.join(fails)}")
 
-    return None, "No valid entry — conditions not met"
+    return None, "No entry — " + " | ".join(blocks)
 
 
 # ── Confidence scoring ─────────────────────────────────────────
