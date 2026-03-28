@@ -9,11 +9,14 @@ log = logging.getLogger(__name__)
 
 def send(msg: str):
     try:
-        requests.post(
+        resp = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
             json={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "HTML"},
             timeout=10,
         )
+        data = resp.json()
+        if not data.get("ok"):
+            log.error("Telegram rejected message: %s", data)
     except Exception as e:
         log.error("Telegram error: %s", e)
 
