@@ -18,7 +18,8 @@ Two independent trading strategies running in parallel on Binance.
 ## DCA Bot
 
 - Watches the top 20 coins by market cap (refreshed daily from CoinGecko)
-- Buys when a coin dips 3%+ from its 24h high, RSI < 45, above 200 EMA, and BTC is in an uptrend
+- Buys when price dips ≥ ATR-adjusted threshold from 24h high, or Bollinger %B < 0.2
+- Requires: RSI < 45 (or < 38 in EMA50–200 pullback zone), price above 200 EMA, EMA slope up, MACD histogram improving, no volume spike, BTC above 200-day and 200-week EMA
 - Partial exit at +5% take profit (sells 60%, lets 40% ride to trailing stop)
 - Trailing stop at -10% from position peak
 - DCA buys more if price drops 3% below avg buy price
@@ -31,11 +32,12 @@ Two independent trading strategies running in parallel on Binance.
 
 ## Swing Agent
 
-- Trades USDT-M perpetual futures (long and short)
-- Rule-based decision engine evaluates market regime, EMA stack, MACD, RSI, ADX, volume, funding rate, and open interest every hour
+- Trades 9 USDT-M perpetual futures pairs (BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI)
+- Rule-based decision engine — no LLM, fully deterministic
+- Indicators: EMA stack (9/21/50 on 4h, 21/50/200 daily), RSI, Stochastic RSI, MACD, ATR, ATR percentile, ADX (+DI/−DI), VWAP, volume ratio, funding rate, open interest change, long/short ratio, taker buy/sell ratio
 - Regime filter: ADX > 25 required — no trades in ranging/choppy markets
 - Entry requires all 5 conditions: daily EMA bias + 4h EMA alignment + MACD direction + ADX + RSI gate (> 42 for shorts, < 58 for longs)
-- Confidence scored from supporting/contradicting signals; minimum 0.70 to enter
+- Confidence scored from 11 confirming/contradicting signals; minimum 0.70 to enter
 - Exit on MACD divergence, RSI threshold breach, EMA flip, ADX collapse, or OI drop
 - ATR-based SL/TP sizing (1.5× and 3× ATR14); client-side safety net enforced each cycle
 - Telegram notifications for every open and close
@@ -46,14 +48,14 @@ Two independent trading strategies running in parallel on Binance.
 
 - **Python 3.12** — trading loop + API
 - **FastAPI + Uvicorn** — REST API (port 8000)
-- **PostgreSQL** — persists positions, trades, daily spend, coin list
-- **Alembic** — database migrations (run automatically on API startup)
-- **Docker Compose** — three services: `bot`, `swing`, and `api`
-- **Binance API** — market data + order execution
+- **PostgreSQL** — persists positions, trades, daily spend, coin list, swing trade history
+- **Alembic** — database migrations (run automatically on startup via `migrate` service)
+- **Docker Compose** — five services: `db`, `migrate`, `bot`, `swing`, `api`
+- **Binance API** — market data + order execution (spot + futures)
 - **CoinGecko / CoinPaprika** — coin universe (CoinPaprika fallback)
 - **Telegram Bot API** — trade alerts, daily summary, commands
 
-No external AI APIs — the swing agent uses a deterministic rule-based engine.
+No external AI APIs — fully self-contained.
 
 ---
 
@@ -63,6 +65,8 @@ No external AI APIs — the swing agent uses a deterministic rule-based engine.
 2. Enable: **Spot & Margin Trading**
 3. Disable: Withdrawals
 4. Copy the key and secret into `.env`
+
+For the swing agent, create a **second** API key with **Futures Trading** enabled.
 
 ---
 
@@ -96,7 +100,6 @@ BINANCE_SECRET_KEY_FUTURES=your_futures_secret
 TELEGRAM_BOT_TOKEN=your_token
 TELEGRAM_CHAT_ID=your_chat_id
 DATABASE_URL=postgresql://tradegod:tradegod@db:5432/tradegod
-
 ```
 
 ---
@@ -121,6 +124,11 @@ git clone https://github.com/your-username/trade-god.git && cd trade-god
 docker compose up -d --build
 docker compose logs -f bot
 ```
+
+On startup, Docker Compose will:
+1. Start PostgreSQL and wait for it to be healthy
+2. Run `alembic upgrade head` (the `migrate` service)
+3. Start `bot`, `swing`, and `api` only after migrations succeed
 
 **Firewall (Lightsail → Networking tab):**
 
@@ -161,7 +169,7 @@ The API runs on port 8000. Interactive docs at `http://<your-ip>:8000/docs`.
 
 ## Configuration
 
-All strategy settings live in `app/config.py`:
+DCA bot settings in `app/config.py`, swing agent settings in `app/swing/config.py`.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -169,8 +177,9 @@ All strategy settings live in `app/config.py`:
 | `TRADE_AMOUNT_USDT` | $8 | Spent per buy |
 | `MAX_POSITION_USDT` | $50 | Max cost basis per coin |
 | `MAX_DAILY_SPEND` | $80 | Max spend per UTC day |
-| `DIP_THRESHOLD` | 3% | Dip from 24h high that triggers a buy |
-| `RSI_BUY_THRESHOLD` | 45 | Only buy when RSI(14) is below this |
+| `DIP_THRESHOLD` | 3% | Minimum dip from 24h high to trigger buy |
+| `RSI_BUY_THRESHOLD` | 45 | RSI(14) limit when price is above EMA50 |
+| `RSI_BUY_BELOW_EMA50` | 38 | Stricter RSI limit in EMA50–EMA200 pullback zone |
 | `TAKE_PROFIT` | 5% | Partial sell trigger |
 | `PARTIAL_TAKE_PROFIT_PCT` | 60% | Fraction sold at take profit |
 | `TRAILING_STOP_PCT` | 10% | Sell if price drops this much from peak |
@@ -191,7 +200,7 @@ app/
     trader.py       — main loop, buy/sell logic
     commands.py     — Telegram command handler (polling)
     exchange.py     — Binance spot wrappers with retry logic
-    indicators.py   — EMA, RSI, volume ratio
+    indicators.py   — EMA, RSI, MACD, Bollinger Bands, ATR, volume ratio
     universe.py     — top coin list (CoinGecko + CoinPaprika fallback)
     notifier.py     — Telegram alerts and daily summary
     heartbeat.py    — shared cycle heartbeat for watchdog + health check
@@ -200,17 +209,17 @@ app/
     main.py         — main loop, trade execution, client-side SL/TP safety net
     agent.py        — deterministic rule engine (regime, entry, exit, confidence scoring)
     snapshot.py     — market snapshot assembly with ATR-based SL/TP hints
-    indicators.py   — EMA, RSI, MACD, ATR, ADX, OI change (4h + daily)
+    indicators.py   — EMA, RSI, Stoch RSI, MACD, ATR, ATR percentile, ADX, VWAP, OI, L/S ratio, taker ratio
     exchange.py     — Binance Futures wrappers (open/close, SL/TP)
     notifier.py     — Telegram alerts (open, close)
     config.py       — swing-specific strategy constants and env vars
   db/
     models.py       — SQLAlchemy models, state persistence, log_trade()
   config.py         — shared env vars and DCA strategy constants
-alembic/            — database migrations
+alembic/            — database migrations (run automatically on startup)
 main.py             — DCA bot entrypoint
 swing_main.py       — swing agent entrypoint
-api_main.py         — API entrypoint (runs migrations then starts uvicorn)
+api_main.py         — API entrypoint
 ```
 
 ---

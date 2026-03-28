@@ -1,6 +1,6 @@
 # Swing Agent
 
-Rule-based swing trading bot for USDT-M perpetual futures on Binance. Evaluates market conditions every hour and takes long or short positions based on a 5-indicator quant framework. No LLM — all decisions are deterministic Python.
+Rule-based swing trading bot for USDT-M perpetual futures on Binance. Evaluates market conditions every hour and takes long or short positions based on a multi-indicator quant framework. No LLM — all decisions are deterministic Python.
 
 ---
 
@@ -8,7 +8,7 @@ Rule-based swing trading bot for USDT-M perpetual futures on Binance. Evaluates 
 
 Every hour the agent:
 1. Fetches 4h and daily candles for each coin
-2. Computes EMA stack, RSI, MACD, ATR, ADX, volume ratio, open interest change, and funding rate
+2. Computes EMA stack, RSI, Stochastic RSI, MACD, ATR, ADX, volume ratio, VWAP, open interest change, funding rate, long/short ratio, and taker buy/sell ratio
 3. Runs the rule engine to decide: enter / hold / exit
 4. Executes on Binance Futures with ATR-based SL/TP
 
@@ -46,20 +46,34 @@ RSI gate is also enforced in code (`main.py`) regardless of the rule engine outp
 
 ### 4. Confidence scoring
 
-Base confidence from number of net confirming signals:
+Each confirming or contradicting signal adjusts a raw score. The score maps to a confidence band:
 
-| Net confirming | Confidence band |
+| Raw score | Confidence band |
 |---|---|
-| 3+ | 0.85–0.94 |
-| 2 | 0.75–0.84 |
-| 1 | 0.70–0.74 |
-| < 1 | hold |
+| ≥ 0.12 | 0.85–0.94 |
+| ≥ 0.07 | 0.75–0.84 |
+| ≥ 0.03 | 0.70–0.74 |
+| < 0.03 | hold |
 
-**Confirming signals** (+0.03–0.05 each): `vol_ratio > 1.5`, funding rate aligns, OI rising with price, RSI in 40–60, `price_vs_ema200` confirms, `minus_di > plus_di` (short) or reverse.
+**Confirming signals** (each adds to score):
 
-**Contradicting signals** (−0.04–0.06 each): RSI approaching exit zone, funding opposes, OI falling, MACD hist moving against position.
+| Signal | Weight |
+|---|---|
+| Volume ratio > 1.5 | +0.05 |
+| Funding rate aligns with direction | +0.04 |
+| OI rising with price momentum | +0.04 |
+| −DI > +DI (short) or +DI > −DI (long) | +0.04 |
+| Stochastic RSI > 80 (short) or < 20 (long) | +0.04 |
+| L/S ratio ≥ 2.0 crowded longs (short) or ≤ 0.5 crowded shorts (long) | +0.04 |
+| RSI in 40–60 range | +0.03 |
+| Price vs EMA200 confirms direction | +0.03 |
+| ATR percentile rank > 70% (vol expanding) | +0.03 |
+| VWAP bias confirms direction | +0.03 |
+| Taker buy/sell ratio aligns (< 0.8 for short, > 1.2 for long) | +0.03 |
 
-Trades with confidence < 0.70 are skipped.
+**Contradicting signals** reduce score by 0.02–0.05 each. ADX borderline regime applies a −0.08 penalty.
+
+Trades with final confidence < 0.70 are skipped.
 
 ### 5. SL/TP
 
@@ -75,13 +89,19 @@ Exchange-side SL/TP orders (`STOP_MARKET` / `TAKE_PROFIT_MARKET`) are attempted 
 
 ---
 
+## Coins
+
+BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI (9 coins, configurable in `config.py`).
+
+---
+
 ## Configuration
 
 All settings in `config.py`:
 
 | Setting | Default | Description |
 |---|---|---|
-| `COINS` | ETH, SOL, BNB, XRP | Futures pairs to watch |
+| `COINS` | 9 pairs | Futures pairs to watch |
 | `LEVERAGE` | 5x | Futures leverage |
 | `POSITION_USDT` | $5 | Margin per trade (notional = $25) |
 | `MAX_OPEN` | 3 | Max simultaneous open positions |
@@ -116,7 +136,7 @@ Binance futures keys require **Futures Trading** enabled. Keep withdrawals disab
 | `main.py` | Main loop — scan coins, execute decisions, client-side SL/TP safety net |
 | `agent.py` | Deterministic rule engine — exit check, entry check, confidence scoring |
 | `snapshot.py` | Assembles market snapshot (indicators + ATR-based SL/TP hints) |
-| `indicators.py` | EMA, RSI, MACD, ATR, ADX (+DI/-DI), volume ratio, OI change |
+| `indicators.py` | EMA, RSI, Stochastic RSI, MACD, ATR, ATR percentile, ADX, VWAP, volume ratio, OI change, L/S ratio, taker ratio |
 | `exchange.py` | Binance Futures wrappers (open/close, SL/TP, positions) |
 | `notifier.py` | Telegram alerts (open, close) |
 | `config.py` | Strategy constants and env vars |
@@ -128,5 +148,5 @@ Binance futures keys require **Futures Trading** enabled. Keep withdrawals disab
 | Event | Message |
 |---|---|
 | Position opened | Coin, direction, entry price, SL%, TP%, confidence, reasoning |
-| Position closed | Coin, entry price, realized PnL, exit reason |
+| Position closed | Coin, entry/exit price, realized PnL, exit reason |
 | Startup | Active coins, leverage, size, confidence threshold |
