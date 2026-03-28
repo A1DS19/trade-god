@@ -1,5 +1,6 @@
 """Telegram notifications for the swing agent."""
 
+import html
 import logging
 import requests
 from app.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
@@ -29,16 +30,17 @@ def notify_open(coin: str, action: str, price: float, decision: dict):
         f"SL:         -{decision['sl_pct'] * 100:.1f}%\n"
         f"TP:         +{decision['tp_pct'] * 100:.1f}%\n"
         f"Confidence: {decision['confidence'] * 100:.0f}%\n"
-        f"Reason:     {decision['reasoning']}"
+        f"Reason:     {html.escape(decision['reasoning'])}"
     )
 
 
 def notify_close(coin: str, pos: dict, pnl: float, reason: str):
     emoji = "✅" if pnl >= 0 else "🛑"
     send(
-        f"{emoji} <b>CLOSE {coin}</b>  ({reason})\n"
+        f"{emoji} <b>CLOSE {coin}</b>\n"
         f"Entry: ${pos['entry']:,.4f}\n"
-        f"PnL:   <b>{'+'if pnl>=0 else ''}{pnl:.2f} USDT</b>"
+        f"PnL:   <b>{'+'if pnl>=0 else ''}{pnl:.2f} USDT</b>\n"
+        f"Reason: {html.escape(reason)}"
     )
 
 

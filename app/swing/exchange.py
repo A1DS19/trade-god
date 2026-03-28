@@ -124,7 +124,7 @@ def _place_sl_tp(client: Client, coin: str, side: str, qty: float,
                 side=close_side,
                 type="STOP_MARKET",
                 stopPrice=sl_price,
-                closePosition=True,
+                closePosition="true",
             )
             log.info("SL placed %s @ %.4f", coin, sl_price)
         except BinanceAPIException as e:
@@ -139,7 +139,7 @@ def _place_sl_tp(client: Client, coin: str, side: str, qty: float,
                 side=close_side,
                 type="TAKE_PROFIT_MARKET",
                 stopPrice=tp_price,
-                closePosition=True,
+                closePosition="true",
             )
             log.info("TP placed %s @ %.4f", coin, tp_price)
         except BinanceAPIException as e:

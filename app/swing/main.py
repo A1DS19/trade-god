@@ -136,7 +136,7 @@ def run():
                         leverage=config.LEVERAGE,
                         notional_usdt=notional,
                         agent_confidence=conf,
-                        agent_reasoning=decision["reasoning"],
+                        agent_reasoning=decision["reasoning"][:499],
                     )
                     notifier.notify_open(coin, action, price, decision)
 
