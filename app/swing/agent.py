@@ -23,10 +23,11 @@ def decide(snapshot: dict) -> dict:
     vs_ema200 = ind["price_vs_ema200"]
     plus_di   = ind["plus_di"]
     minus_di  = ind["minus_di"]
-    stoch_k   = ind["stoch_rsi_k"]
-    atr_rank  = ind["atr_pct_rank"]
-    vs_vwap   = ind["price_vs_vwap"]
-    ls_ratio  = ind["ls_ratio"]
+    stoch_k     = ind["stoch_rsi_k"]
+    atr_rank    = ind["atr_pct_rank"]
+    vs_vwap     = ind["price_vs_vwap"]
+    ls_ratio    = ind["ls_ratio"]
+    taker_ratio = ind["taker_ratio"]
 
     # ── STEP 1: Exit check for open position ──────────────────
     if pos:
@@ -58,7 +59,7 @@ def decide(snapshot: dict) -> dict:
     # ── STEP 4: Confidence scoring ─────────────────────────────
     conf, reasons = _score_entry(direction, rsi, vol, funding, oi_chg,
                                  vs_ema200, plus_di, minus_di, macd, macd_p, regime,
-                                 stoch_k, atr_rank, vs_vwap, ls_ratio)
+                                 stoch_k, atr_rank, vs_vwap, ls_ratio, taker_ratio)
     if conf < config.MIN_CONFIDENCE:
         return _hold(conf, f"Confidence {conf:.2f} < {config.MIN_CONFIDENCE} — " + "; ".join(reasons))
 
@@ -138,7 +139,7 @@ def _check_entry(regime, ema4h, ema_d, rsi, macd, adx) -> tuple[str | None, str]
 
 def _score_entry(direction, rsi, vol, funding, oi_chg, vs_ema200,
                  plus_di, minus_di, macd, macd_p, regime,
-                 stoch_k, atr_rank, vs_vwap, ls_ratio) -> tuple[float, list[str]]:
+                 stoch_k, atr_rank, vs_vwap, ls_ratio, taker_ratio) -> tuple[float, list[str]]:
     score = 0.0
     reasons = []
 
@@ -175,6 +176,12 @@ def _score_entry(direction, rsi, vol, funding, oi_chg, vs_ema200,
     elif direction == "long" and ls_ratio <= 0.5:
         score += 0.04; reasons.append(f"L/S ratio {ls_ratio:.2f} (crowded shorts)")
 
+    # Taker buy/sell ratio — aggressive order flow
+    if direction == "short" and taker_ratio < 0.8:
+        score += 0.03; reasons.append(f"taker ratio {taker_ratio:.2f} (sellers aggressive)")
+    elif direction == "long" and taker_ratio > 1.2:
+        score += 0.03; reasons.append(f"taker ratio {taker_ratio:.2f} (buyers aggressive)")
+
     # ATR percentile — volatility regime
     if atr_rank > 70:
         score += 0.03; reasons.append(f"ATR rank {atr_rank:.0f}% (vol expanding)")
@@ -204,6 +211,10 @@ def _score_entry(direction, rsi, vol, funding, oi_chg, vs_ema200,
         score -= 0.03; reasons.append(f"StochRSI {stoch_k:.0f} already oversold (contra short)")
     elif direction == "long" and stoch_k > 80:
         score -= 0.03; reasons.append(f"StochRSI {stoch_k:.0f} already overbought (contra long)")
+    if direction == "short" and taker_ratio > 1.2:
+        score -= 0.02; reasons.append(f"taker ratio {taker_ratio:.2f} (buyers aggressive, contra short)")
+    elif direction == "long" and taker_ratio < 0.8:
+        score -= 0.02; reasons.append(f"taker ratio {taker_ratio:.2f} (sellers aggressive, contra long)")
     if atr_rank < 30:
         score -= 0.03; reasons.append(f"ATR rank {atr_rank:.0f}% (vol compressed, poor trend)")
     if direction == "short" and vs_vwap > 2:

@@ -76,6 +76,7 @@ def build(client: Client, coin: str) -> dict:
             "vwap":                round(ind["vwap"], 4),
             "price_vs_vwap":       round((price - ind["vwap"]) / ind["vwap"] * 100, 2),
             "ls_ratio":            ind["ls_ratio"],
+            "taker_ratio":         ind["taker_ratio"],
         },
         "candles_4h":        ind["candles_4h"],
         "funding_rate_pct":  round(funding * 100, 4),

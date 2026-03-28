@@ -77,7 +77,9 @@ class SwingTrade(Base):
     exit_time        = Column(String(50), nullable=True)
     realized_pnl_usd = Column(Float, nullable=True)
     realized_pnl_pct = Column(Float, nullable=True)
-    exit_reason      = Column(String(50), nullable=True)
+    exit_reason      = Column(String(100), nullable=True)
+    entry_sl_pct     = Column(Float, nullable=True)   # ATR-based SL % at entry
+    entry_tp_pct     = Column(Float, nullable=True)   # ATR-based TP % at entry
     agent_confidence = Column(Float, nullable=False)
     agent_reasoning  = Column(String(500), nullable=True)
     status           = Column(String(6), nullable=False, default="open")  # open | closed
@@ -178,6 +180,8 @@ def log_swing_open(
     notional_usdt: float,
     agent_confidence: float,
     agent_reasoning: str,
+    entry_sl_pct: float = 0.0,
+    entry_tp_pct: float = 0.0,
 ) -> int:
     with Session(engine) as session:
         row = SwingTrade(
@@ -192,6 +196,8 @@ def log_swing_open(
             status="open",
             agent_confidence=agent_confidence,
             agent_reasoning=agent_reasoning,
+            entry_sl_pct=entry_sl_pct,
+            entry_tp_pct=entry_tp_pct,
         )
         session.add(row)
         session.commit()

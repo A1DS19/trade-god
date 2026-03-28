@@ -222,11 +222,23 @@ def get_indicators(client: Client, coin: str) -> dict:
     # ── Long/Short ratio ───────────────────────────────────────
     ls_ratio = 1.0
     try:
-        ls_data = client.futures_global_long_short_account_ratio(symbol=symbol, period="4h", limit=1)
+        ls_data = client.futures_global_longshort_ratio(symbol=symbol, period="4h", limit=1)
         if ls_data:
             ls_ratio = float(ls_data[-1]["longShortRatio"])
     except Exception as e:
         log.warning("L/S ratio fetch failed for %s: %s", coin, e)
+
+    # ── Taker buy/sell ratio ───────────────────────────────────
+    # > 1.0 = aggressive buyers dominate, < 1.0 = aggressive sellers dominate
+    taker_ratio = 1.0
+    try:
+        taker_data = client._request_futures_data_api(
+            "get", "takerlongshortRatio", data={"symbol": symbol, "period": "4h", "limit": 1}
+        )
+        if taker_data:
+            taker_ratio = float(taker_data[-1]["buySellRatio"])
+    except Exception as e:
+        log.warning("Taker ratio fetch failed for %s: %s", coin, e)
 
     return {
         "price":          closes_4h[-1],
@@ -251,4 +263,5 @@ def get_indicators(client: Client, coin: str) -> dict:
         "atr_pct_rank":   atr_pct_rank,
         "vwap":           round(vwap, 6),
         "ls_ratio":       round(ls_ratio, 4),
+        "taker_ratio":    round(taker_ratio, 4),
     }

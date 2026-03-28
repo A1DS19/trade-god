@@ -44,12 +44,23 @@ def run():
                          (pos["side"] == "short" and chg <= -config.DEFAULT_TP_PCT)
                 if hit_sl or hit_tp:
                     label = "SL" if hit_sl else "TP"
+                    exit_reason = f"client-side {label} ({chg*100:+.1f}%)"
                     log.info("CLIENT %s %s chg=%.2f%%", label, coin, chg * 100)
                     cancel_open_orders(client, coin)
                     close_position(client, coin, positions)
                     pnl = pos["pnl"]
+                    pnl_pct = pnl / pos["notional"] if pos["notional"] else 0.0
                     log.info("NOTIFY client-%s %s pnl=%.4f", label, coin, pnl)
-                    notifier.notify_close(coin, pos, pnl, f"client-side {label} hit ({chg*100:+.1f}%)")
+                    notifier.notify_close(coin, pos, pnl, exit_reason)
+                    db_trade = db.get_open_swing_trade(coin)
+                    if db_trade:
+                        db.log_swing_close(
+                            trade_id=db_trade.id,
+                            exit_price=price_now,
+                            realized_pnl_usd=pnl,
+                            realized_pnl_pct=pnl_pct,
+                            exit_reason=exit_reason,
+                        )
                     positions = get_open_positions(client)
 
             for coin in config.COINS:
@@ -167,6 +178,8 @@ def run():
                         notional_usdt=notional,
                         agent_confidence=conf,
                         agent_reasoning=decision["reasoning"][:499],
+                        entry_sl_pct=decision.get("sl_pct", 0.0) or 0.0,
+                        entry_tp_pct=decision.get("tp_pct", 0.0) or 0.0,
                     )
                     notifier.notify_open(coin, action, price, decision)
 
