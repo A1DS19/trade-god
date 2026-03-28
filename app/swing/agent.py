@@ -1,109 +1,229 @@
-"""Call Claude to get a trading decision for a given snapshot."""
+"""Rule-based trading decision engine — no LLM required."""
 
-import json
 import logging
-import anthropic
 from app.swing import config
 
 log = logging.getLogger(__name__)
 
-_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-
-SYSTEM_PROMPT = """You are a quantitative crypto swing trader. Given a market snapshot, return a JSON trading decision.
-
-## Regime gate
-If market_regime == "ranging": action=hold. If "borderline": require 3+ confirming signals.
-
-## Allowed direction (daily bias)
-daily_ema_alignment "bearish" → short only, close any open long.
-daily_ema_alignment "bullish" → long only, close any open short.
-daily_ema_alignment "mixed" → no new entries; close if 4h is also mixed.
-
-## New entry (all 5 required)
-SHORT: market_regime trending + daily bearish + 4h ema_alignment bearish + macd_hist < 0 + adx14 > 25 + RSI > 42
-LONG:  market_regime trending + daily bullish  + 4h ema_alignment bullish + macd_hist > 0 + adx14 > 25 + RSI < 58
-
-## Confidence bands (after all 5 entry conditions met)
-0.85–0.94: 3+ net confirming signals
-0.75–0.84: 2 net confirming signals
-0.70–0.74: 1 net confirming signal
-< 0.70: hold
-
-Confirming (+0.03–0.05 each): vol_ratio > 1.5, funding aligns, oi_change_4h_pct > 1% with price moving in direction, RSI 40–60, price_vs_ema200 confirms, minus_di > plus_di for short (or reverse for long).
-Contradicting (−0.04–0.06 each): RSI < 35 for short or > 65 for long, funding opposes, oi_change < −2%, macd_hist moving against position.
-
-Use precise decimals (0.73, 0.82) — never exactly 0.70, 0.75, 0.80, 0.85, 0.90.
-
-## Close an open position if ANY exit condition is met
-Short exit: 4h alignment bullish/mixed OR daily bullish OR RSI < 38 OR (macd_hist > macd_hist_prev AND RSI < 45) OR oi_change_4h_pct < −3 while price falling OR adx14 < 20.
-Long exit:  4h alignment bearish/mixed OR daily bearish OR RSI > 62 OR (macd_hist < macd_hist_prev AND RSI > 55) OR oi_change_4h_pct < −3 while price rising OR adx14 < 20.
-
-## Hold open position only if
-Direction agrees with both 4h and daily alignment AND no exit condition triggered AND adx14 >= 20 AND macd_hist confirms direction.
-
-## SL/TP
-Use suggested_sl_pct and suggested_tp_pct (ATR-based). Min R:R = 2.0. sl_pct min 0.01, tp_pct min 0.02. Set both to 0 for hold/close.
-
-## Flip
-Only flip (long↔short on existing position) if confidence >= 0.85 and both alignments have clearly reversed."""
-
-
-def _extract_json(text: str) -> str:
-    """Return the first JSON object from text, stripping fences or preamble."""
-    # Strip markdown fences
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1]
-        text = text.rsplit("```", 1)[0].strip()
-    # Skip any preamble before the opening brace
-    brace = text.find("{")
-    if brace == -1:
-        return ""
-    return text[brace:]
-
 
 def decide(snapshot: dict) -> dict:
-    user_msg = json.dumps(snapshot, indent=2) + "\n\nRespond with only the JSON object, no other text."
-    try:
-        response = _client.messages.create(
-            model=config.CLAUDE_MODEL,
-            max_tokens=1024,
-            temperature=0.1,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_msg}],
-        )
-        raw = response.content[0].text.strip()
-        if not raw:
-            log.error("Agent empty response for %s (stop=%s)", snapshot["coin"], response.stop_reason)
-            return _hold("empty response")
-        raw = _extract_json(raw)
-        if not raw:
-            log.error("Agent no JSON found for %s — raw: %r", snapshot["coin"], response.content[0].text[:300])
-            return _hold("no JSON in response")
-        decision, _ = json.JSONDecoder().raw_decode(raw)
-        # Normalise field aliases
-        if "reason" in decision and "reasoning" not in decision:
-            decision["reasoning"] = decision.pop("reason")
-        _validate(decision)
-        log.info(
-            "Agent [%s] → action=%s confidence=%.2f | %s",
-            snapshot["coin"], decision["action"], decision["confidence"], decision["reasoning"],
-        )
-        return decision
-    except json.JSONDecodeError as e:
-        log.error("Agent returned non-JSON for %s: %s", snapshot["coin"], e)
-    except KeyError as e:
-        log.error("Agent response missing field %s for %s", e, snapshot["coin"])
-    except Exception as e:
-        log.error("Agent error for %s: %s", snapshot["coin"], e)
+    ind    = snapshot["indicators"]
+    regime = snapshot["market_regime"]
+    pos    = snapshot.get("open_position")
 
-    return _hold("agent error")
+    ema4h    = ind["ema_alignment"]
+    ema_d    = ind["daily_ema_alignment"]
+    rsi      = ind["rsi14_4h"]
+    adx      = ind["adx14"]
+    macd     = ind["macd_hist"]
+    macd_p   = ind["macd_hist_prev"]
+    vol      = ind["vol_ratio"]
+    funding  = snapshot["funding_rate_pct"]
+    oi_chg   = ind["oi_change_4h_pct"]
+    vs_ema200 = ind["price_vs_ema200"]
+    plus_di  = ind["plus_di"]
+    minus_di = ind["minus_di"]
+
+    # ── STEP 1: Exit check for open position ──────────────────
+    if pos:
+        side = pos["side"]
+        if side == "short":
+            exit_reason = _check_short_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx)
+        else:
+            exit_reason = _check_long_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx)
+
+        if exit_reason:
+            log.info("EXIT %s — %s", snapshot["coin"], exit_reason)
+            return _close(exit_reason)
+
+        # Position still valid — score hold confidence
+        conf, reasons = _score_hold(side, ema4h, ema_d, rsi, macd, macd_p,
+                                    adx, vol, funding, oi_chg, vs_ema200,
+                                    plus_di, minus_di)
+        return _hold(conf, "; ".join(reasons))
+
+    # ── STEP 2: Regime gate ────────────────────────────────────
+    if regime == "ranging":
+        return _hold(0.0, "ADX < 20 — ranging market, no entry")
+
+    # ── STEP 3: Entry check ────────────────────────────────────
+    direction, block_reason = _check_entry(regime, ema4h, ema_d, rsi, macd, adx)
+    if direction is None:
+        return _hold(0.0, block_reason)
+
+    # ── STEP 4: Confidence scoring ─────────────────────────────
+    conf, reasons = _score_entry(direction, rsi, vol, funding, oi_chg,
+                                 vs_ema200, plus_di, minus_di, macd, macd_p, regime)
+    if conf < config.MIN_CONFIDENCE:
+        return _hold(conf, f"Confidence {conf:.2f} < {config.MIN_CONFIDENCE} — " + "; ".join(reasons))
+
+    sl = snapshot["suggested_sl_pct"]
+    tp = snapshot["suggested_tp_pct"]
+    reasoning = f"{direction.upper()} entry | " + "; ".join(reasons)
+    log.info("SIGNAL %s %s conf=%.2f sl=%.3f tp=%.3f",
+             snapshot["coin"], direction, conf, sl, tp)
+    return {"action": direction, "confidence": conf,
+            "sl_pct": sl, "tp_pct": tp, "reasoning": reasoning}
 
 
-def _validate(d: dict):
-    assert d["action"] in ("long", "short", "close", "hold"), f"bad action: {d['action']}"
-    assert 0.0 <= float(d["confidence"]) <= 1.0, "confidence out of range"
-    assert "reasoning" in d
+# ── Exit conditions ────────────────────────────────────────────
+
+def _check_short_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx) -> str | None:
+    if ema4h in ("bullish", "mixed"):
+        return f"4h EMA turned {ema4h}"
+    if ema_d == "bullish":
+        return "daily EMA turned bullish"
+    if rsi < 38:
+        return f"RSI {rsi:.1f} < 38 (oversold approach)"
+    if macd > macd_p and rsi < 45:
+        return f"MACD divergence (hist {macd:.4f} > prev {macd_p:.4f}) with RSI {rsi:.1f}"
+    if oi_chg < -3 and macd > macd_p:
+        return f"OI falling {oi_chg:.1f}% (shorts covering)"
+    if adx < 20:
+        return f"ADX {adx:.1f} < 20 — trend collapsed"
+    return None
 
 
-def _hold(reason: str) -> dict:
-    return {"action": "hold", "confidence": 0.0, "sl_pct": 0.0, "tp_pct": 0.0, "reasoning": reason}
+def _check_long_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx) -> str | None:
+    if ema4h in ("bearish", "mixed"):
+        return f"4h EMA turned {ema4h}"
+    if ema_d == "bearish":
+        return "daily EMA turned bearish"
+    if rsi > 62:
+        return f"RSI {rsi:.1f} > 62 (overbought approach)"
+    if macd < macd_p and rsi > 55:
+        return f"MACD divergence (hist {macd:.4f} < prev {macd_p:.4f}) with RSI {rsi:.1f}"
+    if oi_chg < -3 and macd < macd_p:
+        return f"OI falling {oi_chg:.1f}% (longs covering)"
+    if adx < 20:
+        return f"ADX {adx:.1f} < 20 — trend collapsed"
+    return None
+
+
+# ── Entry conditions ───────────────────────────────────────────
+
+def _check_entry(regime, ema4h, ema_d, rsi, macd, adx) -> tuple[str | None, str]:
+    """Returns (direction, reason). direction is None if no entry."""
+    for direction in ("short", "long"):
+        req_ema    = "bearish" if direction == "short" else "bullish"
+        rsi_ok     = rsi > config.MIN_RSI_SHORT if direction == "short" else rsi < config.MAX_RSI_LONG
+        macd_ok    = macd < 0 if direction == "short" else macd > 0
+
+        if ema_d != req_ema:
+            continue
+        if ema4h != req_ema:
+            continue
+        if not macd_ok:
+            continue
+        if adx <= 25:
+            continue
+        if not rsi_ok:
+            continue
+        if regime == "borderline":
+            # borderline needs 3+ confirming — checked in scoring
+            pass
+        return direction, ""
+
+    return None, "No valid entry — conditions not met"
+
+
+# ── Confidence scoring ─────────────────────────────────────────
+
+def _score_entry(direction, rsi, vol, funding, oi_chg, vs_ema200,
+                 plus_di, minus_di, macd, macd_p, regime) -> tuple[float, list[str]]:
+    score = 0.0
+    reasons = []
+
+    if vol > 1.5:
+        score += 0.05; reasons.append(f"vol {vol:.2f}↑")
+    if direction == "short" and funding > 0.05:
+        score += 0.04; reasons.append(f"funding +{funding:.4f}% (crowded longs)")
+    elif direction == "long" and funding < -0.05:
+        score += 0.04; reasons.append(f"funding {funding:.4f}% (crowded shorts)")
+    if direction == "short" and oi_chg > 1 and macd < macd_p * 0.95:
+        score += 0.04; reasons.append(f"OI +{oi_chg:.1f}% (new shorts)")
+    elif direction == "long" and oi_chg > 1 and macd > macd_p * 1.05:
+        score += 0.04; reasons.append(f"OI +{oi_chg:.1f}% (new longs)")
+    if 40 <= rsi <= 60:
+        score += 0.03; reasons.append(f"RSI {rsi:.1f} healthy")
+    if direction == "short" and vs_ema200 < 0:
+        score += 0.03; reasons.append(f"price {vs_ema200:.1f}% below EMA200")
+    elif direction == "long" and vs_ema200 > 0:
+        score += 0.03; reasons.append(f"price +{vs_ema200:.1f}% above EMA200")
+    if direction == "short" and minus_di > plus_di:
+        score += 0.04; reasons.append(f"-DI {minus_di:.1f} > +DI {plus_di:.1f}")
+    elif direction == "long" and plus_di > minus_di:
+        score += 0.04; reasons.append(f"+DI {plus_di:.1f} > -DI {minus_di:.1f}")
+
+    # Contradicting
+    if direction == "short" and rsi < 45:
+        score -= 0.05; reasons.append(f"RSI {rsi:.1f} near oversold")
+    elif direction == "long" and rsi > 55:
+        score -= 0.05; reasons.append(f"RSI {rsi:.1f} near overbought")
+    if direction == "short" and funding < -0.05:
+        score -= 0.04; reasons.append(f"funding {funding:.4f}% opposes short")
+    elif direction == "long" and funding > 0.05:
+        score -= 0.04; reasons.append(f"funding +{funding:.4f}% opposes long")
+    if oi_chg < -2:
+        score -= 0.04; reasons.append(f"OI {oi_chg:.1f}% (positions closing)")
+    if direction == "short" and macd > macd_p:
+        score -= 0.04; reasons.append("MACD hist improving (contra short)")
+    elif direction == "long" and macd < macd_p:
+        score -= 0.04; reasons.append("MACD hist deteriorating (contra long)")
+
+    # Borderline regime requires extra conviction
+    if regime == "borderline":
+        score -= 0.08; reasons.append("ADX borderline penalty")
+
+    # Map score to confidence band
+    if score >= 0.12:
+        conf = round(0.85 + min(score - 0.12, 0.09), 2)
+    elif score >= 0.07:
+        conf = round(0.75 + (score - 0.07) / 0.05 * 0.09, 2)
+    elif score >= 0.03:
+        conf = round(0.70 + (score - 0.03) / 0.04 * 0.04, 2)
+    else:
+        conf = round(0.60 + max(score, -0.10) * 0.5, 2)
+
+    return conf, reasons
+
+
+def _score_hold(side, ema4h, ema_d, rsi, macd, macd_p, adx,
+                vol, funding, oi_chg, vs_ema200, plus_di, minus_di) -> tuple[float, list[str]]:
+    score = 0.07  # base: both EMA alignments confirmed (or we'd have exited)
+    reasons = [f"{side} | EMA {ema4h}/{ema_d} aligned | ADX {adx:.1f}"]
+
+    if side == "short":
+        if minus_di > plus_di:
+            score += 0.04; reasons.append(f"-DI {minus_di:.1f} > +DI {plus_di:.1f}")
+        if vs_ema200 < 0:
+            score += 0.03; reasons.append(f"price {vs_ema200:.1f}% below EMA200")
+        if macd > macd_p:
+            score -= 0.04; reasons.append("MACD hist rising (momentum weakening)")
+        if rsi < 42:
+            score -= 0.04; reasons.append(f"RSI {rsi:.1f} near exit zone")
+    else:
+        if plus_di > minus_di:
+            score += 0.04; reasons.append(f"+DI {plus_di:.1f} > -DI {minus_di:.1f}")
+        if vs_ema200 > 0:
+            score += 0.03; reasons.append(f"price +{vs_ema200:.1f}% above EMA200")
+        if macd < macd_p:
+            score -= 0.04; reasons.append("MACD hist falling (momentum weakening)")
+        if rsi > 58:
+            score -= 0.04; reasons.append(f"RSI {rsi:.1f} near exit zone")
+
+    conf = round(min(max(0.60 + score, 0.60), 0.94), 2)
+    return conf, reasons
+
+
+# ── Helpers ────────────────────────────────────────────────────
+
+def _close(reason: str) -> dict:
+    return {"action": "close", "confidence": 0.0,
+            "sl_pct": 0.0, "tp_pct": 0.0, "reasoning": reason}
+
+
+def _hold(conf: float, reason: str) -> dict:
+    log.info("HOLD conf=%.2f — %s", conf, reason)
+    return {"action": "hold", "confidence": conf,
+            "sl_pct": 0.0, "tp_pct": 0.0, "reasoning": reason}

@@ -99,6 +99,15 @@ def run():
                             )
                             continue
 
+                    # ── RSI gate (code-level, don't trust model math) ─────
+                    rsi = snap["indicators"]["rsi14_4h"]
+                    if action == "short" and rsi < config.MIN_RSI_SHORT:
+                        log.info("SKIP %s — RSI %.2f below min %.1f for short", coin, rsi, config.MIN_RSI_SHORT)
+                        continue
+                    if action == "long" and rsi > config.MAX_RSI_LONG:
+                        log.info("SKIP %s — RSI %.2f above max %.1f for long", coin, rsi, config.MAX_RSI_LONG)
+                        continue
+
                     # ── Confidence gate ───────────────────────────────
                     if conf < config.MIN_CONFIDENCE:
                         log.info("SKIP %s — confidence %.0f%% < %.0f%%",
