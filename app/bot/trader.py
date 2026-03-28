@@ -278,16 +278,12 @@ def run():
                     # ── Buy logic ────────────────────────────────────
                     else:
                         is_first_buy  = data["qty"] == 0
-                        dip_threshold = coin_param(coin, "dip_threshold", config.DIP_THRESHOLD)
-                        dca_drop      = coin_param(coin, "dca_drop_pct",  config.DCA_DROP_PCT)
+                        dca_drop      = coin_param(coin, "dca_drop_pct", config.DCA_DROP_PCT)
 
                         if is_first_buy:
-                            dip    = (high_24h - price) / high_24h if high_24h > 0 else 0
-                            dip_ok = dip >= dip_threshold
+                            dip = (high_24h - price) / high_24h if high_24h > 0 else 0
                         else:
-                            # DCA: buy more only when price drops below avg buy
-                            dip    = (data["avg_buy"] - price) / data["avg_buy"]
-                            dip_ok = price <= data["avg_buy"] * (1 - dca_drop)
+                            dip = (data["avg_buy"] - price) / data["avg_buy"]
 
                         if data["last_buy"]:
                             last_buy_dt = datetime.fromisoformat(data["last_buy"])
@@ -317,8 +313,31 @@ def run():
                             log.warning("No indicators for %s, skipping.", coin)
                             continue
 
-                        trend_ok  = price > ind["ema200"]
-                        rsi_ok    = ind["rsi14"] < config.RSI_BUY_THRESHOLD
+                        # ── Dynamic dip threshold (ATR-adjusted) ──────
+                        # ATR14% × 0.8 ensures the dip is meaningful for current volatility.
+                        # Per-coin override still works on top of this.
+                        atr_dip       = ind["atr14_pct"] / 100 * 0.8
+                        dip_threshold = coin_param(coin, "dip_threshold",
+                                                   max(atr_dip, config.DIP_THRESHOLD))
+
+                        if is_first_buy:
+                            # Price touched lower Bollinger Band counts as an alt dip signal
+                            dip_ok = dip >= dip_threshold or ind["bb_pct_b"] < config.BB_OVERSOLD_PCT_B
+                        else:
+                            # DCA: price must be below avg buy by dca_drop — BB not relevant here
+                            dip_ok = price <= data["avg_buy"] * (1 - dca_drop)
+
+                        # ── Trend: price above EMA200 and EMA is rising ─
+                        trend_ok = price > ind["ema200"] and ind["ema200_slope"]
+
+                        # ── RSI: stricter when in EMA50–EMA200 pullback zone ─
+                        above_ema50  = price > ind["ema50"]
+                        rsi_limit    = config.RSI_BUY_THRESHOLD if above_ema50 else config.RSI_BUY_BELOW_EMA50
+                        rsi_ok       = ind["rsi14"] < rsi_limit
+
+                        # ── MACD: selling pressure must be easing ─────
+                        macd_ok = ind["macd_hist"] > ind["macd_hist_prev"]
+
                         volume_ok = ind["vol_ratio"] < config.VOLUME_SPIKE_RATIO
 
                         if (
@@ -338,11 +357,15 @@ def run():
                                     btc_price,
                                 )
                             elif not trend_ok:
-                                log.info("SKIP %s — below 200 EMA | EMA=%.2f price=%.2f",
-                                         coin, ind["ema200"], price)
+                                log.info("SKIP %s — below EMA200 or EMA falling | EMA=%.2f slope=%s price=%.2f",
+                                         coin, ind["ema200"], "up" if ind["ema200_slope"] else "down", price)
                             elif not rsi_ok:
-                                log.info("SKIP %s — RSI %.1f not oversold (>%d)",
-                                         coin, ind["rsi14"], config.RSI_BUY_THRESHOLD)
+                                zone = "above EMA50" if above_ema50 else "below EMA50"
+                                log.info("SKIP %s — RSI %.1f >= %d (%s)",
+                                         coin, ind["rsi14"], rsi_limit, zone)
+                            elif not macd_ok:
+                                log.info("SKIP %s — MACD hist still falling (%.4f < prev %.4f)",
+                                         coin, ind["macd_hist"], ind["macd_hist_prev"])
                             elif not volume_ok:
                                 log.info("SKIP %s — volume spike %.1fx avg", coin, ind["vol_ratio"])
                             else:
@@ -367,16 +390,16 @@ def run():
                                     avg_buy=data["avg_buy"],
                                 )
 
-                                buy_type = "DCA" if not is_first_buy else "Buy"
+                                buy_type   = "DCA" if not is_first_buy else "Buy"
+                                dip_signal = "BB lower band" if (is_first_buy and ind["bb_pct_b"] < config.BB_OVERSOLD_PCT_B and dip < dip_threshold) else f"-{dip * 100:.2f}% {'from avg' if not is_first_buy else 'from 24h high'}"
                                 send_telegram(
                                     f"🟢 <b>{buy_type.upper()} {coin}</b>\n"
                                     f"Price:     ${filled_price:,.4f}\n"
                                     f"Spent:     ${config.TRADE_AMOUNT_USDT}\n"
-                                    f"Dip:       -{dip * 100:.2f}% "
-                                    f"{'from avg buy' if not is_first_buy else 'from 24h high'}\n"
+                                    f"Signal:    {dip_signal}\n"
                                     f"Avg buy:   ${data['avg_buy']:,.4f}\n"
-                                    f"RSI:       {ind['rsi14']:.1f}\n"
-                                    f"EMA200:    ${ind['ema200']:,.2f}\n"
+                                    f"RSI:       {ind['rsi14']:.1f}  |  MACD ↑  |  BB %B {ind['bb_pct_b']:.2f}\n"
+                                    f"EMA200:    ${ind['ema200']:,.2f}  |  EMA50 {'✓' if above_ema50 else '⚠ below'}\n"
                                     f"Position:  ${data['avg_buy'] * data['qty']:.2f} / ${config.MAX_POSITION_USDT}\n"
                                     f"Day spend: ${state['daily_spend']['amount']:.2f} / ${config.MAX_DAILY_SPEND}\n"
                                     f"USDT left: ${usdt_balance:.2f}"

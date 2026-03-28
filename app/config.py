@@ -61,9 +61,11 @@ HEALTH_PORT = 8080  # Port for the health check HTTP server
 COIN_OVERRIDES: dict[str, dict] = {}
 
 # ── Quant filters ─────────────────────────────────────────
-RSI_BUY_THRESHOLD = 45  # Only buy when RSI(14) is below this
-VOLUME_SPIKE_RATIO = 2.0  # Skip if today's volume > N × 20-day average
-INDICATOR_TTL_SECS = 3600  # Cache daily indicators for 1 hour
+RSI_BUY_THRESHOLD       = 45    # RSI(14) limit when price is above EMA50 (healthy uptrend)
+RSI_BUY_BELOW_EMA50     = 38    # Stricter RSI limit when price is in EMA50–EMA200 pullback zone
+VOLUME_SPIKE_RATIO      = 2.0   # Skip if today's volume > N × 20-day average
+BB_OVERSOLD_PCT_B       = 0.2   # Bollinger %B — price near lower band (alt dip signal)
+INDICATOR_TTL_SECS      = 3600  # Cache daily indicators for 1 hour
 
 # ── Logging ───────────────────────────────────────────────
 LOG_FILE = "bot.log"

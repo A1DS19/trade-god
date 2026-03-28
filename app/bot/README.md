@@ -15,23 +15,30 @@ Every 5 minutes the bot:
 
 All conditions must be true:
 
-| Condition | Default |
+| Condition | Detail |
 |---|---|
-| Price dipped 3%+ from its 24h high | `DIP_THRESHOLD = 3%` |
-| RSI(14) < 45 | `RSI_BUY_THRESHOLD = 45` |
-| Price above 200 EMA | trend filter |
-| BTC is in an uptrend (price > BTC 200 EMA) | macro filter |
-| No buy in the last 4 hours for this coin | `BUY_COOLDOWN_HRS = 4` |
-| Daily spend limit not reached | `MAX_DAILY_SPEND = $80` |
-| Position cost basis below cap | `MAX_POSITION_USDT = $50` |
+| **Dip signal** (either) | Price dipped ≥ ATR-adjusted threshold from 24h high, OR Bollinger %B < 0.2 (price near lower band) |
+| **Trend** | Price above 200-day EMA AND 200-day EMA is rising |
+| **RSI** | RSI(14) < 45 if price above EMA50; RSI(14) < 38 if in EMA50–EMA200 pullback zone |
+| **MACD** | Daily MACD histogram improving (hist > prev bar) — selling pressure easing |
+| **BTC macro** | BTC price above 200-day EMA (rising) AND above 200-week EMA |
+| **Volume** | No volume spike (vol ratio < 2×) — avoids panic dumps and news events |
+| **Cooldown** | No buy in the last 4h for this coin |
+| **Limits** | Daily spend and per-coin position cap not exceeded |
+
+**Dip threshold is dynamic:** `max(ATR14 × 0.8%, DIP_THRESHOLD)` — adapts to each coin's current volatility instead of a fixed 3% for everything.
 
 ### Exit logic
 
 | Trigger | Action |
 |---|---|
-| Price up 5% from avg buy | Sell 60%, let 40% ride |
+| Price up 5% from avg buy | Sell 60%, let 40% ride to trailing stop |
 | Price drops 10% from position peak | Full trailing stop exit |
 | Price drops 3% below avg buy price | DCA — buy another $8 |
+
+### DCA (Dollar-Cost Averaging)
+
+After the first buy, if price falls 3%+ below the avg buy price the bot buys again, lowering the cost basis. The same cooldown and position cap apply.
 
 ---
 
@@ -46,7 +53,10 @@ All settings in `app/config.py`:
 | `MAX_POSITION_USDT` | $50 | Max cost basis per coin |
 | `MAX_DAILY_SPEND` | $80 | Max spend per UTC day |
 | `DIP_THRESHOLD` | 3% | Dip from 24h high to trigger buy |
-| `RSI_BUY_THRESHOLD` | 45 | RSI must be below this to buy |
+| `RSI_BUY_THRESHOLD` | 45 | RSI limit when price is above EMA50 |
+| `RSI_BUY_BELOW_EMA50` | 38 | Stricter RSI limit in EMA50–EMA200 pullback zone |
+| `BB_OVERSOLD_PCT_B` | 0.2 | Bollinger %B threshold for lower-band dip signal |
+| `VOLUME_SPIKE_RATIO` | 2.0 | Skip buy if vol ratio exceeds this |
 | `TAKE_PROFIT` | 5% | Partial sell trigger |
 | `PARTIAL_TAKE_PROFIT_PCT` | 60% | Fraction sold at take profit |
 | `TRAILING_STOP_PCT` | 10% | Exit if price drops this far from peak |
@@ -54,6 +64,9 @@ All settings in `app/config.py`:
 | `BUY_COOLDOWN_HRS` | 4h | Min time between buys per coin |
 | `CHECK_INTERVAL` | 300s | Seconds between market scans |
 | `WATCHDOG_TIMEOUT_MINS` | 15 | Telegram alert if no cycle in this long |
+| `INDICATOR_TTL_SECS` | — | Indicator cache TTL (avoids redundant API calls) |
+
+Per-coin overrides are supported via `COIN_OVERRIDES` in `app/config.py`.
 
 ---
 
@@ -73,9 +86,9 @@ DATABASE_URL=postgresql://tradegod:tradegod@db:5432/tradegod
 
 | File | Description |
 |---|---|
-| `trader.py` | Main loop — buy/sell logic, DCA, trailing stop |
+| `trader.py` | Main loop — buy/sell logic, DCA, trailing stop, watchdog |
 | `exchange.py` | Binance spot wrappers with retry logic |
-| `indicators.py` | EMA, RSI, volume ratio |
+| `indicators.py` | EMA50/200 (daily + weekly slope), RSI, MACD, Bollinger Bands, ATR, volume ratio with cache |
 | `universe.py` | Top coin list (CoinGecko + CoinPaprika fallback) |
 | `commands.py` | Telegram command handler (`/status`, `/pnl`, `/trades`, `/balance`) |
 | `notifier.py` | Telegram alerts and daily 8am UTC summary |
