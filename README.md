@@ -4,7 +4,6 @@
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Binance](https://img.shields.io/badge/Binance-Futures%20%26%20Spot-F0B90B?logo=binance&logoColor=black)
-![Claude](https://img.shields.io/badge/Claude-Sonnet-D97757?logo=anthropic&logoColor=white)
 ![Deploy](https://img.shields.io/badge/Deployed-AWS%20Lightsail-FF9900?logo=amazonaws&logoColor=white)
 
 Two independent trading strategies running in parallel on Binance.
@@ -12,7 +11,7 @@ Two independent trading strategies running in parallel on Binance.
 | Strategy | Market | Style | Docs |
 |---|---|---|---|
 | **DCA Bot** | Spot | Buy dips, partial TP, trailing stop | [app/bot/README.md](app/bot/README.md) |
-| **Swing Agent** | USDT-M Futures | LLM-driven longs & shorts, hourly re-evaluation | [app/swing/README.md](app/swing/README.md) |
+| **Swing Agent** | USDT-M Futures | Rule-based longs & shorts, hourly re-evaluation | [app/swing/README.md](app/swing/README.md) |
 
 ---
 
@@ -33,10 +32,12 @@ Two independent trading strategies running in parallel on Binance.
 ## Swing Agent
 
 - Trades USDT-M perpetual futures (long and short)
-- LLM (Claude Sonnet) evaluates EMA alignment, RSI, volume, and funding rate every hour
-- Enters only when EMA stack and at least one confirming signal agree on direction
-- Places SL/TP bracket orders on Binance at entry
-- Closes positions that contradict the current trend rather than holding losers
+- Rule-based decision engine evaluates market regime, EMA stack, MACD, RSI, ADX, volume, funding rate, and open interest every hour
+- Regime filter: ADX > 25 required — no trades in ranging/choppy markets
+- Entry requires all 5 conditions: daily EMA bias + 4h EMA alignment + MACD direction + ADX + RSI gate (> 42 for shorts, < 58 for longs)
+- Confidence scored from supporting/contradicting signals; minimum 0.70 to enter
+- Exit on MACD divergence, RSI threshold breach, EMA flip, ADX collapse, or OI drop
+- ATR-based SL/TP sizing (1.5× and 3× ATR14); client-side safety net enforced each cycle
 - Telegram notifications for every open and close
 
 ---
@@ -51,6 +52,8 @@ Two independent trading strategies running in parallel on Binance.
 - **Binance API** — market data + order execution
 - **CoinGecko / CoinPaprika** — coin universe (CoinPaprika fallback)
 - **Telegram Bot API** — trade alerts, daily summary, commands
+
+No external AI APIs — the swing agent uses a deterministic rule-based engine.
 
 ---
 
@@ -94,8 +97,6 @@ TELEGRAM_BOT_TOKEN=your_token
 TELEGRAM_CHAT_ID=your_chat_id
 DATABASE_URL=postgresql://tradegod:tradegod@db:5432/tradegod
 
-# Swing Agent LLM
-ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 
 ---
@@ -195,11 +196,11 @@ app/
     notifier.py     — Telegram alerts and daily summary
     heartbeat.py    — shared cycle heartbeat for watchdog + health check
     healthcheck.py  — HTTP health check server (port 8080)
-  swing/            — LLM swing agent on futures (see app/swing/README.md)
-    main.py         — main loop, trade execution
-    agent.py        — LLM decision engine (system prompt + API call)
-    snapshot.py     — market snapshot assembly
-    indicators.py   — EMA, RSI, volume ratio (4h + daily)
+  swing/            — Rule-based swing agent on futures (see app/swing/README.md)
+    main.py         — main loop, trade execution, client-side SL/TP safety net
+    agent.py        — deterministic rule engine (regime, entry, exit, confidence scoring)
+    snapshot.py     — market snapshot assembly with ATR-based SL/TP hints
+    indicators.py   — EMA, RSI, MACD, ATR, ADX, OI change (4h + daily)
     exchange.py     — Binance Futures wrappers (open/close, SL/TP)
     notifier.py     — Telegram alerts (open, close)
     config.py       — swing-specific strategy constants and env vars
