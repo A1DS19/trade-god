@@ -1,5 +1,12 @@
 # trade-god
 
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Binance](https://img.shields.io/badge/Binance-Futures%20%26%20Spot-F0B90B?logo=binance&logoColor=black)
+![Claude](https://img.shields.io/badge/Claude-Sonnet-D97757?logo=anthropic&logoColor=white)
+![Deploy](https://img.shields.io/badge/Deployed-AWS%20Lightsail-FF9900?logo=amazonaws&logoColor=white)
+
 Two independent trading strategies running in parallel on Binance.
 
 | Strategy | Market | Style | Docs |
@@ -26,7 +33,7 @@ Two independent trading strategies running in parallel on Binance.
 ## Swing Agent
 
 - Trades USDT-M perpetual futures (long and short)
-- LLM (Llama 3.3 70B) evaluates EMA alignment, RSI, volume, and funding rate every hour
+- LLM (Claude Sonnet) evaluates EMA alignment, RSI, volume, and funding rate every hour
 - Enters only when EMA stack and at least one confirming signal agree on direction
 - Places SL/TP bracket orders on Binance at entry
 - Closes positions that contradict the current trend rather than holding losers
@@ -88,7 +95,7 @@ TELEGRAM_CHAT_ID=your_chat_id
 DATABASE_URL=postgresql://tradegod:tradegod@db:5432/tradegod
 
 # Swing Agent LLM
-NVIDIA_API_KEY=your_nvidia_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 
 ---

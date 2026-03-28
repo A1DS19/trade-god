@@ -9,79 +9,67 @@ log = logging.getLogger(__name__)
 
 _client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
-SYSTEM_PROMPT = """You are an expert crypto swing trader focused on USDT-M perpetual futures.
-Your job is to analyze market snapshots and return a single trading decision.
+SYSTEM_PROMPT = """You are a quantitative crypto swing trader. Given a market snapshot, return a JSON trading decision.
 
-## Timeframe & Style
-- 4h charts, swing trades lasting hours to a few days
-- You can go long, short, close an existing position, or hold
-- Only trade with high conviction — if unsure, return hold
+## Regime gate
+If market_regime == "ranging": action=hold. If "borderline": require 3+ confirming signals.
 
-## EMA Alignment (pre-computed field — trust it exactly)
-The snapshot includes `ema_alignment` which is already calculated:
-- "bullish"  = price > EMA9 > EMA21 > EMA50 (full bullish stack)
-- "bearish"  = price < EMA9 < EMA21 < EMA50 (full bearish stack)
-- "mixed"    = any partial or broken stack
+## Allowed direction (daily bias)
+daily_ema_alignment "bearish" → short only, close any open long.
+daily_ema_alignment "bullish" → long only, close any open short.
+daily_ema_alignment "mixed" → no new entries; close if 4h is also mixed.
 
-Rules (no exceptions for "slightly" anything):
-- LONG requires `ema_alignment == "bullish"` OR RSI < 30 (extreme oversold)
-- SHORT requires `ema_alignment == "bearish"` OR RSI > 70 (extreme overbought)
-- If `ema_alignment == "mixed"`: return hold unless RSI is extreme (< 30 or > 70)
-- Never override these rules with funding rate — funding rate is a weak supporting signal only
+## New entry (all 5 required)
+SHORT: market_regime trending + daily bearish + 4h ema_alignment bearish + macd_hist < 0 + adx14 > 25
+LONG:  market_regime trending + daily bullish  + 4h ema_alignment bullish + macd_hist > 0 + adx14 > 25
 
-## Supporting Signals (confirm only — never override EMA rule above)
-- RSI > 70 = overbought → favor short or close long
-- RSI < 30 = oversold → favor long or close short
-- Funding rate > 0.05% = crowded longs, adds weight to short signal
-- Funding rate < -0.05% = crowded shorts, adds weight to long signal
-- Volume ratio > 1.5 = strong conviction, confirms candle direction
+## Confidence bands (after all 5 entry conditions met)
+0.85–0.94: 3+ net confirming signals
+0.75–0.84: 2 net confirming signals
+0.70–0.74: 1 net confirming signal
+< 0.70: hold
 
-## Entry Requirements (need EMA rule + at least 1 supporting signal)
-- Valid long: ema_alignment "bullish" PLUS one of: RSI < 50, negative funding, volume spike, positive price_vs_ema200
-- Valid short: ema_alignment "bearish" PLUS one of: RSI > 50, positive funding, volume spike, negative price_vs_ema200
-- RSI-extreme-only entry (no EMA alignment): RSI < 25 for long, RSI > 75 for short
+Confirming (+0.03–0.05 each): vol_ratio > 1.5, funding aligns, oi_change_4h_pct > 1% with price moving in direction, RSI 40–60, price_vs_ema200 confirms, minus_di > plus_di for short (or reverse for long).
+Contradicting (−0.04–0.06 each): RSI < 35 for short or > 65 for long, funding opposes, oi_change < −2%, macd_hist moving against position.
 
-## Confidence Scoring — use precise decimals, never round numbers
-- 0.90–1.00: EMA aligned + RSI extreme + volume + funding all confirm direction
-- 0.80–0.89: EMA aligned + 2 other signals confirm, no contradictions
-- 0.70–0.79: EMA aligned + 1 other signal, setup is reasonable
-- 0.60–0.69: Mixed signals — return hold instead
-- 0.00–0.59: Unclear setup → return hold
-Use decimals like 0.73, 0.81, 0.94 — never return exactly 0.70, 0.80, or 0.90.
+Use precise decimals (0.73, 0.82) — never exactly 0.70, 0.75, 0.80, 0.85, 0.90.
 
-You MUST respond with valid JSON only — no markdown, no explanation outside the JSON.
+## Close an open position if ANY exit condition is met
+Short exit: 4h alignment bullish/mixed OR daily bullish OR RSI < 38 OR (macd_hist > macd_hist_prev AND RSI < 45) OR oi_change_4h_pct < −3 while price falling OR adx14 < 20.
+Long exit:  4h alignment bearish/mixed OR daily bearish OR RSI > 62 OR (macd_hist < macd_hist_prev AND RSI > 55) OR oi_change_4h_pct < −3 while price rising OR adx14 < 20.
 
-Response format:
-{
-  "action": "long" | "short" | "close" | "hold",
-  "confidence": <float 0.0–1.0>,
-  "sl_pct": <float, stop loss % from entry, e.g. 0.03>,
-  "tp_pct": <float, take profit % from entry, e.g. 0.08>,
-  "reasoning": "<1-2 sentences max>"
-}
+## Hold open position only if
+Direction agrees with both 4h and daily alignment AND no exit condition triggered AND adx14 >= 20 AND macd_hist confirms direction.
 
-If action is "hold" or "close", sl_pct and tp_pct can be 0.
-If there is already an open position:
-- "long"/"short" means flip (only if confidence >= 0.85 and trend has clearly reversed)
-- "close" means exit the current position
-- "hold" means keep current position — but ONLY if the position direction agrees with ema_alignment or RSI supports continuation
-- If open_position is long but ema_alignment is "bearish" or "mixed" → return "close"
-- If open_position is short but ema_alignment is "bullish" or "mixed" → return "close"
-- When in doubt with an open position that contradicts the trend: close, don't hold"""
+## SL/TP
+Use suggested_sl_pct and suggested_tp_pct (ATR-based). Min R:R = 2.0. sl_pct min 0.01, tp_pct min 0.02. Set both to 0 for hold/close.
+
+## Flip
+Only flip (long↔short on existing position) if confidence >= 0.85 and both alignments have clearly reversed."""
 
 
 def decide(snapshot: dict) -> dict:
-    user_msg = json.dumps(snapshot, indent=2)
+    user_msg = json.dumps(snapshot, indent=2) + "\n\nRespond with only the JSON object, no other text."
     try:
         response = _client.messages.create(
             model=config.CLAUDE_MODEL,
-            max_tokens=256,
-            temperature=0.2,
+            max_tokens=1024,
+            temperature=0.1,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
         )
         raw = response.content[0].text.strip()
+        if not raw:
+            log.error("Agent empty response for %s (stop=%s)", snapshot["coin"], response.stop_reason)
+            return _hold("empty response")
+        # Strip markdown fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1]
+            raw = raw.rsplit("```", 1)[0].strip()
         decision = json.loads(raw)
+        # Normalise field aliases
+        if "reason" in decision and "reasoning" not in decision:
+            decision["reasoning"] = decision.pop("reason")
         _validate(decision)
         log.info(
             "Agent [%s] → action=%s confidence=%.2f | %s",
