@@ -7,7 +7,7 @@ from app.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID  # shared credentials
 BINANCE_API_KEY    = os.environ["BINANCE_API_KEY_FUTURES"]
 BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY_FUTURES"]
 # ── Coins to watch ────────────────────────────────────────
-COINS = ["ETH", "SOL", "BNB", "XRP"]
+COINS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "AVAX", "LINK", "SUI"]
 
 # ── Risk / sizing ─────────────────────────────────────────
 LEVERAGE       = 5      # Default futures leverage
