@@ -32,6 +32,26 @@ def run():
             positions = get_open_positions(client)
             log.info("Open positions: %s", list(positions.keys()) or "none")
 
+            # ── Client-side SL/TP safety net ──────────────────────────
+            for coin, pos in list(positions.items()):
+                if coin not in config.COINS:
+                    continue
+                price_now = get_price(client, coin)
+                chg = (price_now - pos["entry"]) / pos["entry"]
+                hit_sl = (pos["side"] == "long"  and chg <= -config.DEFAULT_SL_PCT) or \
+                         (pos["side"] == "short" and chg >=  config.DEFAULT_SL_PCT)
+                hit_tp = (pos["side"] == "long"  and chg >=  config.DEFAULT_TP_PCT) or \
+                         (pos["side"] == "short" and chg <= -config.DEFAULT_TP_PCT)
+                if hit_sl or hit_tp:
+                    label = "SL" if hit_sl else "TP"
+                    log.info("CLIENT %s %s chg=%.2f%%", label, coin, chg * 100)
+                    cancel_open_orders(client, coin)
+                    close_position(client, coin, positions)
+                    pnl = pos["pnl"]
+                    log.info("NOTIFY client-%s %s pnl=%.4f", label, coin, pnl)
+                    notifier.notify_close(coin, pos, pnl, f"client-side {label} hit ({chg*100:+.1f}%)")
+                    positions = get_open_positions(client)
+
             for coin in config.COINS:
                 try:
                     snap     = snapshot.build(client, coin)

@@ -20,8 +20,8 @@ daily_ema_alignment "bullish" → long only, close any open short.
 daily_ema_alignment "mixed" → no new entries; close if 4h is also mixed.
 
 ## New entry (all 5 required)
-SHORT: market_regime trending + daily bearish + 4h ema_alignment bearish + macd_hist < 0 + adx14 > 25
-LONG:  market_regime trending + daily bullish  + 4h ema_alignment bullish + macd_hist > 0 + adx14 > 25
+SHORT: market_regime trending + daily bearish + 4h ema_alignment bearish + macd_hist < 0 + adx14 > 25 + RSI > 42
+LONG:  market_regime trending + daily bullish  + 4h ema_alignment bullish + macd_hist > 0 + adx14 > 25 + RSI < 58
 
 ## Confidence bands (after all 5 entry conditions met)
 0.85–0.94: 3+ net confirming signals
