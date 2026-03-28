@@ -82,7 +82,8 @@ def run():
 
                     # ── Hold ──────────────────────────────────────────
                     if action == "hold":
-                        log.info("HOLD %s (%.0f%%) — %s", coin, conf * 100, decision["reasoning"])
+                        label = f"{conf * 100:.0f}%" if conf > 0 else "blocked"
+                        log.info("HOLD %s (%s) — %s", coin, label, decision["reasoning"])
                         continue
 
                     # ── Loss cooldown ─────────────────────────────────
