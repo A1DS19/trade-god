@@ -15,6 +15,28 @@ from app.swing.exchange import (
 log = logging.getLogger(__name__)
 
 
+def _extract_exit_price(close_order: dict | None, fallback_price: float) -> float:
+    if close_order and close_order.get("avgPrice") is not None:
+        try:
+            avg_price = float(close_order["avgPrice"])
+            if avg_price > 0:
+                return avg_price
+        except (TypeError, ValueError):
+            pass
+    return fallback_price
+
+
+def _calc_realized_pnl(pos: dict, exit_price: float) -> tuple[float, float]:
+    qty = float(pos["qty"])
+    entry = float(pos["entry"])
+    if pos["side"] == "long":
+        pnl = (exit_price - entry) * qty
+    else:
+        pnl = (entry - exit_price) * qty
+    pnl_pct = pnl / pos["notional"] if pos["notional"] else 0.0
+    return pnl, pnl_pct
+
+
 def run():
     db.init_db()
     client = Client(config.BINANCE_API_KEY, config.BINANCE_SECRET_KEY)
@@ -47,16 +69,16 @@ def run():
                     exit_reason = f"client-side {label} ({chg*100:+.1f}%)"
                     log.info("CLIENT %s %s chg=%.2f%%", label, coin, chg * 100)
                     cancel_open_orders(client, coin)
-                    close_position(client, coin, positions)
-                    pnl = pos["pnl"]
-                    pnl_pct = pnl / pos["notional"] if pos["notional"] else 0.0
+                    close_order = close_position(client, coin, positions)
+                    exit_price = _extract_exit_price(close_order, price_now)
+                    pnl, pnl_pct = _calc_realized_pnl(pos, exit_price)
                     log.info("NOTIFY client-%s %s pnl=%.4f", label, coin, pnl)
                     notifier.notify_close(coin, pos, pnl, exit_reason)
                     db_trade = db.get_open_swing_trade(coin)
                     if db_trade:
                         db.log_swing_close(
                             trade_id=db_trade.id,
-                            exit_price=price_now,
+                            exit_price=exit_price,
                             realized_pnl_usd=pnl,
                             realized_pnl_pct=pnl_pct,
                             exit_reason=exit_reason,
@@ -75,16 +97,17 @@ def run():
                     # ── Close existing position ────────────────────────
                     if action == "close" and pos:
                         cancel_open_orders(client, coin)
-                        close_position(client, coin, positions)
-                        pnl = pos["pnl"]
-                        pnl_pct = pnl / pos["notional"] if pos["notional"] else 0.0
+                        close_order = close_position(client, coin, positions)
+                        market_price = get_price(client, coin)
+                        exit_price = _extract_exit_price(close_order, market_price)
+                        pnl, pnl_pct = _calc_realized_pnl(pos, exit_price)
                         log.info("NOTIFY close %s pnl=%.4f", coin, pnl)
                         notifier.notify_close(coin, pos, pnl, decision["reasoning"])
                         db_trade = db.get_open_swing_trade(coin)
                         if db_trade:
                             db.log_swing_close(
                                 trade_id=db_trade.id,
-                                exit_price=get_price(client, coin),
+                                exit_price=exit_price,
                                 realized_pnl_usd=pnl,
                                 realized_pnl_pct=pnl_pct,
                                 exit_reason=decision["reasoning"][:50],
@@ -140,16 +163,17 @@ def run():
                     if pos and pos["side"] != action:
                         log.info("FLIP %s — closing %s before opening %s", coin, pos["side"], action)
                         cancel_open_orders(client, coin)
-                        close_position(client, coin, positions)
-                        pnl = pos["pnl"]
-                        pnl_pct = pnl / pos["notional"] if pos["notional"] else 0.0
+                        close_order = close_position(client, coin, positions)
+                        market_price = get_price(client, coin)
+                        exit_price = _extract_exit_price(close_order, market_price)
+                        pnl, pnl_pct = _calc_realized_pnl(pos, exit_price)
                         log.info("NOTIFY flip-close %s pnl=%.4f", coin, pnl)
                         notifier.notify_close(coin, pos, pnl, f"flipping to {action}")
                         db_trade = db.get_open_swing_trade(coin)
                         if db_trade:
                             db.log_swing_close(
                                 trade_id=db_trade.id,
-                                exit_price=get_price(client, coin),
+                                exit_price=exit_price,
                                 realized_pnl_usd=pnl,
                                 realized_pnl_pct=pnl_pct,
                                 exit_reason=f"flip to {action}",

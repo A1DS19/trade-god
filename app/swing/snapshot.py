@@ -38,10 +38,11 @@ def build(client: Client, coin: str) -> dict:
     else:
         regime = "ranging"
 
-    # ATR-based SL/TP (1.5× and 3× ATR, min 1%/2%)
-    atr_pct      = ind["atr14"] / price * 100
-    suggested_sl = round(max(atr_pct * 1.5, 0.01), 3)
-    suggested_tp = round(max(atr_pct * 3.0, 0.02), 3)
+    # ATR-based SL/TP as fractions (0.03 = 3%)
+    # Exchange layer expects fractional percentages, not whole-number percents.
+    atr_frac     = ind["atr14"] / price
+    suggested_sl = round(max(atr_frac * 1.5, 0.01), 4)
+    suggested_tp = round(max(atr_frac * 3.0, 0.02), 4)
 
     # Strip unrealized PnL — prevents model from anchoring to "profitable position"
     open_pos_for_model = None

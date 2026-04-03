@@ -66,8 +66,8 @@ def decide(snapshot: dict) -> dict:
     sl = snapshot["suggested_sl_pct"]
     tp = snapshot["suggested_tp_pct"]
     reasoning = f"{direction.upper()} entry | " + "; ".join(reasons)
-    log.info("SIGNAL %s %s conf=%.2f sl=%.3f tp=%.3f",
-             snapshot["coin"], direction, conf, sl, tp)
+    log.info("SIGNAL %s %s conf=%.2f sl=%.2f%% tp=%.2f%%",
+             snapshot["coin"], direction, conf, sl * 100, tp * 100)
     return {"action": direction, "confidence": conf,
             "sl_pct": sl, "tp_pct": tp, "reasoning": reasoning}
 
