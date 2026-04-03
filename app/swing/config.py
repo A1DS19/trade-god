@@ -18,6 +18,9 @@ DEFAULT_TP_PCT = 0.08   # 8% take profit from entry
 MIN_CONFIDENCE  = 0.70  # Skip trade if agent confidence < this
 MIN_RSI_SHORT   = 42.0  # Don't short if RSI already approaching oversold
 MAX_RSI_LONG    = 58.0  # Don't long if RSI already approaching overbought
+SHORT_EXIT_RSI_FLOOR = 32.0  # Exit short only if RSI gets very deeply oversold
+LONG_EXIT_RSI_CEIL = 68.0    # Exit long only if RSI gets very deeply overbought
+SOFT_EXIT_MAX_LOSS_PCT = 0.020  # Delay soft exits while unrealized loss is small (<2.0%)
 
 # ── Loop ──────────────────────────────────────────────────
 CHECK_INTERVAL    = 3600  # Seconds between scans (1 hour)

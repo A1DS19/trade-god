@@ -15,6 +15,17 @@ from app.swing.exchange import (
 log = logging.getLogger(__name__)
 
 
+def _is_hard_exit(reason: str) -> bool:
+    return (
+        reason.startswith("4h EMA turned bullish")
+        or reason.startswith("4h EMA turned bearish")
+        or reason.startswith("daily EMA turned bullish")
+        or reason.startswith("daily EMA turned bearish")
+        or reason.startswith("ADX ")
+        or reason.startswith("client-side ")
+    )
+
+
 def _extract_exit_price(close_order: dict | None, fallback_price: float) -> float:
     if close_order and close_order.get("avgPrice") is not None:
         try:
@@ -96,13 +107,30 @@ def run():
 
                     # ── Close existing position ────────────────────────
                     if action == "close" and pos:
+                        reason = decision["reasoning"]
+                        unrealized_pnl, unrealized_pnl_pct = _calc_realized_pnl(pos, price)
+                        log.info(
+                            "CLOSE-CHECK %s reason=%s unrealized=%.2f%%",
+                            coin, reason, unrealized_pnl_pct * 100,
+                        )
+                        if (
+                            not _is_hard_exit(reason)
+                            and unrealized_pnl_pct < 0
+                            and abs(unrealized_pnl_pct) < config.SOFT_EXIT_MAX_LOSS_PCT
+                        ):
+                            log.info(
+                                "HOLD %s — soft exit delayed at %.2f%% loss (%s)",
+                                coin, unrealized_pnl_pct * 100, reason,
+                            )
+                            continue
+
                         cancel_open_orders(client, coin)
                         close_order = close_position(client, coin, positions)
                         market_price = get_price(client, coin)
                         exit_price = _extract_exit_price(close_order, market_price)
                         pnl, pnl_pct = _calc_realized_pnl(pos, exit_price)
                         log.info("NOTIFY close %s pnl=%.4f", coin, pnl)
-                        notifier.notify_close(coin, pos, pnl, decision["reasoning"])
+                        notifier.notify_close(coin, pos, pnl, reason)
                         db_trade = db.get_open_swing_trade(coin)
                         if db_trade:
                             db.log_swing_close(
@@ -110,7 +138,7 @@ def run():
                                 exit_price=exit_price,
                                 realized_pnl_usd=pnl,
                                 realized_pnl_pct=pnl_pct,
-                                exit_reason=decision["reasoning"][:50],
+                                exit_reason=reason[:50],
                             )
                         continue
 

@@ -75,12 +75,14 @@ def decide(snapshot: dict) -> dict:
 # ── Exit conditions ────────────────────────────────────────────
 
 def _check_short_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx) -> str | None:
-    if ema4h in ("bullish", "mixed"):
-        return f"4h EMA turned {ema4h}"
+    if ema4h == "bullish":
+        return "4h EMA turned bullish"
     if ema_d == "bullish":
         return "daily EMA turned bullish"
-    if rsi < 38:
-        return f"RSI {rsi:.1f} < 38 (oversold approach)"
+    if ema4h == "mixed" and macd > macd_p and adx < 25:
+        return f"4h EMA mixed + MACD weakening + ADX {adx:.1f} < 25"
+    if rsi < config.SHORT_EXIT_RSI_FLOOR:
+        return f"RSI {rsi:.1f} < {config.SHORT_EXIT_RSI_FLOOR:.0f} (deep oversold)"
     if macd > macd_p and rsi < 45:
         return f"MACD divergence (hist {macd:.4f} > prev {macd_p:.4f}) with RSI {rsi:.1f}"
     if oi_chg < -3 and macd > macd_p:
@@ -91,12 +93,14 @@ def _check_short_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx) -> str | Non
 
 
 def _check_long_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx) -> str | None:
-    if ema4h in ("bearish", "mixed"):
-        return f"4h EMA turned {ema4h}"
+    if ema4h == "bearish":
+        return "4h EMA turned bearish"
     if ema_d == "bearish":
         return "daily EMA turned bearish"
-    if rsi > 62:
-        return f"RSI {rsi:.1f} > 62 (overbought approach)"
+    if ema4h == "mixed" and macd < macd_p and adx < 25:
+        return f"4h EMA mixed + MACD weakening + ADX {adx:.1f} < 25"
+    if rsi > config.LONG_EXIT_RSI_CEIL:
+        return f"RSI {rsi:.1f} > {config.LONG_EXIT_RSI_CEIL:.0f} (deep overbought)"
     if macd < macd_p and rsi > 55:
         return f"MACD divergence (hist {macd:.4f} < prev {macd_p:.4f}) with RSI {rsi:.1f}"
     if oi_chg < -3 and macd < macd_p:
