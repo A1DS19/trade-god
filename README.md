@@ -35,12 +35,53 @@ Two independent trading strategies running in parallel on Binance.
 - Trades 9 USDT-M perpetual futures pairs (BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI)
 - Rule-based decision engine — no LLM, fully deterministic
 - Indicators: EMA stack (9/21/50 on 4h, 21/50/200 daily), RSI, Stochastic RSI, MACD, ATR, ATR percentile, ADX (+DI/−DI), VWAP, volume ratio, funding rate, open interest change, long/short ratio, taker buy/sell ratio
-- Regime filter: ADX > 25 required — no trades in ranging/choppy markets
-- Entry requires all 5 conditions: daily EMA bias + 4h EMA alignment + MACD direction + ADX + RSI gate (> 42 for shorts, < 58 for longs)
-- Confidence scored from 11 confirming/contradicting signals; minimum 0.70 to enter
+- Regime filter: no entries in ranging markets (`ADX < 20`), minimum entry ADX `>= 22`
+- Entry uses daily bias + 4h strict or partial alignment + MACD direction + ADX gate; RSI now contributes via confidence penalties (not hard block)
+- Confidence scored from 11 confirming/contradicting signals; minimum 0.80 to enter
 - Exit on MACD divergence, RSI threshold breach, EMA flip, ADX collapse, or OI drop
 - ATR-based SL/TP sizing (1.5× and 3× ATR14); client-side safety net enforced each cycle
+- Position size scales by confidence (`$5` to `$10`)
 - Telegram notifications for every open and close
+
+### Swing replay benchmark (v1 vs v2)
+
+Run date: `2026-04-06` (UTC)  
+Window: `2025-01-01` to `2026-01-01`  
+Universe: `BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI`
+
+| Strategy | Trades | Win rate | Net PnL | Avg PnL/trade | Profit factor | Max DD | Avg entry conf |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `v1` (legacy strict) | 38 | 57.89% | 3.36 | 0.09 | 1.32 | 4.65 | 0.76 |
+| `v2` (current tuned) | 41 | 51.22% | 4.92 | 0.12 | 1.34 | 6.82 | 0.84 |
+
+Reproduce:
+
+```bash
+python -m app.swing.backtest_replay \
+  --coins BTC,ETH,SOL,BNB,XRP,DOGE,AVAX,LINK,SUI \
+  --start 2025-01-01T00:00:00Z \
+  --end 2026-01-01T00:00:00Z \
+  --fee-bps 4 \
+  --slippage-bps 2
+```
+
+Notes: public kline replay, neutralized funding/OI/L-S/taker features, configurable fees/slippage, no latency modeling.
+
+Cost-aware aggregate snapshot (`fee=4 bps`, `slippage=2 bps`, per side):
+
+| Strategy | Trades | Win rate | Net PnL | Gross PnL | Fees | Avg PnL/trade | Profit factor | Max DD |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `v1` (legacy strict) | 38 | 55.26% | 2.29 | 3.04 | 0.76 | 0.06 | 1.21 | 4.54 |
+| `v2` (current tuned) | 41 | 48.78% | 3.43 | 4.47 | 1.04 | 0.08 | 1.22 | 6.89 |
+
+5-year cost-aware aggregate snapshot (`2021-01-01` to `2026-01-01`, same fee/slippage):
+
+| Strategy | Trades | Win rate | Net PnL | Gross PnL | Fees | Avg PnL/trade | Profit factor | Max DD |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `v1` (legacy strict) | 217 | 47.00% | -20.20 | -15.86 | 4.34 | -0.09 | 0.71 | 13.09 |
+| `v2` (current tuned) | 182 | 44.51% | -16.93 | -12.30 | 4.63 | -0.09 | 0.78 | 21.69 |
+
+Target status (`60–70% win rate` and `positive PnL`): not met yet on 5-year data.
 
 ---
 

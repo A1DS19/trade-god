@@ -32,10 +32,16 @@ def decide(snapshot: dict) -> dict:
     # ── STEP 1: Exit check for open position ──────────────────
     if pos:
         side = pos["side"]
-        if side == "short":
-            exit_reason = _check_short_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx)
+        entry = float(pos.get("entry", 0))
+        price = snapshot["price"]
+        if entry > 0:
+            unrealized_pct = (price - entry) / entry if side == "long" else (entry - price) / entry
         else:
-            exit_reason = _check_long_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx)
+            unrealized_pct = None
+        if side == "short":
+            exit_reason = _check_short_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx, unrealized_pct)
+        else:
+            exit_reason = _check_long_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx, unrealized_pct)
 
         if exit_reason:
             log.info("EXIT %s — %s", snapshot["coin"], exit_reason)
@@ -52,16 +58,26 @@ def decide(snapshot: dict) -> dict:
         return _hold(0.0, "ADX < 20 — ranging market, no entry")
 
     # ── STEP 3: Entry check ────────────────────────────────────
-    direction, block_reason = _check_entry(regime, ema4h, ema_d, rsi, macd, adx)
+    direction, entry_mode, block_reason = _check_entry(
+        ema4h, ema_d, macd, adx,
+        snapshot["price"], ind["ema9"], ind["ema21"], ind["ema50"],
+        plus_di, minus_di,
+    )
     if direction is None:
         return _hold(0.0, block_reason)
 
     # ── STEP 4: Confidence scoring ─────────────────────────────
     conf, reasons = _score_entry(direction, rsi, vol, funding, oi_chg,
                                  vs_ema200, plus_di, minus_di, macd, macd_p, regime,
-                                 stoch_k, atr_rank, vs_vwap, ls_ratio, taker_ratio)
+                                 stoch_k, atr_rank, vs_vwap, ls_ratio, taker_ratio,
+                                 entry_mode)
     if conf < config.MIN_CONFIDENCE:
         return _hold(conf, f"Confidence {conf:.2f} < {config.MIN_CONFIDENCE} — " + "; ".join(reasons))
+    if entry_mode == "partial" and conf < config.PARTIAL_MIN_CONFIDENCE:
+        return _hold(
+            conf,
+            f"Partial entry confidence {conf:.2f} < {config.PARTIAL_MIN_CONFIDENCE:.2f} — " + "; ".join(reasons),
+        )
 
     sl = snapshot["suggested_sl_pct"]
     tp = snapshot["suggested_tp_pct"]
@@ -69,21 +85,23 @@ def decide(snapshot: dict) -> dict:
     log.info("SIGNAL %s %s conf=%.2f sl=%.2f%% tp=%.2f%%",
              snapshot["coin"], direction, conf, sl * 100, tp * 100)
     return {"action": direction, "confidence": conf,
-            "sl_pct": sl, "tp_pct": tp, "reasoning": reasoning}
+            "sl_pct": sl, "tp_pct": tp, "reasoning": reasoning, "entry_mode": entry_mode}
 
 
 # ── Exit conditions ────────────────────────────────────────────
 
-def _check_short_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx) -> str | None:
+def _check_short_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx, unrealized_pct=None) -> str | None:
     if ema4h == "bullish":
         return "4h EMA turned bullish"
     if ema_d == "bullish":
         return "daily EMA turned bullish"
     if ema4h == "mixed" and macd > macd_p and adx < 25:
-        return f"4h EMA mixed + MACD weakening + ADX {adx:.1f} < 25"
+        # Only exit on soft chop signal if position is already in a meaningful loss
+        if unrealized_pct is None or unrealized_pct < -config.MIXED_EMA_EXIT_MIN_LOSS_PCT:
+            return f"4h EMA mixed + MACD weakening + ADX {adx:.1f} < 25"
     if rsi < config.SHORT_EXIT_RSI_FLOOR:
         return f"RSI {rsi:.1f} < {config.SHORT_EXIT_RSI_FLOOR:.0f} (deep oversold)"
-    if macd > macd_p and rsi < 45:
+    if macd > macd_p and rsi < config.MACD_DIV_EXIT_RSI_SHORT:
         return f"MACD divergence (hist {macd:.4f} > prev {macd_p:.4f}) with RSI {rsi:.1f}"
     if oi_chg < -3 and macd > macd_p:
         return f"OI falling {oi_chg:.1f}% (shorts covering)"
@@ -92,16 +110,18 @@ def _check_short_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx) -> str | Non
     return None
 
 
-def _check_long_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx) -> str | None:
+def _check_long_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx, unrealized_pct=None) -> str | None:
     if ema4h == "bearish":
         return "4h EMA turned bearish"
     if ema_d == "bearish":
         return "daily EMA turned bearish"
     if ema4h == "mixed" and macd < macd_p and adx < 25:
-        return f"4h EMA mixed + MACD weakening + ADX {adx:.1f} < 25"
+        # Only exit on soft chop signal if position is already in a meaningful loss
+        if unrealized_pct is None or unrealized_pct < -config.MIXED_EMA_EXIT_MIN_LOSS_PCT:
+            return f"4h EMA mixed + MACD weakening + ADX {adx:.1f} < 25"
     if rsi > config.LONG_EXIT_RSI_CEIL:
         return f"RSI {rsi:.1f} > {config.LONG_EXIT_RSI_CEIL:.0f} (deep overbought)"
-    if macd < macd_p and rsi > 55:
+    if macd < macd_p and rsi > config.MACD_DIV_EXIT_RSI_LONG:
         return f"MACD divergence (hist {macd:.4f} < prev {macd_p:.4f}) with RSI {rsi:.1f}"
     if oi_chg < -3 and macd < macd_p:
         return f"OI falling {oi_chg:.1f}% (longs covering)"
@@ -112,123 +132,155 @@ def _check_long_exit(ema4h, ema_d, rsi, macd, macd_p, oi_chg, adx) -> str | None
 
 # ── Entry conditions ───────────────────────────────────────────
 
-def _check_entry(regime, ema4h, ema_d, rsi, macd, adx) -> tuple[str | None, str]:
-    """Returns (direction, reason). direction is None if no entry."""
+def _is_partial_4h_alignment(direction: str, price: float, ema9: float, ema21: float, ema50: float) -> bool:
+    if direction == "short":
+        return price < ema9 < ema21 and ema21 >= ema50
+    return price > ema9 > ema21 and ema21 <= ema50
+
+
+def _check_entry(ema4h, ema_d, macd, adx, price, ema9, ema21, ema50, plus_di, minus_di) -> tuple[str | None, str, str]:
+    """Returns (direction, entry_mode, reason). direction is None if no entry."""
     blocks = []
     for direction in ("short", "long"):
         req_ema = "bearish" if direction == "short" else "bullish"
         fails = []
+
         if ema_d != req_ema:
             fails.append(f"daily={ema_d}")
-        if ema4h != req_ema:
-            fails.append(f"4h={ema4h}")
         if direction == "short" and macd >= 0:
             fails.append(f"MACD hist={macd:.4f}>=0")
         if direction == "long" and macd <= 0:
             fails.append(f"MACD hist={macd:.4f}<=0")
-        if adx <= 25:
-            fails.append(f"ADX={adx:.1f}<=25")
-        if direction == "short" and rsi <= config.MIN_RSI_SHORT:
-            fails.append(f"RSI={rsi:.1f}<={config.MIN_RSI_SHORT}")
-        if direction == "long" and rsi >= config.MAX_RSI_LONG:
-            fails.append(f"RSI={rsi:.1f}>={config.MAX_RSI_LONG}")
+        if adx < config.MIN_ADX_ENTRY:
+            fails.append(f"ADX={adx:.1f}<{config.MIN_ADX_ENTRY:.0f}")
+        if config.REQUIRE_DI_ALIGNMENT:
+            if direction == "short" and minus_di <= plus_di:
+                fails.append(f"-DI={minus_di:.1f}<=+DI={plus_di:.1f}")
+            if direction == "long" and plus_di <= minus_di:
+                fails.append(f"+DI={plus_di:.1f}<=-DI={minus_di:.1f}")
+
         if not fails:
-            return direction, ""
+            if ema4h == req_ema:
+                return direction, "strict", ""
+            if (
+                config.ENABLE_PARTIAL_ENTRIES
+                and
+                ema4h == "mixed"
+                and adx >= config.PARTIAL_MIN_ADX
+                and _is_partial_4h_alignment(direction, price, ema9, ema21, ema50)
+            ):
+                return direction, "partial", ""
+            fails.append(f"4h={ema4h} (no strict/partial alignment)")
+
         blocks.append(f"{direction}: {', '.join(fails)}")
 
-    return None, "No entry — " + " | ".join(blocks)
+    return None, "", "No entry — " + " | ".join(blocks)
 
 
 # ── Confidence scoring ─────────────────────────────────────────
 
 def _score_entry(direction, rsi, vol, funding, oi_chg, vs_ema200,
                  plus_di, minus_di, macd, macd_p, regime,
-                 stoch_k, atr_rank, vs_vwap, ls_ratio, taker_ratio) -> tuple[float, list[str]]:
+                 stoch_k, atr_rank, vs_vwap, ls_ratio, taker_ratio,
+                 entry_mode: str) -> tuple[float, list[str]]:
     score = 0.0
     reasons = []
 
+    def add(delta: float, text: str) -> None:
+        nonlocal score
+        score += delta
+        sign = "+" if delta >= 0 else "-"
+        reasons.append(f"{sign}{abs(delta):.2f} {text}")
+
+    if entry_mode == "partial":
+        add(-0.04, "partial 4h alignment")
+
     if vol > 1.5:
-        score += 0.05; reasons.append(f"vol {vol:.2f}↑")
+        add(0.05, f"vol {vol:.2f}↑")
     if direction == "short" and funding > 0.05:
-        score += 0.04; reasons.append(f"funding +{funding:.4f}% (crowded longs)")
+        add(0.04, f"funding +{funding:.4f}% (crowded longs)")
     elif direction == "long" and funding < -0.05:
-        score += 0.04; reasons.append(f"funding {funding:.4f}% (crowded shorts)")
+        add(0.04, f"funding {funding:.4f}% (crowded shorts)")
     if direction == "short" and oi_chg > 1 and macd < macd_p * 0.95:
-        score += 0.04; reasons.append(f"OI +{oi_chg:.1f}% (new shorts)")
+        add(0.04, f"OI +{oi_chg:.1f}% (new shorts)")
     elif direction == "long" and oi_chg > 1 and macd > macd_p * 1.05:
-        score += 0.04; reasons.append(f"OI +{oi_chg:.1f}% (new longs)")
+        add(0.04, f"OI +{oi_chg:.1f}% (new longs)")
     if 40 <= rsi <= 60:
-        score += 0.03; reasons.append(f"RSI {rsi:.1f} healthy")
+        add(0.03, f"RSI {rsi:.1f} healthy")
     if direction == "short" and vs_ema200 < 0:
-        score += 0.03; reasons.append(f"price {vs_ema200:.1f}% below EMA200")
+        add(0.03, f"price {vs_ema200:.1f}% below EMA200")
     elif direction == "long" and vs_ema200 > 0:
-        score += 0.03; reasons.append(f"price +{vs_ema200:.1f}% above EMA200")
+        add(0.03, f"price +{vs_ema200:.1f}% above EMA200")
     if direction == "short" and minus_di > plus_di:
-        score += 0.04; reasons.append(f"-DI {minus_di:.1f} > +DI {plus_di:.1f}")
+        add(0.04, f"-DI {minus_di:.1f} > +DI {plus_di:.1f}")
     elif direction == "long" and plus_di > minus_di:
-        score += 0.04; reasons.append(f"+DI {plus_di:.1f} > -DI {minus_di:.1f}")
+        add(0.04, f"+DI {plus_di:.1f} > -DI {minus_di:.1f}")
 
     # Stochastic RSI momentum confirmation
     if direction == "short" and stoch_k > 80:
-        score += 0.04; reasons.append(f"StochRSI {stoch_k:.0f} overbought")
+        add(0.04, f"StochRSI {stoch_k:.0f} overbought")
     elif direction == "long" and stoch_k < 20:
-        score += 0.04; reasons.append(f"StochRSI {stoch_k:.0f} oversold")
+        add(0.04, f"StochRSI {stoch_k:.0f} oversold")
 
     # Long/short ratio — contrarian sentiment
     if direction == "short" and ls_ratio >= 2.0:
-        score += 0.04; reasons.append(f"L/S ratio {ls_ratio:.2f} (crowded longs)")
+        add(0.04, f"L/S ratio {ls_ratio:.2f} (crowded longs)")
     elif direction == "long" and ls_ratio <= 0.5:
-        score += 0.04; reasons.append(f"L/S ratio {ls_ratio:.2f} (crowded shorts)")
+        add(0.04, f"L/S ratio {ls_ratio:.2f} (crowded shorts)")
 
     # Taker buy/sell ratio — aggressive order flow
     if direction == "short" and taker_ratio < 0.8:
-        score += 0.03; reasons.append(f"taker ratio {taker_ratio:.2f} (sellers aggressive)")
+        add(0.03, f"taker ratio {taker_ratio:.2f} (sellers aggressive)")
     elif direction == "long" and taker_ratio > 1.2:
-        score += 0.03; reasons.append(f"taker ratio {taker_ratio:.2f} (buyers aggressive)")
+        add(0.03, f"taker ratio {taker_ratio:.2f} (buyers aggressive)")
 
     # ATR percentile — volatility regime
     if atr_rank > 70:
-        score += 0.03; reasons.append(f"ATR rank {atr_rank:.0f}% (vol expanding)")
+        add(0.03, f"ATR rank {atr_rank:.0f}% (vol expanding)")
 
     # VWAP bias
     if direction == "short" and vs_vwap < 0:
-        score += 0.03; reasons.append(f"price {vs_vwap:.1f}% below VWAP")
+        add(0.03, f"price {vs_vwap:.1f}% below VWAP")
     elif direction == "long" and vs_vwap > 0:
-        score += 0.03; reasons.append(f"price +{vs_vwap:.1f}% above VWAP")
+        add(0.03, f"price +{vs_vwap:.1f}% above VWAP")
 
     # Contradicting
-    if direction == "short" and rsi < 45:
-        score -= 0.05; reasons.append(f"RSI {rsi:.1f} near oversold")
-    elif direction == "long" and rsi > 55:
-        score -= 0.05; reasons.append(f"RSI {rsi:.1f} near overbought")
+    if direction == "short" and rsi < config.MIN_RSI_SHORT:
+        add(-0.05, f"RSI {rsi:.1f} below short comfort {config.MIN_RSI_SHORT:.0f}")
+    elif direction == "long" and rsi > config.MAX_RSI_LONG:
+        add(-0.05, f"RSI {rsi:.1f} above long comfort {config.MAX_RSI_LONG:.0f}")
+    if direction == "short" and rsi < 36:
+        add(-0.04, f"RSI {rsi:.1f} deeply oversold")
+    elif direction == "long" and rsi > 64:
+        add(-0.04, f"RSI {rsi:.1f} deeply overbought")
     if direction == "short" and funding < -0.05:
-        score -= 0.04; reasons.append(f"funding {funding:.4f}% opposes short")
+        add(-0.04, f"funding {funding:.4f}% opposes short")
     elif direction == "long" and funding > 0.05:
-        score -= 0.04; reasons.append(f"funding +{funding:.4f}% opposes long")
+        add(-0.04, f"funding +{funding:.4f}% opposes long")
     if oi_chg < -2:
-        score -= 0.04; reasons.append(f"OI {oi_chg:.1f}% (positions closing)")
+        add(-0.04, f"OI {oi_chg:.1f}% (positions closing)")
     if direction == "short" and macd > macd_p:
-        score -= 0.04; reasons.append("MACD hist improving (contra short)")
+        add(-0.04, "MACD hist improving (contra short)")
     elif direction == "long" and macd < macd_p:
-        score -= 0.04; reasons.append("MACD hist deteriorating (contra long)")
+        add(-0.04, "MACD hist deteriorating (contra long)")
     if direction == "short" and stoch_k < 20:
-        score -= 0.03; reasons.append(f"StochRSI {stoch_k:.0f} already oversold (contra short)")
+        add(-0.03, f"StochRSI {stoch_k:.0f} already oversold (contra short)")
     elif direction == "long" and stoch_k > 80:
-        score -= 0.03; reasons.append(f"StochRSI {stoch_k:.0f} already overbought (contra long)")
+        add(-0.03, f"StochRSI {stoch_k:.0f} already overbought (contra long)")
     if direction == "short" and taker_ratio > 1.2:
-        score -= 0.02; reasons.append(f"taker ratio {taker_ratio:.2f} (buyers aggressive, contra short)")
+        add(-0.02, f"taker ratio {taker_ratio:.2f} (buyers aggressive, contra short)")
     elif direction == "long" and taker_ratio < 0.8:
-        score -= 0.02; reasons.append(f"taker ratio {taker_ratio:.2f} (sellers aggressive, contra long)")
+        add(-0.02, f"taker ratio {taker_ratio:.2f} (sellers aggressive, contra long)")
     if atr_rank < 30:
-        score -= 0.03; reasons.append(f"ATR rank {atr_rank:.0f}% (vol compressed, poor trend)")
+        add(-0.03, f"ATR rank {atr_rank:.0f}% (vol compressed, poor trend)")
     if direction == "short" and vs_vwap > 2:
-        score -= 0.02; reasons.append(f"price +{vs_vwap:.1f}% above VWAP (contra short)")
+        add(-0.02, f"price +{vs_vwap:.1f}% above VWAP (contra short)")
     elif direction == "long" and vs_vwap < -2:
-        score -= 0.02; reasons.append(f"price {vs_vwap:.1f}% below VWAP (contra long)")
+        add(-0.02, f"price {vs_vwap:.1f}% below VWAP (contra long)")
 
     # Borderline regime requires extra conviction
     if regime == "borderline":
-        score -= 0.08; reasons.append("ADX borderline penalty")
+        add(-config.BORDERLINE_ADX_PENALTY, "ADX borderline penalty")
 
     # Map score to confidence band
     if score >= 0.12:
