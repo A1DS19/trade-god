@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from statistics import mean, median
@@ -16,30 +17,171 @@ from typing import Any
 
 from binance.client import Client
 
-from app.swing.indicators import (
-    calc_adx,
-    calc_atr,
-    calc_atr_percentile,
-    calc_ema,
-    calc_macd,
-    calc_rsi,
-    calc_stoch_rsi,
-    calc_vwap,
-)
-
 
 LEVERAGE = 5
 V1_MIN_CONFIDENCE = 0.70
-V2_MIN_CONFIDENCE = 0.80
-V2_PARTIAL_MIN_ADX = 25.0
+V2_MIN_CONFIDENCE = 0.85
+V2_PARTIAL_MIN_ADX = 32.0
 V2_PARTIAL_MIN_CONFIDENCE = 0.80
 V2_ENABLE_PARTIAL_ENTRIES = False
 V2_REQUIRE_DI_ALIGNMENT = True
 V2_MIN_TP_TO_COST_MULT = 3.0
 V2_MIN_NET_TP_PCT = 0.004
-V2_MACD_DIV_EXIT_RSI_SHORT = 38.0       # mirrors config.MACD_DIV_EXIT_RSI_SHORT
+V2_MACD_DIV_EXIT_RSI_SHORT = 32.0       # mirrors config.MACD_DIV_EXIT_RSI_SHORT
 V2_MACD_DIV_EXIT_RSI_LONG = 62.0        # mirrors config.MACD_DIV_EXIT_RSI_LONG
 V2_MIXED_EMA_EXIT_MIN_LOSS_PCT = 0.005  # mirrors config.MIXED_EMA_EXIT_MIN_LOSS_PCT
+
+# Set in main() before threads start; read-only during replay.
+_DISABLE_MIXED_EMA_EXIT: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Vectorized O(n) indicator helpers — precompute full series in one pass.
+# These replace per-bar recomputation from scratch (which was O(n²) overall).
+# ---------------------------------------------------------------------------
+
+def _vs_ema(closes: list[float], period: int) -> list[float]:
+    k = 2 / (period + 1)
+    ema = closes[0]
+    result = [ema]
+    for price in closes[1:]:
+        ema = price * k + ema * (1 - k)
+        result.append(ema)
+    return result
+
+
+def _vs_rsi(closes: list[float], period: int = 14) -> list[float]:
+    if len(closes) <= period:
+        return [50.0] * len(closes)
+    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    gains = [d if d > 0 else 0.0 for d in deltas]
+    losses = [-d if d < 0 else 0.0 for d in deltas]
+    result = [50.0] * (period + 1)
+    avg_g = sum(gains[:period]) / period
+    avg_l = sum(losses[:period]) / period
+    result.append(100.0 if avg_l == 0 else 100 - 100 / (1 + avg_g / avg_l))
+    for i in range(period, len(gains)):
+        avg_g = (avg_g * (period - 1) + gains[i]) / period
+        avg_l = (avg_l * (period - 1) + losses[i]) / period
+        result.append(100.0 if avg_l == 0 else 100 - 100 / (1 + avg_g / avg_l))
+    return result
+
+
+def _vs_macd(closes: list[float], fast: int = 12, slow: int = 26, signal: int = 9) -> list[tuple[float, float]]:
+    ef = _vs_ema(closes, fast)
+    es = _vs_ema(closes, slow)
+    macd_line = [f - s for f, s in zip(ef, es)]
+    sig_line = _vs_ema(macd_line, signal)
+    hist = [m - s for m, s in zip(macd_line, sig_line)]
+    warm = slow + signal - 2
+    result: list[tuple[float, float]] = [(0.0, 0.0)] * warm
+    for i in range(warm, len(hist)):
+        result.append((hist[i], hist[i - 1] if i > 0 else 0.0))
+    return result
+
+
+def _vs_atr(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> list[float]:
+    trs = [
+        max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        for i in range(1, len(closes))
+    ]
+    result = [0.0]
+    if len(trs) < period:
+        return result + [0.0] * len(trs)
+    atr = sum(trs[:period]) / period
+    result.extend([0.0] * (period - 1))
+    result.append(atr)
+    for tr in trs[period:]:
+        atr = (atr * (period - 1) + tr) / period
+        result.append(atr)
+    return result
+
+
+def _vs_atr_rank(atr_series: list[float], lookback: int = 100) -> list[float]:
+    result = [50.0] * len(atr_series)
+    for i in range(lookback, len(atr_series)):
+        window = atr_series[i - lookback + 1: i + 1]
+        cur = atr_series[i]
+        result[i] = round(sum(1 for a in window if a <= cur) / len(window) * 100, 1)
+    return result
+
+
+def _wilder_smooth_v(data: list[float], period: int) -> list[float]:
+    if len(data) < period:
+        return [0.0]
+    result = [sum(data[:period])]
+    for val in data[period:]:
+        result.append(result[-1] - result[-1] / period + val)
+    return result
+
+
+def _vs_adx(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> list[tuple[float, float, float]]:
+    """Returns (adx, plus_di, minus_di) per bar; zeros before warmup."""
+    n = len(closes)
+    result: list[tuple[float, float, float]] = [(0.0, 0.0, 0.0)] * n
+    plus_dm, minus_dm, trs = [], [], []
+    for i in range(1, n):
+        up = highs[i] - highs[i - 1]
+        down = lows[i - 1] - lows[i]
+        plus_dm.append(up if up > down and up > 0 else 0.0)
+        minus_dm.append(down if down > up and down > 0 else 0.0)
+        trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+    sm_tr = _wilder_smooth_v(trs, period)
+    sm_plus = _wilder_smooth_v(plus_dm, period)
+    sm_minus = _wilder_smooth_v(minus_dm, period)
+    # sm_*[j] aligns to bar index (period + j)
+    pdi = [100 * p / t if t > 0 else 0.0 for p, t in zip(sm_plus, sm_tr)]
+    mdi = [100 * m / t if t > 0 else 0.0 for m, t in zip(sm_minus, sm_tr)]
+    dx = [100 * abs(p - m) / (p + m) if (p + m) > 0 else 0.0 for p, m in zip(pdi, mdi)]
+    for j in range(len(pdi)):
+        b = period + j
+        if b < n:
+            result[b] = (0.0, pdi[j], mdi[j])
+    if len(dx) >= period:
+        adx = sum(dx[:period]) / period
+        b0 = 2 * period - 1
+        if b0 < n:
+            result[b0] = (adx, pdi[period - 1], mdi[period - 1])
+        for k, dxv in enumerate(dx[period:]):
+            adx = (adx * (period - 1) + dxv) / period
+            b = 2 * period + k
+            if b < n:
+                result[b] = (adx, pdi[period + k], mdi[period + k])
+    return result
+
+
+def _vs_stoch_rsi(closes: list[float], rsi_period: int = 14, stoch_period: int = 14) -> list[tuple[float, float]]:
+    rsi_s = _vs_rsi(closes, rsi_period)
+    n = len(closes)
+    k_series = [50.0] * n
+    warm = rsi_period + stoch_period - 1
+    for i in range(warm, n):
+        window = rsi_s[i - stoch_period + 1: i + 1]
+        lo, hi = min(window), max(window)
+        k_series[i] = (rsi_s[i] - lo) / (hi - lo) * 100 if hi > lo else 50.0
+    result: list[tuple[float, float]] = [(50.0, 50.0)] * n
+    for i in range(warm + 2, n):
+        d = (k_series[i] + k_series[i - 1] + k_series[i - 2]) / 3
+        result[i] = (k_series[i], d)
+    return result
+
+
+def _vs_vwap(klines: list, periods: int = 6) -> list[float]:
+    result = [0.0] * len(klines)
+    for i in range(periods - 1, len(klines)):
+        candles = klines[i - periods + 1: i + 1]
+        total_pv = sum((float(k[2]) + float(k[3]) + float(k[4])) / 3 * float(k[5]) for k in candles)
+        total_v = sum(float(k[5]) for k in candles)
+        result[i] = total_pv / total_v if total_v > 0 else 0.0
+    return result
+
+
+def _vs_vol_ratio(volumes: list[float], window: int = 20) -> list[float]:
+    result = [1.0] * len(volumes)
+    for i in range(window, len(volumes)):
+        avg = sum(volumes[i - window: i]) / window
+        result[i] = volumes[i] / avg if avg > 0 else 1.0
+    return result
 
 
 def _parse_iso_utc(text: str) -> datetime:
@@ -223,7 +365,7 @@ def _check_short_exit(ema4h: str, ema_d: str, rsi: float, macd: float, macd_p: f
         return "4h EMA turned bullish"
     if ema_d == "bullish":
         return "daily EMA turned bullish"
-    if ema4h == "mixed" and macd > macd_p and adx < 25:
+    if not _DISABLE_MIXED_EMA_EXIT and ema4h == "mixed" and macd > macd_p and adx < 25:
         if unrealized_pct is None or unrealized_pct < -V2_MIXED_EMA_EXIT_MIN_LOSS_PCT:
             return "4h EMA mixed + MACD weakening"
     if rsi < 32:
@@ -242,7 +384,7 @@ def _check_long_exit(ema4h: str, ema_d: str, rsi: float, macd: float, macd_p: fl
         return "4h EMA turned bearish"
     if ema_d == "bearish":
         return "daily EMA turned bearish"
-    if ema4h == "mixed" and macd < macd_p and adx < 25:
+    if not _DISABLE_MIXED_EMA_EXIT and ema4h == "mixed" and macd < macd_p and adx < 25:
         if unrealized_pct is None or unrealized_pct < -V2_MIXED_EMA_EXIT_MIN_LOSS_PCT:
             return "4h EMA mixed + MACD weakening"
     if rsi > 68:
@@ -298,7 +440,7 @@ def decide_v2(snapshot: dict[str, Any]) -> dict[str, Any]:
             continue
         if (d == "short" and macd >= 0) or (d == "long" and macd <= 0):
             continue
-        if adx < 25:
+        if adx < 32:
             continue
         if V2_REQUIRE_DI_ALIGNMENT:
             plus_di = float(ind["plus_di"])
@@ -390,7 +532,7 @@ def decide_v1(snapshot: dict[str, Any]) -> dict[str, Any]:
             continue
         if (d == "short" and macd >= 0) or (d == "long" and macd <= 0):
             continue
-        if adx <= 25:
+        if adx <= 32:
             continue
         if d == "short" and rsi <= 42:
             continue
@@ -444,6 +586,10 @@ class Position:
     tp_pct: float
     entry_time: int
     entry_fee: float = 0.0
+    entry_rsi: float = 0.0
+    entry_adx: float = 0.0
+    entry_conf: float = 0.0
+    entry_regime: str = ""
 
 
 @dataclass
@@ -460,6 +606,9 @@ class Trade:
     total_fees: float
     exit_reason: str
     confidence: float
+    entry_rsi: float = 0.0
+    entry_adx: float = 0.0
+    entry_regime: str = ""
 
 
 @dataclass
@@ -500,10 +649,13 @@ class StrategyState:
                 exit_price=exit_price,
                 pnl=pnl,
                 pnl_pct=pnl_pct,
+                entry_rsi=p.entry_rsi,
+                entry_adx=p.entry_adx,
+                entry_regime=p.entry_regime,
                 gross_pnl=gross_pnl,
                 total_fees=total_fees,
                 exit_reason=reason,
-                confidence=confidence,
+                confidence=p.entry_conf,
             )
         )
         self.equity_curve.append(self.equity_curve[-1] + pnl)
@@ -513,14 +665,12 @@ class StrategyState:
 class ReplayEngine:
     def __init__(
         self,
-        client: Client,
         coins: list[str],
         start: datetime,
         end: datetime,
         fee_bps: float = 0.0,
         slippage_bps: float = 0.0,
     ):
-        self.client = client
         self.coins = coins
         self.start = start
         self.end = end
@@ -541,13 +691,13 @@ class ReplayEngine:
             return 24 * 60 * 60 * 1000
         raise ValueError(f"Unsupported interval: {interval}")
 
-    def _fetch_klines(self, symbol: str, interval: str, start_ms: int, end_ms: int) -> list[list[Any]]:
+    def _fetch_klines(self, client: Client, symbol: str, interval: str, start_ms: int, end_ms: int) -> list[list[Any]]:
         out: list[list[Any]] = []
         cursor = start_ms
         step = self._interval_ms(interval)
         prev_last_open = -1
         while True:
-            batch = self.client.futures_klines(
+            batch = client.futures_klines(
                 symbol=symbol,
                 interval=interval,
                 startTime=cursor,
@@ -569,84 +719,92 @@ class ReplayEngine:
                 break
         return out
 
-    def _build_snapshot(self, kl4: list[list[Any]], kl1d: list[list[Any]], i: int) -> dict[str, Any] | None:
-        closes4 = [float(k[4]) for k in kl4[: i + 1]]
-        highs4 = [float(k[2]) for k in kl4[: i + 1]]
-        lows4 = [float(k[3]) for k in kl4[: i + 1]]
-        volumes4 = [float(k[5]) for k in kl4[: i + 1]]
+    def _precompute_coin(self, kl4: list[list[Any]], kl1d: list[list[Any]]) -> list[dict[str, Any] | None]:
+        """Precompute all indicator series once (O(n)) and return per-bar snapshots."""
+        import bisect
+        closes4 = [float(k[4]) for k in kl4]
+        highs4 = [float(k[2]) for k in kl4]
+        lows4 = [float(k[3]) for k in kl4]
+        volumes4 = [float(k[5]) for k in kl4]
 
-        if len(closes4) < 200:
-            return None
+        ema9_s = _vs_ema(closes4, 9)
+        ema21_s = _vs_ema(closes4, 21)
+        ema50_s = _vs_ema(closes4, 50)
+        rsi_s = _vs_rsi(closes4, 14)
+        macd_s = _vs_macd(closes4)
+        atr_s = _vs_atr(highs4, lows4, closes4)
+        atr_rank_s = _vs_atr_rank(atr_s)
+        adx_s = _vs_adx(highs4, lows4, closes4)
+        stoch_s = _vs_stoch_rsi(closes4)
+        vwap_s = _vs_vwap(kl4)
+        vol_ratio_s = _vs_vol_ratio(volumes4)
 
-        close_time_ms = int(kl4[i][6])
-        d_filtered = [k for k in kl1d if int(k[6]) <= close_time_ms]
-        if len(d_filtered) < 200:
-            return None
-        closes1d = [float(k[4]) for k in d_filtered]
+        closes1d = [float(k[4]) for k in kl1d]
+        d_close_times = [int(k[6]) for k in kl1d]
+        ema21_d_s = _vs_ema(closes1d, 21)
+        ema50_d_s = _vs_ema(closes1d, 50)
+        ema200_d_s = _vs_ema(closes1d, 200)
 
-        price = closes4[-1]
-        ema9 = calc_ema(closes4, 9)
-        ema21 = calc_ema(closes4, 21)
-        ema50 = calc_ema(closes4, 50)
-        rsi14 = calc_rsi(closes4[-30:], 14)
-        avg_vol = sum(volumes4[-21:-1]) / 20
-        vol_ratio = volumes4[-1] / avg_vol if avg_vol > 0 else 1.0
-        macd = calc_macd(closes4)
-        atr = calc_atr(highs4, lows4, closes4)
-        adx = calc_adx(highs4, lows4, closes4)
-        stoch = calc_stoch_rsi(closes4)
-        atr_rank = calc_atr_percentile(highs4, lows4, closes4)
-        vwap = calc_vwap(kl4[: i + 1])
+        results: list[dict[str, Any] | None] = []
+        for i in range(len(kl4)):
+            if i < 199:
+                results.append(None)
+                continue
+            close_time_ms = int(kl4[i][6])
+            # last daily bar whose close_time <= 4h bar's close_time
+            d_idx = bisect.bisect_right(d_close_times, close_time_ms) - 1
+            if d_idx < 199:
+                results.append(None)
+                continue
 
-        ema21_d = calc_ema(closes1d, 21)
-        ema50_d = calc_ema(closes1d, 50)
-        ema200_d = calc_ema(closes1d, 200)
+            price = closes4[i]
+            adx_val, plus_di, minus_di = adx_s[i]
+            macd_hist, macd_hist_prev = macd_s[i]
+            stoch_k, stoch_d = stoch_s[i]
+            atr = atr_s[i]
+            ema200_d = ema200_d_s[d_idx]
 
-        ema_alignment = _ema_alignment(price, ema9, ema21, ema50)
-        daily_alignment = _ema_alignment(price, ema21_d, ema50_d, ema200_d)
+            ema_alignment = _ema_alignment(price, ema9_s[i], ema21_s[i], ema50_s[i])
+            daily_alignment = _ema_alignment(price, ema21_d_s[d_idx], ema50_d_s[d_idx], ema200_d)
+            regime = "trending" if adx_val > 25 else ("borderline" if adx_val >= 20 else "ranging")
 
-        adxv = float(adx["adx"])
-        regime = "trending" if adxv > 25 else ("borderline" if adxv >= 20 else "ranging")
-
-        atr_frac = atr / price if price > 0 else 0.0
-        suggested_sl = round(max(atr_frac * 1.5, 0.01), 4)
-        suggested_tp = round(max(atr_frac * 3.0, 0.02), 4)
-
-        return {
-            "close_time_ms": close_time_ms,
-            "price": price,
-            "high": float(kl4[i][2]),
-            "low": float(kl4[i][3]),
-            "market_regime": regime,
-            "funding_rate_pct": 0.0,
-            "suggested_sl_pct": suggested_sl,
-            "suggested_tp_pct": suggested_tp,
-            "open_position": None,
-            "indicators": {
-                "ema_alignment": ema_alignment,
-                "daily_ema_alignment": daily_alignment,
-                "ema9": ema9,
-                "ema21": ema21,
-                "ema50": ema50,
-                "ema200_daily": ema200_d,
-                "rsi14_4h": rsi14,
-                "vol_ratio": round(vol_ratio, 2),
-                "price_vs_ema200": (price - ema200_d) / ema200_d * 100 if ema200_d else 0.0,
-                "adx14": adxv,
-                "plus_di": float(adx["plus_di"]),
-                "minus_di": float(adx["minus_di"]),
-                "macd_hist": float(macd["hist"]),
-                "macd_hist_prev": float(macd["hist_prev"]),
-                "oi_change_4h_pct": 0.0,
-                "stoch_rsi_k": float(stoch["stoch_rsi_k"]),
-                "stoch_rsi_d": float(stoch["stoch_rsi_d"]),
-                "atr_pct_rank": float(atr_rank),
-                "vwap": vwap,
-                "price_vs_vwap": (price - vwap) / vwap * 100 if vwap else 0.0,
-                "ls_ratio": 1.0,
-                "taker_ratio": 1.0,
-            },
-        }
+            atr_frac = atr / price if price > 0 else 0.0
+            results.append({
+                "close_time_ms": close_time_ms,
+                "price": price,
+                "high": highs4[i],
+                "low": lows4[i],
+                "market_regime": regime,
+                "funding_rate_pct": 0.0,
+                "suggested_sl_pct": round(max(atr_frac * 1.5, 0.01), 4),
+                "suggested_tp_pct": round(max(atr_frac * 3.0, 0.02), 4),
+                "open_position": None,
+                "indicators": {
+                    "ema_alignment": ema_alignment,
+                    "daily_ema_alignment": daily_alignment,
+                    "ema9": ema9_s[i],
+                    "ema21": ema21_s[i],
+                    "ema50": ema50_s[i],
+                    "ema200_daily": ema200_d,
+                    "rsi14_4h": rsi_s[i],
+                    "vol_ratio": round(vol_ratio_s[i], 2),
+                    "price_vs_ema200": (price - ema200_d) / ema200_d * 100 if ema200_d else 0.0,
+                    "adx14": adx_val,
+                    "plus_di": plus_di,
+                    "minus_di": minus_di,
+                    "macd_hist": macd_hist,
+                    "macd_hist_prev": macd_hist_prev,
+                    "oi_change_4h_pct": 0.0,
+                    "stoch_rsi_k": stoch_k,
+                    "stoch_rsi_d": stoch_d,
+                    "atr_pct_rank": atr_rank_s[i],
+                    "vwap": vwap_s[i],
+                    "price_vs_vwap": (price - vwap_s[i]) / vwap_s[i] * 100 if vwap_s[i] else 0.0,
+                    "ls_ratio": 1.0,
+                    "taker_ratio": 1.0,
+                },
+            })
+        return results
 
     def _handle_intrabar_sl_tp(self, state: StrategyState, coin: str, now_ms: int, high: float, low: float) -> bool:
         pos = state.position
@@ -675,20 +833,22 @@ class ReplayEngine:
         return True
 
     def _run_coin(self, coin: str) -> tuple[StrategyState, StrategyState, int]:
+        client = Client()  # one client per thread to avoid session sharing
         symbol = f"{coin}USDT"
         start_ms = _to_ms(self.start)
         end_ms = _to_ms(self.end)
 
-        kl4 = self._fetch_klines(symbol, Client.KLINE_INTERVAL_4HOUR, start_ms, end_ms)
-        kl1d = self._fetch_klines(symbol, Client.KLINE_INTERVAL_1DAY, start_ms - int(timedelta(days=250).total_seconds() * 1000), end_ms)
+        kl4 = self._fetch_klines(client, symbol, Client.KLINE_INTERVAL_4HOUR, start_ms, end_ms)
+        kl1d = self._fetch_klines(client, symbol, Client.KLINE_INTERVAL_1DAY, start_ms - int(timedelta(days=250).total_seconds() * 1000), end_ms)
+
+        precomputed = self._precompute_coin(kl4, kl1d)
 
         s_v1 = StrategyState(name="v1", fee_rate=self.fee_rate, slippage_rate=self.slippage_rate)
         s_v2 = StrategyState(name="v2", fee_rate=self.fee_rate, slippage_rate=self.slippage_rate)
         bars = 0
 
-        for i in range(len(kl4)):
-            snap = self._build_snapshot(kl4, kl1d, i)
-            if not snap:
+        for snap in precomputed:
+            if snap is None:
                 continue
             bars += 1
             now_ms = snap["close_time_ms"]
@@ -741,6 +901,7 @@ class ReplayEngine:
                         continue
                     entry_fee = abs(entry_price * qty) * state.fee_rate
                     state.entries_conf.append(conf)
+                    ind = local_snap["indicators"]
                     state.position = Position(
                         side=action,
                         entry_price=entry_price,
@@ -750,6 +911,10 @@ class ReplayEngine:
                         tp_pct=float(decision.get("tp_pct", 0.08) or 0.08),
                         entry_time=now_ms,
                         entry_fee=entry_fee,
+                        entry_rsi=ind["rsi14_4h"],
+                        entry_adx=ind["adx14"],
+                        entry_conf=conf,
+                        entry_regime=local_snap["market_regime"],
                     )
 
         # Mark-to-market close at final bar close
@@ -843,6 +1008,30 @@ def _print_exit_breakdown(title: str, v1_trades: list[Trade], v2_trades: list[Tr
             )
 
 
+def _print_entry_analysis(title: str, v1_trades: list[Trade], v2_trades: list[Trade]) -> None:
+    """For each exit reason, show avg entry RSI, ADX, confidence, and long/short split."""
+    print(f"\n{title}")
+    for label, trades in (("v1", v1_trades), ("v2", v2_trades)):
+        if not trades:
+            continue
+        buckets: dict[str, list[Trade]] = {}
+        for t in trades:
+            buckets.setdefault(t.exit_reason, []).append(t)
+        print(f"\n  [{label}]  exit_reason | n | long% | avg_rsi | avg_adx | avg_conf | trending% | net_pnl")
+        print(f"  {'─' * 95}")
+        for reason, ts in sorted(buckets.items(), key=lambda x: -len(x[1])):
+            long_pct = sum(1 for t in ts if t.side == "long") / len(ts) * 100
+            avg_rsi = mean(t.entry_rsi for t in ts)
+            avg_adx = mean(t.entry_adx for t in ts)
+            avg_conf = mean(t.confidence for t in ts)
+            trending_pct = sum(1 for t in ts if t.entry_regime == "trending") / len(ts) * 100
+            net_pnl = sum(t.pnl for t in ts)
+            print(
+                f"  {reason:<45} | {len(ts):>3} | {long_pct:>5.0f}% | {avg_rsi:>7.1f} "
+                f"| {avg_adx:>7.1f} | {avg_conf:>8.2f} | {trending_pct:>9.0f}% | {net_pnl:>8.2f}"
+            )
+
+
 def _print_summary(title: str, rows: list[tuple[str, dict[str, float], dict[str, float]]]) -> None:
     print(f"\n{title}")
     print("coin | strat | trades | win_rate | net_pnl | gross_pnl | fees | avg_pnl | pf | max_dd | avg_conf")
@@ -864,15 +1053,19 @@ def main() -> None:
     parser.add_argument("--fee-bps", type=float, default=0.0, help="Fee per side in basis points (e.g. 4 = 0.04%%)")
     parser.add_argument("--slippage-bps", type=float, default=0.0, help="Adverse slippage per side in basis points")
     parser.add_argument("--exit-breakdown", action="store_true", help="Print exit-reason breakdown with win rate and PnL per reason")
+    parser.add_argument("--entry-analysis", action="store_true", help="Print entry condition breakdown by exit reason (RSI, ADX, confidence, direction)")
+    parser.add_argument("--no-mixed-ema-exit", action="store_true", help="Disable the '4h EMA mixed + MACD weakening' exit for both strategies")
+    parser.add_argument("--workers", type=int, default=8, help="Parallel threads for coin processing (default: 8)")
     args = parser.parse_args()
+
+    global _DISABLE_MIXED_EMA_EXIT
+    _DISABLE_MIXED_EMA_EXIT = args.no_mixed_ema_exit
 
     end = _parse_iso_utc(args.end) if args.end else datetime.now(timezone.utc)
     start = _parse_iso_utc(args.start) if args.start else (end - timedelta(days=180))
     coins = [c.strip().upper() for c in args.coins.split(",") if c.strip()]
 
-    client = Client()
     engine = ReplayEngine(
-        client,
         coins,
         start,
         end,
@@ -880,16 +1073,25 @@ def main() -> None:
         slippage_bps=args.slippage_bps,
     )
 
-    rows: list[tuple[str, dict[str, float], dict[str, float]]] = []
     agg_v1 = StrategyState("v1", fee_rate=engine.fee_rate, slippage_rate=engine.slippage_rate)
     agg_v2 = StrategyState("v2", fee_rate=engine.fee_rate, slippage_rate=engine.slippage_rate)
 
-    print(f"Running replay from {start.isoformat()} to {end.isoformat()} for {', '.join(coins)}")
-    print(f"Cost model: fee={args.fee_bps:.2f} bps/side, slippage={args.slippage_bps:.2f} bps/side")
+    mixed_note = " [--no-mixed-ema-exit]" if _DISABLE_MIXED_EMA_EXIT else ""
+    print(f"Running replay from {start.isoformat()} to {end.isoformat()} for {', '.join(coins)}{mixed_note}")
+    print(f"Cost model: fee={args.fee_bps:.2f} bps/side, slippage={args.slippage_bps:.2f} bps/side  workers={args.workers}")
 
-    for coin in coins:
-        v1, v2, bars = engine._run_coin(coin)
-        print(f"Processed {coin}: {bars} bars, v1 trades={len(v1.trades)}, v2 trades={len(v2.trades)}")
+    coin_results: dict[str, tuple[StrategyState, StrategyState, int]] = {}
+    with ThreadPoolExecutor(max_workers=min(args.workers, len(coins))) as executor:
+        futures = {executor.submit(engine._run_coin, coin): coin for coin in coins}
+        for future in as_completed(futures):
+            coin = futures[future]
+            v1, v2, bars = future.result()
+            print(f"Processed {coin}: {bars} bars, v1 trades={len(v1.trades)}, v2 trades={len(v2.trades)}")
+            coin_results[coin] = (v1, v2, bars)
+
+    rows: list[tuple[str, dict[str, float], dict[str, float]]] = []
+    for coin in coins:  # restore original order for display
+        v1, v2, _ = coin_results[coin]
         rows.append((coin, _summarize(v1), _summarize(v2)))
         agg_v1.trades.extend(v1.trades)
         agg_v2.trades.extend(v2.trades)
@@ -905,6 +1107,9 @@ def main() -> None:
 
     if args.exit_breakdown:
         _print_exit_breakdown("Exit reason breakdown (aggregate)", agg_v1.trades, agg_v2.trades)
+
+    if args.entry_analysis:
+        _print_entry_analysis("Entry condition analysis by exit reason", agg_v1.trades, agg_v2.trades)
 
     print("\nNotes:")
     print("- Uses public kline data only; funding/OI/L-S/taker are neutralized to baseline values.")

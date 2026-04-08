@@ -7,7 +7,7 @@ from app.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID  # shared credentials
 BINANCE_API_KEY    = os.environ["BINANCE_API_KEY_FUTURES"]
 BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY_FUTURES"]
 # ── Coins to watch ────────────────────────────────────────
-COINS = ["BTC", "ETH", "SOL", "BNB", "DOGE", "AVAX", "LINK", "SUI"]  # XRP removed: structurally unprofitable in EMA/ADX framework over 5-year data
+COINS = ["SOL", "BNB", "DOGE", "LINK", "SUI"]  # BTC/ETH/AVAX/XRP removed: drag on EMA/ADX framework over 5-year data; DOGE/LINK/SOL carry the edge
 
 # ── Risk / sizing ─────────────────────────────────────────
 LEVERAGE       = 5      # Default futures leverage
@@ -21,9 +21,9 @@ DEFAULT_TP_PCT = 0.08   # 8% take profit from entry
 MIN_CONFIDENCE  = 0.80  # Skip trade if agent confidence < this
 MIN_RSI_SHORT   = 42.0  # Don't short if RSI already approaching oversold
 MAX_RSI_LONG    = 58.0  # Don't long if RSI already approaching overbought
-MIN_ADX_ENTRY   = 25.0  # Require stronger trend for entries
+MIN_ADX_ENTRY   = 32.0  # Require stronger trend for entries (raised from 25: grid search showed PF 1.93 vs 1.20, DD $7 vs $15)
 BORDERLINE_ADX_PENALTY = 0.08  # Confidence score penalty in borderline ADX regime
-PARTIAL_MIN_ADX = 25.0  # Allow mixed/partial entries only in stronger trends
+PARTIAL_MIN_ADX = 32.0  # Allow mixed/partial entries only in stronger trends
 PARTIAL_MIN_CONFIDENCE = 0.80  # Require extra conviction for partial entries
 ENABLE_PARTIAL_ENTRIES = False  # v2.1: disable partial entries for quality-first filtering
 REQUIRE_DI_ALIGNMENT = True  # v2.2: require directional DI alignment at entry
@@ -33,7 +33,7 @@ MIN_TP_TO_COST_MULT = 3.0  # Require TP to be at least this multiple of round-tr
 MIN_NET_TP_PCT = 0.004  # Require TP - est round-trip costs >= 0.4%
 SHORT_EXIT_RSI_FLOOR = 32.0       # Exit short only if RSI gets very deeply oversold
 LONG_EXIT_RSI_CEIL = 68.0         # Exit long only if RSI gets very deeply overbought
-MACD_DIV_EXIT_RSI_SHORT = 38.0   # MACD divergence exit for shorts: RSI must be this low (trend exhaustion, not normal pullback)
+MACD_DIV_EXIT_RSI_SHORT = 32.0   # MACD divergence exit for shorts: RSI must be this low — lowered from 38, grid search showed 32 prevents premature exits on healthy shorts
 MACD_DIV_EXIT_RSI_LONG = 62.0    # MACD divergence exit for longs: RSI must be this high (trend exhaustion, not normal pullback)
 SOFT_EXIT_MAX_LOSS_PCT = 0.020       # Delay soft exits while unrealized loss is small (<2.0%)
 MIXED_EMA_EXIT_MIN_LOSS_PCT = 0.005  # Only fire mixed-EMA soft exit when already down ≥0.5% (avoids cutting profitable trades on chop)
