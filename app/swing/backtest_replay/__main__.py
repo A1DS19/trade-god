@@ -7,12 +7,14 @@ from datetime import datetime, timedelta, timezone
 
 from . import strategy
 from .engine import ReplayEngine, StrategyState, _summarize, _parse_iso_utc
-from .stats import _print_summary, _print_exit_breakdown, _print_entry_analysis
+from .stats import _print_summary, _print_exit_breakdown, _print_entry_analysis, _print_roi_summary
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Replay backtest: compare swing v1 vs v2")
-    parser.add_argument("--coins", default="BTC,ETH,SOL,BNB,XRP,DOGE,AVAX,LINK,SUI", help="Comma-separated coin tickers")
+    coin_group = parser.add_mutually_exclusive_group()
+    coin_group.add_argument("--coins", default=None, help="Comma-separated coin tickers")
+    coin_group.add_argument("--top", type=int, default=None, help="Use top N coins by market cap (fetched from CoinGecko, validated against Binance Futures)")
     parser.add_argument("--start", default=None, help="UTC ISO datetime, e.g. 2025-01-01T00:00:00Z")
     parser.add_argument("--end", default=None, help="UTC ISO datetime, e.g. 2026-01-01T00:00:00Z")
     parser.add_argument("--fee-bps", type=float, default=0.0, help="Fee per side in basis points (e.g. 4 = 0.04%%)")
@@ -22,13 +24,29 @@ def main() -> None:
     parser.add_argument("--no-macd-div-exit", action="store_true", help="Disable the MACD divergence exit for both long and short")
     parser.add_argument("--workers", type=int, default=8, help="Parallel threads for coin processing (default: 8)")
     parser.add_argument("--charts", metavar="DIR", default=None, help="Save matplotlib charts to DIR (e.g. charts_out/10yr)")
+    parser.add_argument("--target-roi", type=float, default=10.0, help="Target annualized ROI%% for pass/fail check (default: 10)")
+    parser.add_argument("--screen", action="store_true", help="Run coin fitness screening instead of backtest")
     args = parser.parse_args()
 
     strategy._DISABLE_MACD_DIV_EXIT = args.no_macd_div_exit
 
     end = _parse_iso_utc(args.end) if args.end else datetime.now(timezone.utc)
     start = _parse_iso_utc(args.start) if args.start else (end - timedelta(days=180))
-    coins = [c.strip().upper() for c in args.coins.split(",") if c.strip()]
+
+    if args.top:
+        from .universe import get_top_futures_coins
+        coins = get_top_futures_coins(args.top)
+    elif args.coins:
+        coins = [c.strip().upper() for c in args.coins.split(",") if c.strip()]
+    else:
+        coins = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "AVAX", "LINK", "SUI"]
+
+    if args.screen:
+        from .screener import screen_all, _print_screen_results
+        print(f"Screening {len(coins)} coins from {start.isoformat()} to {end.isoformat()}")
+        results = screen_all(coins, start, end, workers=args.workers)
+        _print_screen_results(results)
+        return
 
     engine = ReplayEngine(
         coins,
@@ -68,6 +86,8 @@ def main() -> None:
 
     if args.entry_analysis:
         _print_entry_analysis("Entry condition analysis by exit reason", agg_v1.trades, agg_v2.trades)
+
+    _print_roi_summary(agg_v1, agg_v2, start, end, len(coins), args.target_roi)
 
     print("\nNotes:")
     print("- Uses public kline data only; funding/OI/L-S/taker are neutralized to baseline values.")

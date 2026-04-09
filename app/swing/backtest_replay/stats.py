@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from statistics import mean, median
 
-from .engine import StrategyState, Trade, _fmt_pct
+from .engine import StrategyState, Trade, _summarize, _fmt_pct
 
 
 def _exit_breakdown(trades: list[Trade]) -> dict[str, dict]:
@@ -79,4 +80,42 @@ def _print_summary(title: str, rows: list[tuple[str, dict[str, float], dict[str,
             f"{coin} | v2 | {int(b['trades'])} | {_fmt_pct(b['win_rate'])} | {b['net_pnl']:.2f} | "
             f"{b['gross_pnl']:.2f} | {b['total_fees']:.2f} | {b['avg_pnl']:.2f} | "
             f"{b['profit_factor']:.2f} | {b['max_drawdown']:.2f} | {b['avg_conf']:.2f}"
+        )
+
+
+def _print_roi_summary(
+    agg_v1: StrategyState,
+    agg_v2: StrategyState,
+    start: datetime,
+    end: datetime,
+    num_coins: int,
+    target_annual_roi: float = 10.0,
+) -> None:
+    """Print annualized ROI and pass/fail against target."""
+    days = (end - start).total_seconds() / 86400.0
+    if days <= 0:
+        print("\nROI Summary: invalid date range")
+        return
+
+    # Capital = coins * base margin per position
+    # v1: fixed $5, v2: $5-$10 range midpoint $7.50
+    capital_v1 = num_coins * 5.0
+    capital_v2 = num_coins * 7.5
+
+    s_v1 = _summarize(agg_v1)
+    s_v2 = _summarize(agg_v2)
+
+    print(f"\nROI Summary  ({num_coins} coins, {days:.0f} days, target {target_annual_roi:.1f}% annual)")
+    print(f"{'─' * 90}")
+    print(f"{'strat':<6} | {'capital':>8} | {'net_pnl':>8} | {'roi%':>7} | {'annual_roi%':>11} | {'target':>7} | result")
+    print(f"{'─' * 90}")
+
+    for label, capital, summary in [("v1", capital_v1, s_v1), ("v2", capital_v2, s_v2)]:
+        net = summary["net_pnl"]
+        roi = (net / capital) * 100.0 if capital > 0 else 0.0
+        annual_roi = roi * (365.0 / days)
+        passed = annual_roi >= target_annual_roi
+        result = "PASS" if passed else "FAIL"
+        print(
+            f"{label:<6} | ${capital:>7.2f} | ${net:>7.2f} | {roi:>6.2f}% | {annual_roi:>10.2f}% | {target_annual_roi:>6.1f}% | {result}"
         )

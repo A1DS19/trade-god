@@ -79,5 +79,15 @@ services:
         condition: service_completed_successfully
     mem_limit: 200m
 
+  rebalance:
+    build: .
+    restart: "no"
+    env_file: .env
+    command: python -m app.swing.rebalance --notify --workers 4
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 300m
+
 volumes:
   postgres_data:

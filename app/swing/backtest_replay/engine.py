@@ -246,11 +246,13 @@ class ReplayEngine:
         raise ValueError(f"Unsupported interval: {interval}")
 
     def _fetch_klines(self, client: Client, symbol: str, interval: str, start_ms: int, end_ms: int) -> list[list[Any]]:
+        import time as _time
         out: list[list[Any]] = []
         cursor = start_ms
         step = self._interval_ms(interval)
         prev_last_open = -1
         while True:
+            _time.sleep(0.15)
             batch = client.futures_klines(
                 symbol=symbol,
                 interval=interval,

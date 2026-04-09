@@ -7,7 +7,7 @@ from app.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID  # shared credentials
 BINANCE_API_KEY    = os.environ["BINANCE_API_KEY_FUTURES"]
 BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY_FUTURES"]
 # ── Coins to watch ────────────────────────────────────────
-COINS = ["SOL", "BNB", "DOGE", "LINK", "SUI"]  # BTC/ETH/AVAX/XRP removed: drag on EMA/ADX framework over 5-year data; DOGE/LINK/SOL carry the edge
+COINS = ["DOGE", "1000SHIB", "RUNE", "RENDER", "1000FLOKI", "TURBO", "IP", "BSV", "IOTA", "DOT"]  # Screened from top 100 by market cap: high-vol coins with strong trend follow-through; all profitable over 1yr and 5yr backtests with fees
 
 # ── Risk / sizing ─────────────────────────────────────────
 LEVERAGE       = 5      # Default futures leverage
