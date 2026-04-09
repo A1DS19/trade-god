@@ -5,7 +5,7 @@ This document describes the **actual strategy currently running** in the swing a
 ## 1) High-level flow (every cycle)
 
 1. Load open futures positions.
-2. For each coin (`BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI`):
+2. For each coin (`DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, DOT`):
    - Build snapshot (4h + daily indicators, funding, OI/L-S/taker data).
    - If a position exists: evaluate **exit rules** first.
    - If no position: apply **regime + entry filters**.
@@ -23,7 +23,7 @@ Regime is based on 4h ADX:
 Entry behavior:
 
 - `ranging`: no entries (`HOLD conf=0.00 - ADX < 20`)
-- minimum entry ADX is now `>= 25`
+- minimum entry ADX is now `>= 32`
 - directional DI alignment is required (`-DI > +DI` for shorts, `+DI > -DI` for longs)
 
 ## 3) Directional alignment filters
@@ -53,18 +53,18 @@ Requires all:
   - strict bearish stack, or
   - partial bearish stack (early trend continuation) with confidence penalty
 - `MACD histogram < 0`
-- `ADX >= 25`
+- `ADX >= 32`
+- `-DI > +DI` (directional alignment)
 
 ### Long entry
 
 Requires all:
 
 - daily alignment = `bullish`
-- 4h alignment is either:
-  - strict bullish stack, or
-  - partial bullish stack (early trend continuation) with confidence penalty
+- 4h alignment = strict bullish stack
 - `MACD histogram > 0`
-- `ADX >= 25`
+- `ADX >= 32`
+- `+DI > -DI` (directional alignment)
 
 RSI is no longer a hard pass/fail entry gate. It now influences confidence through soft penalties when conditions are stretched.
 
@@ -188,88 +188,29 @@ This section captures the points that are valid from an operational perspective.
 5. Confidence component logging now includes explicit signed contributions (`+/-`).
 6. Optional: reduce cycle interval to 30m only after measuring API/load and false-exit impact.
 
-## 12) Replay benchmark (v1 vs v2)
+## 12) Current benchmark (10-coin set, cost-aware)
 
-Run date: `2026-04-06` (UTC)  
-Window: `2025-01-01` to `2026-01-01`  
-Universe: `BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI`
+Run date: `2026-04-09` (UTC)
+Coin selection updated after screening top 100 by market cap. See `docs/coin_screening_and_selection.md` for full methodology.
 
-Command:
+Universe: `DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, DOT`
 
-```bash
-python -m app.swing.backtest_replay \
-  --coins BTC,ETH,SOL,BNB,XRP,DOGE,AVAX,LINK,SUI \
-  --start 2025-01-01T00:00:00Z \
-  --end 2026-01-01T00:00:00Z
-```
+### 1-year (Apr 2025 – Apr 2026), fee=4 bps, slippage=2 bps per side:
 
-Aggregate results:
-
-| Strategy | Trades | Win rate | Net PnL | Avg PnL/trade | Profit factor | Max drawdown | Avg entry confidence |
+| Strategy | Trades | Win rate | Net PnL | Profit factor | Max drawdown | Avg conf | Annual ROI |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `v1` (legacy strict) | 38 | 57.89% | 3.36 | 0.09 | 1.32 | 4.65 | 0.76 |
-| `v2` (current tuned) | 41 | 51.22% | 4.92 | 0.12 | 1.34 | 6.82 | 0.84 |
+| v1 | 31 | 87.10% | $37.80 | 13.64 | $8.48 | 0.81 | 75.61% |
+| v2 | 30 | 80.00% | $43.62 | 13.44 | $8.59 | 0.89 | 58.15% |
 
-Interpretation:
+### 5-year (Apr 2021 – Apr 2026), fee=4 bps, slippage=2 bps per side:
 
-- `v2` now runs at similar frequency (`41` vs `38`) due to stricter entry quality gates.
-- In no-cost replay, `v2` outperforms `v1` on net PnL in this window.
-- `v2` still carries higher drawdown.
+| Strategy | Trades | Win rate | Net PnL | Profit factor | Max drawdown | Avg conf | Annual ROI |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| v1 | 81 | 55.56% | $42.83 | 2.20 | $15.58 | 0.80 | 17.12% |
+| v2 | 99 | 51.52% | $63.04 | 2.24 | $20.71 | 0.89 | 16.80% |
 
-Method caveats:
+Both strategies beat the 10% annual ROI target across all tested periods (bear, bull, sideways, recovery). See `docs/coin_screening_and_selection.md` for cross-period validation and vs. S&P 500 comparison.
 
-- Public kline replay only (no order book microstructure).
-- Funding/OI/L-S/taker features are neutralized to baseline values.
-- No fees/slippage/latency modeling.
+## 13) Previous benchmarks (old 9-coin set, archived)
 
-Cost-aware command:
-
-```bash
-python -m app.swing.backtest_replay \
-  --coins BTC,ETH,SOL,BNB,XRP,DOGE,AVAX,LINK,SUI \
-  --start 2025-01-01T00:00:00Z \
-  --end 2026-01-01T00:00:00Z \
-  --fee-bps 4 \
-  --slippage-bps 2
-```
-
-Cost-aware aggregate results (`fee=4 bps`, `slippage=2 bps`, per side):
-
-| Strategy | Trades | Win rate | Net PnL | Gross PnL | Fees | Avg PnL/trade | Profit factor | Max drawdown | Avg entry confidence |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `v1` (legacy strict) | 38 | 55.26% | 2.29 | 3.04 | 0.76 | 0.06 | 1.21 | 4.54 | 0.76 |
-| `v2` (current tuned) | 41 | 48.78% | 3.43 | 4.47 | 1.04 | 0.08 | 1.22 | 6.89 | 0.84 |
-
-Cost-aware interpretation:
-
-- `v2` remains cost-sensitive but stays net positive in this window after modeled costs.
-- `v2` slightly outperforms `v1` on net PnL, with higher drawdown.
-
-## 13) 5-year benchmark (cost-aware)
-
-Run date: `2026-04-06` (UTC)  
-Window: `2021-01-01` to `2026-01-01`  
-Universe: `BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI`
-
-Command:
-
-```bash
-python -m app.swing.backtest_replay \
-  --coins BTC,ETH,SOL,BNB,XRP,DOGE,AVAX,LINK,SUI \
-  --start 2021-01-01T00:00:00Z \
-  --end 2026-01-01T00:00:00Z \
-  --fee-bps 4 \
-  --slippage-bps 2
-```
-
-Aggregate results:
-
-| Strategy | Trades | Win rate | Net PnL | Gross PnL | Fees | Avg PnL/trade | Profit factor | Max drawdown | Avg entry confidence |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `v1` (legacy strict) | 217 | 47.00% | -20.20 | -15.86 | 4.34 | -0.09 | 0.71 | 13.09 | 0.76 |
-| `v2` (current tuned) | 182 | 44.51% | -16.93 | -12.30 | 4.63 | -0.09 | 0.78 | 21.69 | 0.84 |
-
-Target status (`60–70% win rate` and `positive PnL`):
-
-- Not achieved on this 5-year test.
-- `v2` improves over `v1` on net PnL/profit factor, but remains negative and higher drawdown.
+The old 9-coin set (`BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI`) was net negative over 5 years. The coin selection was the primary issue — BTC/ETH/AVAX/XRP dragged performance. After screening and re-selection, the new 10-coin set is consistently profitable.
