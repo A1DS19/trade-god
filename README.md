@@ -1,5 +1,6 @@
 # trade-god
 
+![CI](https://github.com/A1DS19/trade-god/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
@@ -32,7 +33,7 @@ Two independent trading strategies running in parallel on Binance.
 
 ## Swing Agent
 
-- Trades 9 USDT-M perpetual futures pairs (BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI)
+- Trades 5 USDT-M perpetual futures pairs (SOL, BNB, DOGE, LINK, SUI)
 - Rule-based decision engine — no LLM, fully deterministic
 - Indicators: EMA stack (9/21/50 on 4h, 21/50/200 daily), RSI, Stochastic RSI, MACD, ATR, ATR percentile, ADX (+DI/−DI), VWAP, volume ratio, funding rate, open interest change, long/short ratio, taker buy/sell ratio
 - Regime filter: no entries in ranging markets (`ADX < 20`), minimum entry ADX `>= 22`
@@ -45,43 +46,32 @@ Two independent trading strategies running in parallel on Binance.
 
 ### Swing replay benchmark (v1 vs v2)
 
-Run date: `2026-04-06` (UTC)  
-Window: `2025-01-01` to `2026-01-01`  
+Run date: `2026-04-08` (UTC)  
+Window: `2016-04-08` to `2026-04-09` (~8.5 years, data from Binance futures launch Sep 2017)  
 Universe: `BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI`
-
-| Strategy | Trades | Win rate | Net PnL | Avg PnL/trade | Profit factor | Max DD | Avg entry conf |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| `v1` (legacy strict) | 38 | 57.89% | 3.36 | 0.09 | 1.32 | 4.65 | 0.76 |
-| `v2` (current tuned) | 41 | 51.22% | 4.92 | 0.12 | 1.34 | 6.82 | 0.84 |
-
-Reproduce:
-
-```bash
-python -m app.swing.backtest_replay \
-  --coins BTC,ETH,SOL,BNB,XRP,DOGE,AVAX,LINK,SUI \
-  --start 2025-01-01T00:00:00Z \
-  --end 2026-01-01T00:00:00Z \
-  --fee-bps 4 \
-  --slippage-bps 2
-```
-
-Notes: public kline replay, neutralized funding/OI/L-S/taker features, configurable fees/slippage, no latency modeling.
 
 Cost-aware aggregate snapshot (`fee=4 bps`, `slippage=2 bps`, per side):
 
 | Strategy | Trades | Win rate | Net PnL | Gross PnL | Fees | Avg PnL/trade | Profit factor | Max DD |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `v1` (legacy strict) | 38 | 55.26% | 2.29 | 3.04 | 0.76 | 0.06 | 1.21 | 4.54 |
-| `v2` (current tuned) | 41 | 48.78% | 3.43 | 4.47 | 1.04 | 0.08 | 1.22 | 6.89 |
+| `v1` (legacy strict) | 60 | 50.00% | 16.68 | 17.87 | 1.19 | 0.28 | 1.52 | 20.89 |
+| `v2` (current tuned) | 98 | 48.98% | 26.49 | 29.00 | 2.51 | 0.27 | 1.48 | 33.40 |
 
-5-year cost-aware aggregate snapshot (`2021-01-01` to `2026-01-01`, same fee/slippage):
+Tuning applied (2026-04-08): removed mixed-EMA soft exit (net negative over 8.5 years), raised `MACD_DIV_EXIT_RSI_LONG` from 62 to 68 (62 fires on normal consolidation, not genuine reversals).
 
-| Strategy | Trades | Win rate | Net PnL | Gross PnL | Fees | Avg PnL/trade | Profit factor | Max DD |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `v1` (legacy strict) | 217 | 47.00% | -20.20 | -15.86 | 4.34 | -0.09 | 0.71 | 13.09 |
-| `v2` (current tuned) | 182 | 44.51% | -16.93 | -12.30 | 4.63 | -0.09 | 0.78 | 21.69 |
+Reproduce:
 
-Target status (`60–70% win rate` and `positive PnL`): not met yet on 5-year data.
+```bash
+python -m app.swing.backtest_replay \
+  --start 2016-04-08T00:00:00Z \
+  --end 2026-04-09T00:00:00Z \
+  --fee-bps 4 --slippage-bps 2 \
+  --exit-breakdown --entry-analysis \
+  --charts charts_out/10yr \
+  --workers 9
+```
+
+Notes: public kline replay, neutralized funding/OI/L-S/taker features, configurable fees/slippage, no latency modeling. Charts saved as PNG to the `--charts` directory.
 
 ---
 
@@ -254,6 +244,7 @@ app/
     exchange.py     — Binance Futures wrappers (open/close, SL/TP)
     notifier.py     — Telegram alerts (open, close)
     config.py       — swing-specific strategy constants and env vars
+    backtest_replay/ — OHLCV replay backtest engine (v1 vs v2 comparison, charts)
   db/
     models.py       — SQLAlchemy models, state persistence, log_trade()
   config.py         — shared env vars and DCA strategy constants

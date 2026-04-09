@@ -34,9 +34,8 @@ MIN_NET_TP_PCT = 0.004  # Require TP - est round-trip costs >= 0.4%
 SHORT_EXIT_RSI_FLOOR = 32.0       # Exit short only if RSI gets very deeply oversold
 LONG_EXIT_RSI_CEIL = 68.0         # Exit long only if RSI gets very deeply overbought
 MACD_DIV_EXIT_RSI_SHORT = 32.0   # MACD divergence exit for shorts: RSI must be this low — lowered from 38, grid search showed 32 prevents premature exits on healthy shorts
-MACD_DIV_EXIT_RSI_LONG = 62.0    # MACD divergence exit for longs: RSI must be this high (trend exhaustion, not normal pullback)
-SOFT_EXIT_MAX_LOSS_PCT = 0.020       # Delay soft exits while unrealized loss is small (<2.0%)
-MIXED_EMA_EXIT_MIN_LOSS_PCT = 0.005  # Only fire mixed-EMA soft exit when already down ≥0.5% (avoids cutting profitable trades on chop)
+MACD_DIV_EXIT_RSI_LONG = 68.0    # MACD divergence exit for longs: RSI must be this high (raised from 62: 62 fires on consolidation, 68 aligns with deep-overbought threshold)
+SOFT_EXIT_MAX_LOSS_PCT = 0.020   # Delay soft exits while unrealized loss is small (<2.0%)
 
 # ── Loop ──────────────────────────────────────────────────
 CHECK_INTERVAL    = 3600  # Seconds between scans (1 hour)
