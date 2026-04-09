@@ -387,7 +387,9 @@ class ReplayEngine:
         return True
 
     def _run_coin(self, coin: str) -> tuple[StrategyState, StrategyState, int]:
-        client = Client()  # one client per thread to avoid session sharing
+        # Look up Client through package namespace so tests can monkeypatch it
+        import app.swing.backtest_replay as _pkg
+        client = _pkg.Client()
         symbol = f"{coin}USDT"
         start_ms = _to_ms(self.start)
         end_ms = _to_ms(self.end)
