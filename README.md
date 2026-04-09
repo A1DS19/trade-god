@@ -1,5 +1,6 @@
 # trade-god
 
+![CI](https://github.com/A1DS19/trade-god/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
@@ -32,15 +33,45 @@ Two independent trading strategies running in parallel on Binance.
 
 ## Swing Agent
 
-- Trades 9 USDT-M perpetual futures pairs (BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI)
+- Trades 5 USDT-M perpetual futures pairs (SOL, BNB, DOGE, LINK, SUI)
 - Rule-based decision engine — no LLM, fully deterministic
 - Indicators: EMA stack (9/21/50 on 4h, 21/50/200 daily), RSI, Stochastic RSI, MACD, ATR, ATR percentile, ADX (+DI/−DI), VWAP, volume ratio, funding rate, open interest change, long/short ratio, taker buy/sell ratio
-- Regime filter: ADX > 25 required — no trades in ranging/choppy markets
-- Entry requires all 5 conditions: daily EMA bias + 4h EMA alignment + MACD direction + ADX + RSI gate (> 42 for shorts, < 58 for longs)
-- Confidence scored from 11 confirming/contradicting signals; minimum 0.70 to enter
+- Regime filter: no entries in ranging markets (`ADX < 20`), minimum entry ADX `>= 22`
+- Entry uses daily bias + 4h strict or partial alignment + MACD direction + ADX gate; RSI now contributes via confidence penalties (not hard block)
+- Confidence scored from 11 confirming/contradicting signals; minimum 0.80 to enter
 - Exit on MACD divergence, RSI threshold breach, EMA flip, ADX collapse, or OI drop
 - ATR-based SL/TP sizing (1.5× and 3× ATR14); client-side safety net enforced each cycle
+- Position size scales by confidence (`$5` to `$10`)
 - Telegram notifications for every open and close
+
+### Swing replay benchmark (v1 vs v2)
+
+Run date: `2026-04-08` (UTC)  
+Window: `2016-04-08` to `2026-04-09` (~8.5 years, data from Binance futures launch Sep 2017)  
+Universe: `BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI`
+
+Cost-aware aggregate snapshot (`fee=4 bps`, `slippage=2 bps`, per side):
+
+| Strategy | Trades | Win rate | Net PnL | Gross PnL | Fees | Avg PnL/trade | Profit factor | Max DD |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `v1` (legacy strict) | 60 | 50.00% | 16.68 | 17.87 | 1.19 | 0.28 | 1.52 | 20.89 |
+| `v2` (current tuned) | 98 | 48.98% | 26.49 | 29.00 | 2.51 | 0.27 | 1.48 | 33.40 |
+
+Tuning applied (2026-04-08): removed mixed-EMA soft exit (net negative over 8.5 years), raised `MACD_DIV_EXIT_RSI_LONG` from 62 to 68 (62 fires on normal consolidation, not genuine reversals).
+
+Reproduce:
+
+```bash
+python -m app.swing.backtest_replay \
+  --start 2016-04-08T00:00:00Z \
+  --end 2026-04-09T00:00:00Z \
+  --fee-bps 4 --slippage-bps 2 \
+  --exit-breakdown --entry-analysis \
+  --charts charts_out/10yr \
+  --workers 9
+```
+
+Notes: public kline replay, neutralized funding/OI/L-S/taker features, configurable fees/slippage, no latency modeling. Charts saved as PNG to the `--charts` directory.
 
 ---
 
@@ -213,6 +244,7 @@ app/
     exchange.py     — Binance Futures wrappers (open/close, SL/TP)
     notifier.py     — Telegram alerts (open, close)
     config.py       — swing-specific strategy constants and env vars
+    backtest_replay/ — OHLCV replay backtest engine (v1 vs v2 comparison, charts)
   db/
     models.py       — SQLAlchemy models, state persistence, log_trade()
   config.py         — shared env vars and DCA strategy constants

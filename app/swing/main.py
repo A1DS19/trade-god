@@ -48,6 +48,29 @@ def _calc_realized_pnl(pos: dict, exit_price: float) -> tuple[float, float]:
     return pnl, pnl_pct
 
 
+def _position_size_usdt(confidence: float) -> float:
+    lo = config.POSITION_USDT_MIN
+    hi = config.POSITION_USDT_MAX
+    if hi <= lo:
+        return lo
+    floor = config.MIN_CONFIDENCE
+    cap = max(config.CONFIDENCE_SIZING_CAP, floor + 0.01)
+    x = min(max(confidence, floor), cap)
+    ratio = (x - floor) / (cap - floor)
+    return round(lo + (hi - lo) * ratio, 2)
+
+
+def _expected_move_ok(tp_pct: float) -> tuple[bool, str]:
+    roundtrip_cost_pct = 2.0 * (config.EST_FEE_BPS + config.EST_SLIPPAGE_BPS) / 10_000.0
+    required_tp_pct = roundtrip_cost_pct * config.MIN_TP_TO_COST_MULT
+    net_tp_pct = tp_pct - roundtrip_cost_pct
+    if tp_pct < required_tp_pct:
+        return False, f"tp {tp_pct*100:.2f}% < {config.MIN_TP_TO_COST_MULT:.1f}x est costs ({required_tp_pct*100:.2f}%)"
+    if net_tp_pct < config.MIN_NET_TP_PCT:
+        return False, f"net tp {net_tp_pct*100:.2f}% < min {config.MIN_NET_TP_PCT*100:.2f}%"
+    return True, ""
+
+
 def run():
     db.init_db()
     client = Client(config.BINANCE_API_KEY, config.BINANCE_SECRET_KEY)
@@ -55,7 +78,7 @@ def run():
     notifier.send(
         f"📊 <b>Swing Agent LIVE</b>\n"
         f"Coins: {', '.join(config.COINS)}\n"
-        f"Leverage: {config.LEVERAGE}x  |  Size: ${config.POSITION_USDT}\n"
+        f"Leverage: {config.LEVERAGE}x  |  Size: ${config.POSITION_USDT_MIN}-${config.POSITION_USDT_MAX}\n"
         f"Min confidence: {config.MIN_CONFIDENCE * 100:.0f}%  |  "
         f"Max positions: {config.MAX_OPEN}"
     )
@@ -162,15 +185,6 @@ def run():
                             )
                             continue
 
-                    # ── RSI gate (code-level, don't trust model math) ─────
-                    rsi = snap["indicators"]["rsi14_4h"]
-                    if action == "short" and rsi < config.MIN_RSI_SHORT:
-                        log.info("SKIP %s — RSI %.2f below min %.1f for short", coin, rsi, config.MIN_RSI_SHORT)
-                        continue
-                    if action == "long" and rsi > config.MAX_RSI_LONG:
-                        log.info("SKIP %s — RSI %.2f above max %.1f for long", coin, rsi, config.MAX_RSI_LONG)
-                        continue
-
                     # ── Confidence gate ───────────────────────────────
                     if conf < config.MIN_CONFIDENCE:
                         log.info("SKIP %s — confidence %.0f%% < %.0f%%",
@@ -211,10 +225,17 @@ def run():
                     # ── Open new position ─────────────────────────────
                     sl = decision.get("sl_pct", 0.0) or 0.0
                     tp = decision.get("tp_pct", 0.0) or 0.0
+                    entry_mode = decision.get("entry_mode", "strict")
+                    move_ok, move_reason = _expected_move_ok(tp)
+                    if not move_ok:
+                        log.info("SKIP %s — expected move filter (%s)", coin, move_reason)
+                        continue
+                    position_usdt = _position_size_usdt(conf)
+                    log.info("SIZE %s — mode=%s conf %.2f -> $%.2f", coin, entry_mode, conf, position_usdt)
                     if action == "long":
-                        open_long(client, coin, config.POSITION_USDT, config.LEVERAGE, sl, tp)
+                        open_long(client, coin, position_usdt, config.LEVERAGE, sl, tp)
                     else:
-                        open_short(client, coin, config.POSITION_USDT, config.LEVERAGE, sl, tp)
+                        open_short(client, coin, position_usdt, config.LEVERAGE, sl, tp)
 
                     positions  = get_open_positions(client)
                     opened_pos = positions.get(coin, {})

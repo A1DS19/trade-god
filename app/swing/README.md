@@ -30,19 +30,20 @@ Every hour the agent:
 
 ### 2. Regime gate
 
-ADX < 20 → no new entries (ranging/choppy market). ADX 20–25 → borderline (confidence penalty applied).
+ADX < 20 → no new entries (ranging/choppy market).  
+Minimum entry ADX is 22. ADX 22–25 is treated as borderline and penalized in confidence.
 
-### 3. Entry conditions (all 5 required)
+### 3. Entry conditions
 
 | # | Short | Long |
 |---|---|---|
-| 1 | `market_regime == "trending"` (ADX > 25) | same |
+| 1 | `ADX >= 25` | same |
 | 2 | `daily_ema_alignment == "bearish"` | `"bullish"` |
-| 3 | `ema_alignment (4h) == "bearish"` | `"bullish"` |
+| 3 | 4h strict bearish OR partial bearish stack | 4h strict bullish OR partial bullish stack |
 | 4 | `macd_hist < 0` | `macd_hist > 0` |
-| 5 | `RSI > 42` | `RSI < 58` |
+| 5 | RSI affects confidence (soft penalties), not hard-block | same |
 
-RSI gate is also enforced in code (`main.py`) regardless of the rule engine output.
+Partial 4h alignment entries are allowed but get a confidence penalty.
 
 ### 4. Confidence scoring
 
@@ -71,9 +72,10 @@ Each confirming or contradicting signal adjusts a raw score. The score maps to a
 | VWAP bias confirms direction | +0.03 |
 | Taker buy/sell ratio aligns (< 0.8 for short, > 1.2 for long) | +0.03 |
 
-**Contradicting signals** reduce score by 0.02–0.05 each. ADX borderline regime applies a −0.08 penalty.
+**Contradicting signals** reduce score by 0.02–0.05 each.  
+ADX borderline regime applies a −0.08 penalty. Partial 4h alignment applies a −0.04 penalty.
 
-Trades with final confidence < 0.70 are skipped.
+Trades with final confidence < 0.80 are skipped.
 
 ### 5. SL/TP
 
@@ -103,13 +105,23 @@ All settings in `config.py`:
 |---|---|---|
 | `COINS` | 9 pairs | Futures pairs to watch |
 | `LEVERAGE` | 5x | Futures leverage |
-| `POSITION_USDT` | $5 | Margin per trade (notional = $25) |
+| `POSITION_USDT_MIN` | $5 | Min trade size |
+| `POSITION_USDT_MAX` | $10 | Max trade size for high-confidence trades |
 | `MAX_OPEN` | 3 | Max simultaneous open positions |
 | `DEFAULT_SL_PCT` | 3% | Client-side stop loss fallback |
 | `DEFAULT_TP_PCT` | 8% | Client-side take profit fallback |
-| `MIN_CONFIDENCE` | 0.70 | Minimum confidence to enter |
-| `MIN_RSI_SHORT` | 42.0 | RSI floor for short entries |
-| `MAX_RSI_LONG` | 58.0 | RSI ceiling for long entries |
+| `MIN_CONFIDENCE` | 0.80 | Minimum confidence to enter |
+| `MIN_ADX_ENTRY` | 25.0 | Minimum ADX for entries |
+| `PARTIAL_MIN_ADX` | 25.0 | Minimum ADX for partial (mixed 4h) entries |
+| `PARTIAL_MIN_CONFIDENCE` | 0.80 | Higher confidence floor for partial entries |
+| `ENABLE_PARTIAL_ENTRIES` | `False` | Disable mixed/partial entries (quality-first) |
+| `REQUIRE_DI_ALIGNMENT` | `True` | Require `-DI > +DI` for shorts and `+DI > -DI` for longs |
+| `MIN_RSI_SHORT` | 42.0 | RSI comfort zone reference for shorts (soft penalty below) |
+| `MAX_RSI_LONG` | 58.0 | RSI comfort zone reference for longs (soft penalty above) |
+| `EST_FEE_BPS` | 4.0 | Estimated fee per side used by expected-move filter |
+| `EST_SLIPPAGE_BPS` | 2.0 | Estimated slippage per side used by expected-move filter |
+| `MIN_TP_TO_COST_MULT` | 3.0 | Minimum TP multiple over estimated round-trip costs |
+| `MIN_NET_TP_PCT` | 0.40% | Minimum net TP after estimated costs |
 | `CHECK_INTERVAL` | 3600s | Seconds between scans |
 | `LOSS_COOLDOWN_HRS` | 4h | Hours to skip a coin after a losing trade |
 
@@ -150,3 +162,90 @@ Binance futures keys require **Futures Trading** enabled. Keep withdrawals disab
 | Position opened | Coin, direction, entry price, SL%, TP%, confidence, reasoning |
 | Position closed | Coin, entry/exit price, realized PnL, exit reason |
 | Startup | Active coins, leverage, size, confidence threshold |
+
+---
+
+## Replay backtest (v1 vs v2)
+
+Compare legacy strict rules (`v1`) against current tuned rules (`v2`) on the same historical candles:
+
+```bash
+python -m app.swing.backtest_replay \
+  --coins BTC,ETH,SOL,BNB,XRP,DOGE,AVAX,LINK,SUI \
+  --start 2025-01-01T00:00:00Z \
+  --end 2026-01-01T00:00:00Z \
+  --fee-bps 4 \
+  --slippage-bps 2
+```
+
+Notes:
+
+- Uses public kline data and replays OHLC candle closes/intrabar SL-TP touches.
+- Funding/OI/L-S/taker features are neutralized to baseline values in replay.
+- Fees/slippage are configurable (`--fee-bps`, `--slippage-bps`) and applied per side.
+- Still no latency model; use it for **relative v1 vs v2 comparison**, not exact live expectancy.
+
+### Latest benchmark snapshot
+
+Run date: `2026-04-06` (UTC)  
+Window: `2025-01-01` to `2026-01-01`  
+Universe: `BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI`
+
+Aggregate:
+
+| Strategy | Trades | Win rate | Net PnL | Avg PnL/trade | Profit factor | Max DD | Avg entry conf |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `v1` (legacy strict) | 38 | 57.89% | 3.36 | 0.09 | 1.32 | 4.65 | 0.76 |
+| `v2` (current tuned) | 41 | 51.22% | 4.92 | 0.12 | 1.34 | 6.82 | 0.84 |
+
+Observed from this replay:
+
+- `v2` now trades at similar cadence to `v1` (`41` vs `38`) with stricter quality gates.
+- Before costs, `v2` outperformed `v1` in this window (`4.92` vs `3.36`), at the expense of higher drawdown.
+
+### Cost-aware benchmark snapshot (4 bps fee + 2 bps slippage per side)
+
+Run date: `2026-04-06` (UTC)  
+Window: `2025-01-01` to `2026-01-01`  
+Universe: `BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI`
+
+Aggregate:
+
+| Strategy | Trades | Win rate | Net PnL | Gross PnL | Fees | Avg PnL/trade | Profit factor | Max DD | Avg entry conf |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `v1` (legacy strict) | 38 | 55.26% | 2.29 | 3.04 | 0.76 | 0.06 | 1.21 | 4.54 | 0.76 |
+| `v2` (current tuned) | 41 | 48.78% | 3.43 | 4.47 | 1.04 | 0.08 | 1.22 | 6.89 | 0.84 |
+
+Observed from this replay:
+
+- After costs, `v2` stays positive and outperforms `v1` on net PnL in this window.
+- `v2` still carries higher drawdown than `v1`.
+
+### 5-year cost-aware benchmark snapshot (4 bps fee + 2 bps slippage per side)
+
+Run date: `2026-04-06` (UTC)  
+Window: `2021-01-01` to `2026-01-01`  
+Universe: `BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI`
+
+Command:
+
+```bash
+python -m app.swing.backtest_replay \
+  --coins BTC,ETH,SOL,BNB,XRP,DOGE,AVAX,LINK,SUI \
+  --start 2021-01-01T00:00:00Z \
+  --end 2026-01-01T00:00:00Z \
+  --fee-bps 4 \
+  --slippage-bps 2
+```
+
+Aggregate:
+
+| Strategy | Trades | Win rate | Net PnL | Gross PnL | Fees | Avg PnL/trade | Profit factor | Max DD | Avg entry conf |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `v1` (legacy strict) | 217 | 47.00% | -20.20 | -15.86 | 4.34 | -0.09 | 0.71 | 13.09 | 0.76 |
+| `v2` (current tuned) | 182 | 44.51% | -16.93 | -12.30 | 4.63 | -0.09 | 0.78 | 21.69 | 0.84 |
+
+Target status (`60–70% win rate` and `positive PnL`):
+
+- Not met yet on 5-year data.
+- `v2` is less negative than `v1`, but still below target and with higher drawdown.
