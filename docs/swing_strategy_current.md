@@ -170,18 +170,18 @@ This section captures the points that are valid from an operational perspective.
 ### Weaknesses I agree with
 
 - Trade frequency can still be low due to stacked gates (ADX, dual EMA alignment, MACD sign, confidence threshold).
-- Hard `ADX > 25` entry gate delayed entries in prior version.
+- ADX >= 32 entry gate means the bot sits flat for extended periods in choppy markets (by design — grid search showed PF 1.93 vs 1.20 at lower thresholds).
 - 1-hour cycle can delay discretionary/soft-exit reaction (even though exchange-side SL/TP helps).
 
 ### Important caveats
 
 - Confidence model is not opaque in code: feature weights and confidence mapping are explicit.
 - Volatility is not fully missing: ATR percentile affects confidence, and SL/TP are ATR-derived.
-- Borderline ADX is no longer used for entries (`MIN_ADX_ENTRY = 25`).
+- Borderline ADX is no longer used for entries (`MIN_ADX_ENTRY = 32`).
 
 ### Improvements that fit current architecture
 
-1. ADX hard gate was loosened from `>25` to `>=22`, with penalty below 25.
+1. ADX hard gate was raised to `>= 32` after grid search (PF 1.93, DD $7 vs PF 1.20, DD $15 at lower thresholds).
 2. RSI was converted from hard pass/fail into softer score penalties near extremes.
 3. Strict EMA stack remains primary; partial 4h stack mode was added with penalty.
 4. Confidence-based sizing bands were added (from `$5` to `$10`).
@@ -190,26 +190,34 @@ This section captures the points that are valid from an operational perspective.
 
 ## 12) Current benchmark (10-coin set, cost-aware)
 
-Run date: `2026-04-09` (UTC)
-Coin selection updated after screening top 100 by market cap. See `docs/coin_screening_and_selection.md` for full methodology.
+Run date: `2026-04-11` (UTC)
+Coin selection from 2026-04-09 top-100 screening. See `docs/coin_screening_and_selection.md` for full methodology.
 
 Universe: `DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, DOT`
+
+**Note (2026-04-11):** Earlier benchmarks ran v2 with `V2_MIN_CONFIDENCE = 0.85` in the backtest strategy while the live bot has been at `MIN_CONFIDENCE = 0.80` since 2026-04-06. The backtest was under-reporting live performance by ~21% net PnL for the entire life of the backtest. The table below reflects the aligned v2 (0.80) that matches live behavior.
 
 ### 1-year (Apr 2025 – Apr 2026), fee=4 bps, slippage=2 bps per side:
 
 | Strategy | Trades | Win rate | Net PnL | Profit factor | Max drawdown | Avg conf | Annual ROI |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | v1 | 31 | 87.10% | $37.80 | 13.64 | $8.48 | 0.81 | 75.61% |
-| v2 | 30 | 80.00% | $43.62 | 13.44 | $8.59 | 0.89 | 58.15% |
+| v2 | 40 | 72.50% | $52.96 | 6.57 | $10.21 | 0.86 | 70.61% |
 
 ### 5-year (Apr 2021 – Apr 2026), fee=4 bps, slippage=2 bps per side:
 
 | Strategy | Trades | Win rate | Net PnL | Profit factor | Max drawdown | Avg conf | Annual ROI |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | v1 | 81 | 55.56% | $42.83 | 2.20 | $15.58 | 0.80 | 17.12% |
-| v2 | 99 | 51.52% | $63.04 | 2.24 | $20.71 | 0.89 | 16.80% |
+| v2 | 146 | 50.00% | $76.46 | 1.96 | $25.32 | 0.85 | 20.38% |
 
 Both strategies beat the 10% annual ROI target across all tested periods (bear, bull, sideways, recovery). See `docs/coin_screening_and_selection.md` for cross-period validation and vs. S&P 500 comparison.
+
+**Per-coin watch-outs (5-year, v2 at true 0.80 threshold):**
+- `DOT`: turns **net-negative** (−$0.89, 29 trades, 31% WR) — was +$1.14 when backtest was at 0.85. The 0.85 filter was masking a structural DOT weakness. Candidate for removal pending investigation.
+- `RUNE`: drops from $4.34 to $1.81 (−58%). Still profitable but marginal.
+- `1000FLOKI`: small decline from $18.83 to $16.47; still the top PnL contributor.
+- `DOGE`, `1000SHIB`, `IOTA`, `BSV`, `TURBO` all materially improve.
 
 ## 13) Previous benchmarks (old 9-coin set, archived)
 
