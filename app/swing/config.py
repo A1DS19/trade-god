@@ -7,7 +7,23 @@ from app.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID  # shared credentials
 BINANCE_API_KEY    = os.environ["BINANCE_API_KEY_FUTURES"]
 BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY_FUTURES"]
 # ── Coins to watch ────────────────────────────────────────
-COINS = ["DOGE", "1000SHIB", "RUNE", "RENDER", "1000FLOKI", "TURBO", "IP", "BSV", "IOTA"]  # Screened from top 100 by market cap. DOT removed 2026-04-11: at true live MIN_CONFIDENCE=0.80 it was net-negative over 5yr (−$0.89 / 29 trades, 10 SL totaling −$13.73). Was selected under stale backtest 0.85 filter; see project_backtest_conf_drift_2026-04-11.md
+COINS = ["DOGE", "1000SHIB", "RUNE", "RENDER", "1000FLOKI", "TURBO", "IP", "BSV", "IOTA"]
+# ── Coin selection notes (2026-04-11) ────────────────────────────────────
+# DOT removed 2026-04-11: at true live MIN_CONFIDENCE=0.80 it was net-negative
+# over 5yr (−$0.89 / 29 trades / 10 SL totaling −$13.73). Was originally picked
+# under a stale 0.85 backtest filter — see project_backtest_conf_drift_2026-04-11.md
+#
+# Walk-forward validation (2026-04-11):
+#   - DOGE, IOTA: survived both walk-forward tests (train 21-23/24-26 and 21-24/25-26)
+#   - BSV, RENDER: marginally passed or insufficient training data
+#   - 1000SHIB, RUNE, 1000FLOKI, TURBO, IP: NOT in today's top-100 by mcap
+#     — cannot be reproduced by the current --top --screen pipeline.
+#     They were picked via a process we cannot reproduce (either a different
+#     universe fetcher in April 2026 or manual selection). Transparency flag,
+#     not a removal recommendation.
+# See docs/swing_strategy_current.md §12 and project_walk_forward_2026-04-11.md
+# for the full walk-forward analysis. Forward-looking ROI estimate: ~15-22%
+# annual (NOT the 22.90% / 76.75% in-sample numbers).
 
 # ── Risk / sizing ─────────────────────────────────────────
 LEVERAGE       = 5      # Default futures leverage

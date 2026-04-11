@@ -196,26 +196,80 @@ Coin selection: original 2026-04-09 top-100 screening minus DOT. See `docs/coin_
 Universe: `DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA`
 
 **History notes (2026-04-11):**
-1. Earlier benchmarks ran v2 with `V2_MIN_CONFIDENCE = 0.85` in the backtest while live has been at `MIN_CONFIDENCE = 0.80` since 2026-04-06. The backtest was under-reporting live PnL by ~21% for the entire life of the backtest. Fixed — table below reflects the aligned v2 that matches live.
+1. Earlier benchmarks ran v2 with `V2_MIN_CONFIDENCE = 0.85` in the backtest while live has been at `MIN_CONFIDENCE = 0.80` since 2026-04-06. The backtest was under-reporting live PnL by ~21% for the entire life of the backtest. Fixed — tables below reflect the aligned v2 that matches live.
 2. **DOT was removed.** At the true 0.80 threshold it was net-negative over 5 years (−$0.89 / 29 trades / 31% WR). The exit breakdown showed 10 stop-outs totaling −$13.73, most on shorts blown out by sharp upward impulses, with avg entry ADX only 35.7 (weak selectivity on DOT specifically). DOT was picked in the 2026-04-09 screening based on the over-filtered 0.85 numbers. Removing it improved every aggregate metric.
+3. **Walk-forward validation exposes significant overfit.** The tables in §12a are *in-sample* — coin selection and measurement overlap. Honest out-of-sample estimates are in §12b. The delta between in-sample and out-of-sample is the overfit premium (~41pp on 2025-2026 annual ROI), which is large. Treat the in-sample numbers as a ceiling, not a forecast.
 
-### 1-year (Apr 2025 – Apr 2026), fee=4 bps, slippage=2 bps per side:
+### 12a) In-sample benchmarks (coin selection overlaps with measurement window)
+
+⚠️ **These numbers include selection bias.** The 9 coins were picked using 2021-2026 data; measuring them on any subset of that window overstates forward-looking performance. Kept here as a reference ceiling, not a forecast.
+
+#### 1-year (Apr 2025 – Apr 2026), fee=4 bps, slippage=2 bps per side:
 
 | Strategy | Trades | Win rate | Net PnL | Profit factor | Max drawdown | Avg conf | Annual ROI |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | v1 | 30 | 86.67% | $35.92 | 13.00 | $8.48 | 0.80 | 79.82% |
 | v2 | 37 | 75.68% | $51.80 | 8.01 | $9.81 | 0.86 | 76.75% |
 
-### 5-year (Apr 2021 – Apr 2026), fee=4 bps, slippage=2 bps per side:
+#### 5-year (Apr 2021 – Apr 2026), fee=4 bps, slippage=2 bps per side:
 
 | Strategy | Trades | Win rate | Net PnL | Profit factor | Max drawdown | Avg conf | Annual ROI |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | v1 | 67 | 59.70% | $40.42 | 2.40 | $15.58 | 0.80 | 17.96% |
 | v2 | 117 | 54.70% | $77.34 | 2.24 | $25.32 | 0.86 | 22.90% |
 
-Both strategies beat the 10% annual ROI target across all tested periods (bear, bull, sideways, recovery). See `docs/coin_screening_and_selection.md` for cross-period validation and vs. S&P 500 comparison.
+### 12b) Out-of-sample walk-forward benchmarks (honest forward estimates)
 
-**Per-coin watch-out:** `RUNE` is the weakest remaining coin (5yr v2: $1.81 / 14 trades, 42.86% WR). Still positive, monitor but no action.
+✅ **These use clean train/test splits — no overlap between coin selection and measurement.** Methodology: screen top-100 by market cap on the training window only, apply the same tp_rate ≥ 25% / entries ≥ 50 filter, rank by composite score, take the top 10. Backtest those picks on the test window with the current v2 strategy.
+
+#### Walk-forward #1 (train 2021-2023, test 2024-2026) — **FAILED**
+
+| Picks | Trades | Win rate | Net PnL | PF | Max DD | Annual ROI |
+|---|---:|---:|---:|---:|---:|---:|
+| INJ, ETC, BTC, SAND, FIL, APT, ADA, BNB, NEAR, DOGE | 72 | 44.44% | $6.90 | 1.17 | $11.79 | **4.04%** ❌ |
+
+Only 2/10 picks profitable OOS (DOGE +$12.94 carried the portfolio; ADA +$4.01 marginal). The 1-year gap between training and measurement breaks the methodology.
+
+#### Walk-forward #2 (train 2021-2024, test 2025-2026) — **PASSED**
+
+| Picks | Trades | Win rate | Net PnL | PF | Max DD | Annual ROI |
+|---|---:|---:|---:|---:|---:|---:|
+| SEI, INJ, BTC, DOGE, ETC, SAND, PYTH, FIL, IOTA, TIA | 36 | 63.89% | $21.21 | 2.45 | $9.01 | **22.19%** ✅ |
+
+7/10 picks profitable OOS. Continuous training (0-day gap) works; 1-year gap did not. The methodology is **regime-dependent**, not robust.
+
+#### The 41pp overfit premium
+
+Running the current 9 coins on the exact same 2025-2026 window gives **62.97%** annual ROI. The 41pp gap between 62.97% and 22.19% is the cost of selection-window overlap. Forward deployment should plan around ~22%, not ~63%.
+
+### Forward-looking estimate
+
+| Estimate | Annual ROI | Derivation |
+|---|---:|---|
+| **Honest forward estimate** | **~22%** | WF#2 OOS 2025-2026 |
+| With expected drift | 15–20% | WF#2 less a drift haircut — training-test gap widens in forward deployment |
+| Pessimistic (severe overfit) | 5–10% | Midpoint of WF#1 (4%) and WF#2 (22%) |
+| In-sample ceiling | 63–77% | §12a numbers, NOT a forecast |
+
+**Use 15–22% annual as the planning range.** All live risk-sizing, capital allocation, and emotional expectations should be calibrated to this range, not to the §12a numbers.
+
+### Per-coin walk-forward robustness
+
+| Coin | Walk-forward survival | Notes |
+|---|---|---|
+| DOGE | ✅ Passed WF#1 + WF#2 | Only current coin robust across all tests |
+| IOTA | ✅ Passed WF#2 | Also in current set |
+| RENDER | ⚠ Insufficient training data | Can't be evaluated via walk-forward |
+| BSV | ⚠ Low rank in WF#2 (rank 45) | Passed marginally |
+| RUNE | ⚠ Not in top-100 universe | Cannot be reproduced by the screener |
+| 1000SHIB | ⚠ Not in top-100 universe | Cannot be reproduced by the screener |
+| 1000FLOKI | ⚠ Not in top-100 universe | Cannot be reproduced by the screener |
+| TURBO | ⚠ Not in top-100 universe | Cannot be reproduced by the screener |
+| IP | ⚠ Not in top-100 universe | Cannot be reproduced by the screener |
+
+**5 of 9 current coins are not in the top-100 universe the screener fetches today** (1000SHIB, RUNE, 1000FLOKI, TURBO, IP). They were picked via a process we cannot reproduce — either a different universe fetcher in April 2026 or manual selection. This is a transparency flag, not a removal recommendation.
+
+**The edge is strongest on DOGE + IOTA.** Both survived every walk-forward test. The other 7 coins are speculative — in-sample they look great, but we have limited out-of-sample validation.
 
 ## 13) Previous benchmarks (old 9-coin set, archived)
 
