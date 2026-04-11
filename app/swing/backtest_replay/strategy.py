@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 
@@ -12,6 +13,9 @@ from typing import Any
 LEVERAGE = 5
 V1_MIN_CONFIDENCE = 0.70
 V2_MIN_CONFIDENCE = 0.80  # matches app/swing/config.py MIN_CONFIDENCE (live bot)
+# V2_MIN_ADX_ENTRY mirrors config.MIN_ADX_ENTRY. Overridable via
+# V2_MIN_ADX_OVERRIDE env var for sensitivity sweeps (no code change required).
+V2_MIN_ADX_ENTRY = float(os.environ.get("V2_MIN_ADX_OVERRIDE", "32"))
 V2_PARTIAL_MIN_ADX = 32.0
 V2_PARTIAL_MIN_CONFIDENCE = 0.80
 V2_ENABLE_PARTIAL_ENTRIES = False
@@ -300,7 +304,7 @@ def decide_v2(snapshot: dict[str, Any]) -> dict[str, Any]:
             continue
         if (d == "short" and macd >= 0) or (d == "long" and macd <= 0):
             continue
-        if adx < 32:
+        if adx < V2_MIN_ADX_ENTRY:
             continue
         if V2_REQUIRE_DI_ALIGNMENT:
             plus_di = float(ind["plus_di"])
