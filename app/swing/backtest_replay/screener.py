@@ -123,7 +123,7 @@ def _tp_sl_hit_ratio(
     return tp_rate, avg_rr
 
 
-def screen_coin(coin: str, start: datetime, end: datetime) -> dict[str, Any]:
+def screen_coin(coin: str, start: datetime, end: datetime, rate_limit_delay: float = 0.15) -> dict[str, Any]:
     """Fetch klines and compute fitness metrics for a single coin."""
     import app.swing.backtest_replay as _pkg
 
@@ -132,7 +132,7 @@ def screen_coin(coin: str, start: datetime, end: datetime) -> dict[str, Any]:
     start_ms = _to_ms(start)
     end_ms = _to_ms(end)
 
-    engine = ReplayEngine([coin], start, end)
+    engine = ReplayEngine([coin], start, end, rate_limit_delay=rate_limit_delay)
 
     try:
         kl4 = engine._fetch_klines(client, symbol, client.KLINE_INTERVAL_4HOUR, start_ms, end_ms)
@@ -258,11 +258,12 @@ def screen_all(
     start: datetime,
     end: datetime,
     workers: int = 8,
+    rate_limit_delay: float = 0.15,
 ) -> list[dict[str, Any]]:
     """Screen multiple coins in parallel and return sorted by composite score."""
     results: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=min(workers, len(coins))) as executor:
-        futures = {executor.submit(screen_coin, coin, start, end): coin for coin in coins}
+        futures = {executor.submit(screen_coin, coin, start, end, rate_limit_delay): coin for coin in coins}
         for future in as_completed(futures):
             coin = futures[future]
             try:

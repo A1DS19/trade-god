@@ -45,7 +45,7 @@ def main() -> None:
     if args.screen:
         from .screener import screen_all, _print_screen_results
         print(f"Screening {len(coins)} coins from {start.isoformat()} to {end.isoformat()}")
-        results = screen_all(coins, start, end, workers=args.workers)
+        results = screen_all(coins, start, end, workers=args.workers, rate_limit_delay=args.rate_limit_delay)
         _print_screen_results(results)
         return
 
