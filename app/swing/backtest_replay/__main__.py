@@ -19,6 +19,7 @@ def main() -> None:
     parser.add_argument("--end", default=None, help="UTC ISO datetime, e.g. 2026-01-01T00:00:00Z")
     parser.add_argument("--fee-bps", type=float, default=0.0, help="Fee per side in basis points (e.g. 4 = 0.04%%)")
     parser.add_argument("--slippage-bps", type=float, default=0.0, help="Adverse slippage per side in basis points")
+    parser.add_argument("--rate-limit-delay", type=float, default=0.15, help="Seconds to sleep between paginated kline fetches. Raise for --top runs to avoid Binance 2400 req/min IP ban (e.g. 0.5 for --top 100 --workers 2).")
     parser.add_argument("--exit-breakdown", action="store_true", help="Print exit-reason breakdown with win rate and PnL per reason")
     parser.add_argument("--entry-analysis", action="store_true", help="Print entry condition breakdown by exit reason")
     parser.add_argument("--no-macd-div-exit", action="store_true", help="Disable the MACD divergence exit for both long and short")
@@ -54,6 +55,7 @@ def main() -> None:
         end,
         fee_bps=args.fee_bps,
         slippage_bps=args.slippage_bps,
+        rate_limit_delay=args.rate_limit_delay,
     )
 
     mixed_note = " [--no-macd-div-exit]" if args.no_macd_div_exit else ""

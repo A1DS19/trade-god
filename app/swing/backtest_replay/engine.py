@@ -224,12 +224,14 @@ class ReplayEngine:
         end: datetime,
         fee_bps: float = 0.0,
         slippage_bps: float = 0.0,
+        rate_limit_delay: float = 0.15,
     ):
         self.coins = coins
         self.start = start
         self.end = end
         self.fee_rate = max(fee_bps, 0.0) / 10_000.0
         self.slippage_rate = max(slippage_bps, 0.0) / 10_000.0
+        self.rate_limit_delay = max(rate_limit_delay, 0.0)
 
     def _v2_expected_move_ok(self, tp_pct: float) -> bool:
         roundtrip_cost_pct = 2.0 * (self.fee_rate + self.slippage_rate)
@@ -252,7 +254,8 @@ class ReplayEngine:
         step = self._interval_ms(interval)
         prev_last_open = -1
         while True:
-            _time.sleep(0.15)
+            if self.rate_limit_delay > 0:
+                _time.sleep(self.rate_limit_delay)
             batch = client.futures_klines(
                 symbol=symbol,
                 interval=interval,
