@@ -55,41 +55,51 @@ docker compose logs --timestamps swing > logs.txt 2>&1
 
 ## Swing Agent (`app/swing/`)
 
-### Coins (9 fixed)
-BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI — all Binance USDT-M perpetuals
+### Coins (10 fixed)
+DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, DOT — Binance USDT-M perpetuals. Screened from top 100 by market cap (see `docs/coin_screening_and_selection.md`); all profitable over 1yr and 5yr backtests.
 
 ### Config (`app/swing/config.py`)
 | Param | Value |
 |-------|-------|
 | LEVERAGE | 5x |
-| POSITION_USDT | $5 (notional = $25) |
+| POSITION_USDT | $5–$10 (confidence-scaled, notional $25–$50) |
 | MAX_OPEN | 3 simultaneous positions |
 | DEFAULT_SL_PCT | 3% (client-side safety net) |
 | DEFAULT_TP_PCT | 8% (client-side safety net) |
-| MIN_CONFIDENCE | 0.70 |
-| MIN_RSI_SHORT | 42.0 |
-| MAX_RSI_LONG | 58.0 |
+| MIN_CONFIDENCE | 0.80 |
+| MIN_ADX_ENTRY | 32.0 (hard entry gate) |
+| MIN_RSI_SHORT | 42.0 (soft — confidence penalty only) |
+| MAX_RSI_LONG | 58.0 (soft — confidence penalty only) |
+| BORDERLINE_ADX_PENALTY | 0.08 |
+| ENABLE_PARTIAL_ENTRIES | False |
+| REQUIRE_DI_ALIGNMENT | True |
+| LONG_EXIT_RSI_CEIL | 68.0 |
+| SHORT_EXIT_RSI_FLOOR | 32.0 |
 | CHECK_INTERVAL | 3600s (1 hour) |
 | LOSS_COOLDOWN_HRS | 4h |
 
 ### Strategy — 4-step pipeline (`app/swing/agent.py`)
 
 **Step 1: Exit Check**
-- Longs exit: 4h EMA bearish/mixed, daily EMA bearish, RSI > 62, MACD exhaustion, OI drop >3%, ADX < 20
-- Shorts exit: inverse conditions
+- Longs exit: 4h EMA bearish, daily EMA bearish, RSI > 68, MACD divergence with RSI > 68, OI drop >3% + MACD weakening, ADX < 20
+- Shorts exit: inverse conditions (RSI < 32, MACD_DIV_EXIT_RSI_SHORT = 32)
+- Mixed EMA alone does NOT exit (removed 2026-04-08 — see `project_exit_tuning_2026-04-08.md`)
 
 **Step 2: Regime Gate**
-- ADX > 25 → trending (entries ok)
-- ADX 20–25 → borderline (−0.08 confidence penalty)
+- ADX > 25 → trending label
+- ADX 20–25 → borderline label (−0.08 confidence penalty)
 - ADX < 20 → ranging (NO new entries)
+- Note: `MIN_ADX_ENTRY = 32` is a separate, stricter hard gate — even "trending" setups with ADX 25–31 are blocked at the entry check.
 
 **Step 3: Entry Conditions (ALL required)**
-- Short: trending regime + daily EMA bearish + 4h EMA bearish + MACD hist < 0 + RSI > 42
-- Long: trending regime + daily EMA bullish + 4h EMA bullish + MACD hist > 0 + RSI < 58
+- Short: daily EMA bearish + 4h EMA bearish (strict stack) + MACD hist < 0 + ADX ≥ 32 + -DI > +DI
+- Long: daily EMA bullish + 4h EMA bullish (strict stack) + MACD hist > 0 + ADX ≥ 32 + +DI > -DI
+- RSI is NOT a hard gate — it feeds confidence penalties only.
 
-**Step 4: Confidence Scoring (must reach ≥ 0.70)**
+**Step 4: Confidence Scoring (must reach ≥ 0.80)**
 - Confirming signals: vol spike (+0.05), funding (+0.04), OI rising (+0.04), DI alignment (+0.04), Stoch RSI extreme (+0.04), L/S ratio crowded (+0.04), RSI healthy zone (+0.03), EMA200 alignment (+0.03), ATR rank >70% (+0.03), VWAP (+0.03), taker ratio (+0.03)
 - Contradicting signals: −0.02 to −0.08 each
+- Borderline ADX penalty: −0.08
 
 ### SL/TP Sizing (`app/swing/snapshot.py`)
 ```
