@@ -7,7 +7,7 @@ from app.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID  # shared credentials
 BINANCE_API_KEY    = os.environ["BINANCE_API_KEY_FUTURES"]
 BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY_FUTURES"]
 # ── Coins to watch ────────────────────────────────────────
-COINS = ["DOGE", "1000SHIB", "RUNE", "RENDER", "1000FLOKI", "TURBO", "IP", "BSV", "IOTA", "DOT"]  # Screened from top 100 by market cap: high-vol coins with strong trend follow-through; all profitable over 1yr and 5yr backtests with fees
+COINS = ["DOGE", "1000SHIB", "RUNE", "RENDER", "1000FLOKI", "TURBO", "IP", "BSV", "IOTA"]  # Screened from top 100 by market cap. DOT removed 2026-04-11: at true live MIN_CONFIDENCE=0.80 it was net-negative over 5yr (−$0.89 / 29 trades, 10 SL totaling −$13.73). Was selected under stale backtest 0.85 filter; see project_backtest_conf_drift_2026-04-11.md
 
 # ── Risk / sizing ─────────────────────────────────────────
 LEVERAGE       = 5      # Default futures leverage

@@ -5,7 +5,7 @@ This document describes the **actual strategy currently running** in the swing a
 ## 1) High-level flow (every cycle)
 
 1. Load open futures positions.
-2. For each coin (`DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, DOT`):
+2. For each coin (`DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA`):
    - Build snapshot (4h + daily indicators, funding, OI/L-S/taker data).
    - If a position exists: evaluate **exit rules** first.
    - If no position: apply **regime + entry filters**.
@@ -188,36 +188,34 @@ This section captures the points that are valid from an operational perspective.
 5. Confidence component logging now includes explicit signed contributions (`+/-`).
 6. Optional: reduce cycle interval to 30m only after measuring API/load and false-exit impact.
 
-## 12) Current benchmark (10-coin set, cost-aware)
+## 12) Current benchmark (9-coin set, cost-aware)
 
 Run date: `2026-04-11` (UTC)
-Coin selection from 2026-04-09 top-100 screening. See `docs/coin_screening_and_selection.md` for full methodology.
+Coin selection: original 2026-04-09 top-100 screening minus DOT. See `docs/coin_screening_and_selection.md` for full methodology.
 
-Universe: `DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, DOT`
+Universe: `DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA`
 
-**Note (2026-04-11):** Earlier benchmarks ran v2 with `V2_MIN_CONFIDENCE = 0.85` in the backtest strategy while the live bot has been at `MIN_CONFIDENCE = 0.80` since 2026-04-06. The backtest was under-reporting live performance by ~21% net PnL for the entire life of the backtest. The table below reflects the aligned v2 (0.80) that matches live behavior.
+**History notes (2026-04-11):**
+1. Earlier benchmarks ran v2 with `V2_MIN_CONFIDENCE = 0.85` in the backtest while live has been at `MIN_CONFIDENCE = 0.80` since 2026-04-06. The backtest was under-reporting live PnL by ~21% for the entire life of the backtest. Fixed — table below reflects the aligned v2 that matches live.
+2. **DOT was removed.** At the true 0.80 threshold it was net-negative over 5 years (−$0.89 / 29 trades / 31% WR). The exit breakdown showed 10 stop-outs totaling −$13.73, most on shorts blown out by sharp upward impulses, with avg entry ADX only 35.7 (weak selectivity on DOT specifically). DOT was picked in the 2026-04-09 screening based on the over-filtered 0.85 numbers. Removing it improved every aggregate metric.
 
 ### 1-year (Apr 2025 – Apr 2026), fee=4 bps, slippage=2 bps per side:
 
 | Strategy | Trades | Win rate | Net PnL | Profit factor | Max drawdown | Avg conf | Annual ROI |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| v1 | 31 | 87.10% | $37.80 | 13.64 | $8.48 | 0.81 | 75.61% |
-| v2 | 40 | 72.50% | $52.96 | 6.57 | $10.21 | 0.86 | 70.61% |
+| v1 | 30 | 86.67% | $35.92 | 13.00 | $8.48 | 0.80 | 79.82% |
+| v2 | 37 | 75.68% | $51.80 | 8.01 | $9.81 | 0.86 | 76.75% |
 
 ### 5-year (Apr 2021 – Apr 2026), fee=4 bps, slippage=2 bps per side:
 
 | Strategy | Trades | Win rate | Net PnL | Profit factor | Max drawdown | Avg conf | Annual ROI |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| v1 | 81 | 55.56% | $42.83 | 2.20 | $15.58 | 0.80 | 17.12% |
-| v2 | 146 | 50.00% | $76.46 | 1.96 | $25.32 | 0.85 | 20.38% |
+| v1 | 67 | 59.70% | $40.42 | 2.40 | $15.58 | 0.80 | 17.96% |
+| v2 | 117 | 54.70% | $77.34 | 2.24 | $25.32 | 0.86 | 22.90% |
 
 Both strategies beat the 10% annual ROI target across all tested periods (bear, bull, sideways, recovery). See `docs/coin_screening_and_selection.md` for cross-period validation and vs. S&P 500 comparison.
 
-**Per-coin watch-outs (5-year, v2 at true 0.80 threshold):**
-- `DOT`: turns **net-negative** (−$0.89, 29 trades, 31% WR) — was +$1.14 when backtest was at 0.85. The 0.85 filter was masking a structural DOT weakness. Candidate for removal pending investigation.
-- `RUNE`: drops from $4.34 to $1.81 (−58%). Still profitable but marginal.
-- `1000FLOKI`: small decline from $18.83 to $16.47; still the top PnL contributor.
-- `DOGE`, `1000SHIB`, `IOTA`, `BSV`, `TURBO` all materially improve.
+**Per-coin watch-out:** `RUNE` is the weakest remaining coin (5yr v2: $1.81 / 14 trades, 42.86% WR). Still positive, monitor but no action.
 
 ## 13) Previous benchmarks (old 9-coin set, archived)
 

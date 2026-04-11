@@ -55,8 +55,8 @@ docker compose logs --timestamps swing > logs.txt 2>&1
 
 ## Swing Agent (`app/swing/`)
 
-### Coins (10 fixed)
-DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, DOT — Binance USDT-M perpetuals. Screened from top 100 by market cap (see `docs/coin_screening_and_selection.md`); all profitable over 1yr and 5yr backtests.
+### Coins (9 fixed)
+DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA — Binance USDT-M perpetuals. Screened from top 100 by market cap (see `docs/coin_screening_and_selection.md`). DOT removed 2026-04-11 — net-negative at the true live MIN_CONFIDENCE=0.80 threshold; see `project_backtest_conf_drift_2026-04-11.md`.
 
 ### Config (`app/swing/config.py`)
 | Param | Value |
