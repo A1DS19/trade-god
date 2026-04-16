@@ -15,7 +15,7 @@ V1_MIN_CONFIDENCE = 0.70
 V2_MIN_CONFIDENCE = 0.80  # matches app/swing/config.py MIN_CONFIDENCE (live bot)
 # V2_MIN_ADX_ENTRY mirrors config.MIN_ADX_ENTRY. Overridable via
 # V2_MIN_ADX_OVERRIDE env var for sensitivity sweeps (no code change required).
-V2_MIN_ADX_ENTRY = float(os.environ.get("V2_MIN_ADX_OVERRIDE", "32"))
+V2_MIN_ADX_ENTRY = float(os.environ.get("V2_MIN_ADX_OVERRIDE", "28"))
 V2_PARTIAL_MIN_ADX = 32.0
 V2_PARTIAL_MIN_CONFIDENCE = 0.80
 V2_ENABLE_PARTIAL_ENTRIES = False

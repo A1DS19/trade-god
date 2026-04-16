@@ -67,7 +67,7 @@ DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA — Binance USDT-M
 | DEFAULT_SL_PCT | 3% (client-side safety net) |
 | DEFAULT_TP_PCT | 8% (client-side safety net) |
 | MIN_CONFIDENCE | 0.80 |
-| MIN_ADX_ENTRY | 32.0 (hard entry gate) |
+| MIN_ADX_ENTRY | 28.0 (hard entry gate) |
 | MIN_RSI_SHORT | 42.0 (soft — confidence penalty only) |
 | MAX_RSI_LONG | 58.0 (soft — confidence penalty only) |
 | BORDERLINE_ADX_PENALTY | 0.08 |
@@ -89,11 +89,11 @@ DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA — Binance USDT-M
 - ADX > 25 → trending label
 - ADX 20–25 → borderline label (−0.08 confidence penalty)
 - ADX < 20 → ranging (NO new entries)
-- Note: `MIN_ADX_ENTRY = 32` is a separate, stricter hard gate — even "trending" setups with ADX 25–31 are blocked at the entry check.
+- Note: `MIN_ADX_ENTRY = 28` is a separate, stricter hard gate — trending setups with ADX 25–27 are blocked at the entry check.
 
 **Step 3: Entry Conditions (ALL required)**
-- Short: daily EMA bearish + 4h EMA bearish (strict stack) + MACD hist < 0 + ADX ≥ 32 + -DI > +DI
-- Long: daily EMA bullish + 4h EMA bullish (strict stack) + MACD hist > 0 + ADX ≥ 32 + +DI > -DI
+- Short: daily EMA bearish + 4h EMA bearish (strict stack) + MACD hist < 0 + ADX ≥ 28 + -DI > +DI
+- Long: daily EMA bullish + 4h EMA bullish (strict stack) + MACD hist > 0 + ADX ≥ 28 + +DI > -DI
 - RSI is NOT a hard gate — it feeds confidence penalties only.
 
 **Step 4: Confidence Scoring (must reach ≥ 0.80)**
