@@ -37,7 +37,7 @@ DEFAULT_TP_PCT = 0.08   # 8% take profit from entry
 MIN_CONFIDENCE  = 0.80  # Skip trade if agent confidence < this
 MIN_RSI_SHORT   = 42.0  # Don't short if RSI already approaching oversold
 MAX_RSI_LONG    = 58.0  # Don't long if RSI already approaching overbought
-MIN_ADX_ENTRY   = 32.0  # Require stronger trend for entries (raised from 25: grid search showed PF 1.93 vs 1.20, DD $7 vs $15)
+MIN_ADX_ENTRY   = 28.0  # Lowered from 32 (2026-04-15): WF grid search validated — OOS PF 1.87-3.52, ROI 73-151% across both splits. adx=28/conf=0.80 beat adx=30/0.85 on total OOS PnL with 2x more trades.
 BORDERLINE_ADX_PENALTY = 0.08  # Confidence score penalty in borderline ADX regime
 PARTIAL_MIN_ADX = 32.0  # Allow mixed/partial entries only in stronger trends
 PARTIAL_MIN_CONFIDENCE = 0.80  # Require extra conviction for partial entries
