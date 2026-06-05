@@ -1,8 +1,10 @@
 """Binance USDT-M Futures: price, positions, open/close orders."""
 
+import html
 import logging
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
+from app.swing import notifier
 
 log = logging.getLogger(__name__)
 
@@ -145,6 +147,12 @@ def _place_sl_tp(client: Client, coin: str, side: str, qty: float,
             log.info("SL placed %s @ %.4f", coin, sl_price)
         except BinanceAPIException as e:
             log.warning("SL placement failed for %s: %s", coin, e)
+            notifier.send(
+                f"⚠️ <b>SL placement FAILED</b> — {html.escape(coin)} {html.escape(side)}\n"
+                f"{html.escape(str(e))}\n"
+                f"Position has NO exchange-side stop (client-side net only). "
+                f"If this is -4120, the Algo-order fix has regressed — investigate."
+            )
 
     if tp_pct and tp_pct > 0:
         tp_price = entry * (1 + tp_pct) if side == "long" else entry * (1 - tp_pct)

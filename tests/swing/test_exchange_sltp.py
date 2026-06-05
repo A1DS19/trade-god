@@ -68,3 +68,19 @@ def test_sl_tp_skipped_when_pct_zero(fake_client) -> None:
     exchange._place_sl_tp(fake_client, "IOTA", "long", qty=5, entry=0.20, sl_pct=0.0, tp_pct=0.0)
     assert fake_client.algo_calls == []
     assert fake_client.created_orders == []
+
+
+def test_sl_failure_sends_alert(monkeypatch) -> None:
+    """A -4120-style SL placement failure must ALERT (not just log) — so a regression
+    of the Algo-order fix is caught within the hour, not after weeks of naked stops."""
+    from binance.exceptions import BinanceAPIException
+
+    sent: list[str] = []
+    monkeypatch.setattr(exchange.notifier, "send", lambda msg: sent.append(msg))
+
+    class _Raises:
+        def _request_futures_api(self, *args, **kwargs):
+            raise BinanceAPIException(object(), 400, '{"code":-4120,"msg":"not supported"}')
+
+    exchange._place_sl_tp(_Raises(), "DOGE", "short", qty=100, entry=0.08, sl_pct=0.03, tp_pct=0.0)
+    assert any("SL placement FAILED" in m and "DOGE" in m for m in sent)
