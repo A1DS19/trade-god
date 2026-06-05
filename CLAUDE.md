@@ -79,6 +79,7 @@ DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, FET, ENS, TON, HY
 | SHORT_EXIT_RSI_FLOOR | 32.0 |
 | CHECK_INTERVAL | 3600s (1 hour) |
 | LOSS_COOLDOWN_HRS | 4h |
+| SHADOW_MAX_CYCLES | 8 (RSI-gate would-be-PnL tracker horizon) |
 
 ### Strategy — 4-step pipeline (`app/swing/agent.py`)
 
@@ -97,6 +98,7 @@ DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, FET, ENS, TON, HY
 - Short: daily EMA bearish + 4h EMA bearish (strict stack) + MACD hist < 0 + ADX ≥ 28 + -DI > +DI
 - Long: daily EMA bullish + 4h EMA bullish (strict stack) + MACD hist > 0 + ADX ≥ 28 + +DI > -DI
 - RSI **hard gate** (added 2026-06-05): block short if RSI < `SHORT_ENTRY_RSI_FLOOR` (32), block long if RSI > `LONG_ENTRY_RSI_CEIL` (68) — don't enter the zone your own exit rule would immediately close. The softer `MIN_RSI_SHORT` (42) / `MAX_RSI_LONG` (58) still feed confidence penalties on top. See `project_rsi_entry_gate_2026-06-05.md`.
+- **Shadow tracker** (`app/swing/shadow.py`, observe-only): logs the would-be PnL of RSI-gate-blocked trades — `SHADOW-CLOSE` lines where **positive = the gate forwent a winner**, **negative = it avoided a loser**. The gate attaches `decision["gate_block"]`; `main.py` runs the tracker each cycle. Grep `SHADOW-CLOSE` and sum to judge whether 32 is right or to A/B 35.
 
 **Step 4: Confidence Scoring (must reach ≥ 0.80)**
 - Confirming signals: vol spike (+0.05), funding (+0.04), OI rising (+0.04), DI alignment (+0.04), Stoch RSI extreme (+0.04), L/S ratio crowded (+0.04), RSI healthy zone (+0.03), EMA200 alignment (+0.03), ATR rank >70% (+0.03), VWAP (+0.03), taker ratio (+0.03)
