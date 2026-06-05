@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--import-mode=importlib"
+markers = [
+    "slow: long-running tests",
+    "testnet: hits Binance testnet — network + creds, opt-in (run with -m testnet)",
+    "property: Hypothesis property-based tests",
+    "integration: cross-component / exchange-boundary tests",
+]
