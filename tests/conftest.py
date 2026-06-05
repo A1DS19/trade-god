@@ -13,15 +13,18 @@ import pytest
 
 # Must run at import time: app modules read these when imported, which happens
 # as soon as test modules are collected (conftest is imported first).
-for _key in (
-    "BINANCE_API_KEY",
-    "BINANCE_SECRET_KEY",
-    "BINANCE_API_KEY_FUTURES",
-    "BINANCE_SECRET_KEY_FUTURES",
-    "TELEGRAM_BOT_TOKEN",
-    "TELEGRAM_CHAT_ID",
-):
-    os.environ.setdefault(_key, "test")
+_STUB_ENV = {
+    "BINANCE_API_KEY": "test",
+    "BINANCE_SECRET_KEY": "test",
+    "BINANCE_API_KEY_FUTURES": "test",
+    "BINANCE_SECRET_KEY_FUTURES": "test",
+    "TELEGRAM_BOT_TOKEN": "test",
+    "TELEGRAM_CHAT_ID": "test",
+    # Valid-looking URL so create_engine() doesn't choke at import; no DB is hit.
+    "DATABASE_URL": "postgresql://test:test@localhost:5432/test",
+}
+for _key, _value in _STUB_ENV.items():
+    os.environ.setdefault(_key, _value)
 
 
 class FakeBinanceClient:

@@ -31,7 +31,7 @@ pyproject.toml     pytest config: testpaths, pythonpath, markers, coverage
 - [x] 0. **Infra** — `pyproject.toml` (pytest config + markers) + `conftest.py`
       (env autouse, `FakeBinanceClient`, snapshot factory). Migrate existing 3
       tests, drop boilerplate. Green.
-- [ ] 1. **Swing money math** — `snapshot.py` SL/TP sizing (ATR×1.5 / ATR×3,
+- [x] 1. **Swing money math** — `snapshot.py` SL/TP sizing (ATR×1.5 / ATR×3,
       mins) + confidence→size mapping. Property invariants (SL on loss side, TP
       on profit side, notional bounds, conf∈[0,1]).
 - [ ] 2. **Client-side safety net** (`swing/main.py`) — the *only* stop
