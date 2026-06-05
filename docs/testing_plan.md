@@ -42,7 +42,7 @@ pyproject.toml     pytest config: testpaths, pythonpath, markers, coverage
       (value at bar *t* uses only data ≤ *t*).
 - [x] 5. **Live↔backtest parity** — same snapshot → same decision from
       `agent.decide()` and the backtest strategy. Bridge to scope C.
-- [ ] 6. **Integration** — Binance testnet order round-trip (place algoOrder +
+- [x] 6. **Integration** — Binance testnet order round-trip (place algoOrder +
       cancel), gated by `@pytest.mark.testnet` (opt-in, not CI).
 - [ ] 7. **Tidy-up** — move `grid_search.py`/`wf_grid_search.py` → `scripts/`;
       `ALGO_IMPROVEMENTS.txt` → `docs/`; delete `migrate.sql` if dead; gitignore
