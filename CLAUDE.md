@@ -180,9 +180,17 @@ Tracking tables for DCA daily cap and universe cache.
 
 ## Known Issues & Fixes
 
-### Fixed (2026-04-02): Binance -4120 SL/TP error
-`app/swing/exchange.py:_place_sl_tp()` — was using `closePosition="true"` on `STOP_MARKET`/`TAKE_PROFIT_MARKET`.
-**Fixed to:** `quantity=qty, reduceOnly=True` — works on standard `/fapi/v1/order` endpoint.
+### Fixed (2026-06-05): Binance -4120 SL/TP error — for real this time
+Binance migrated USDT-M conditional orders to the **Algo service on 2025-12-09**.
+`STOP_MARKET`/`TAKE_PROFIT_MARKET` on `POST /fapi/v1/order` now reject with `-4120`.
+The 2026-04-02 "fix" (`quantity=qty, reduceOnly=True`) never worked — the 37-day HOLD
+dry spell hid it until BSV (May 23). Every live trade since ran with **no exchange-side
+stop** (only the hourly client-side net protected them).
+**Real fix:** `app/swing/exchange.py:_place_conditional()` routes to `POST /fapi/v1/algoOrder`
+with `algoType=CONDITIONAL`, `triggerPrice` (not `stopPrice`), `closePosition="true"`,
+`workingType=MARK_PRICE`. python-binance 1.0.19 has no wrapper, so it calls the same
+internal `_request_futures_api('post', 'algoOrder', True, data=...)` that `futures_create_order`
+uses. Watch logs for `SL placed`/`TP placed` to confirm. Pinned by `tests/swing/test_exchange_sltp.py`.
 
 ### Gotcha: agent_reasoning VARCHAR(500)
 Must truncate to 499 chars before DB insert.

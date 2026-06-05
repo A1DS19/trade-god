@@ -110,6 +110,28 @@ def cancel_open_orders(client: Client, coin: str):
         log.warning("Could not cancel open orders for %s: %s", coin, e)
 
 
+def _place_conditional(client: Client, symbol: str, close_side: str,
+                       order_type: str, trigger_price: float):
+    """Place a position-closing conditional order via the Algo endpoint.
+
+    Binance migrated STOP_MARKET/TAKE_PROFIT_MARKET off POST /fapi/v1/order to the
+    Algo service on 2025-12-09; the old path now rejects them with -4120. They must
+    go to POST /fapi/v1/algoOrder. python-binance 1.0.19 has no wrapper, so reuse the
+    same signed-request helper that futures_create_order itself calls.
+    closePosition="true" closes the whole position on trigger (no qty/reduceOnly) and
+    auto-cancels the paired order, so SL+TP form a natural OCO.
+    """
+    return client._request_futures_api("post", "algoOrder", True, data={
+        "algoType": "CONDITIONAL",
+        "symbol": symbol,
+        "side": close_side,
+        "type": order_type,
+        "triggerPrice": trigger_price,
+        "closePosition": "true",
+        "workingType": "MARK_PRICE",
+    })
+
+
 def _place_sl_tp(client: Client, coin: str, side: str, qty: float,
                  entry: float, sl_pct: float, tp_pct: float):
     symbol = f"{coin}USDT"
@@ -119,14 +141,7 @@ def _place_sl_tp(client: Client, coin: str, side: str, qty: float,
         sl_price = entry * (1 - sl_pct) if side == "long" else entry * (1 + sl_pct)
         sl_price = round(sl_price, 4)
         try:
-            client.futures_create_order(
-                symbol=symbol,
-                side=close_side,
-                type="STOP_MARKET",
-                stopPrice=sl_price,
-                quantity=qty,
-                reduceOnly=True,
-            )
+            _place_conditional(client, symbol, close_side, "STOP_MARKET", sl_price)
             log.info("SL placed %s @ %.4f", coin, sl_price)
         except BinanceAPIException as e:
             log.warning("SL placement failed for %s: %s", coin, e)
@@ -135,14 +150,7 @@ def _place_sl_tp(client: Client, coin: str, side: str, qty: float,
         tp_price = entry * (1 + tp_pct) if side == "long" else entry * (1 - tp_pct)
         tp_price = round(tp_price, 4)
         try:
-            client.futures_create_order(
-                symbol=symbol,
-                side=close_side,
-                type="TAKE_PROFIT_MARKET",
-                stopPrice=tp_price,
-                quantity=qty,
-                reduceOnly=True,
-            )
+            _place_conditional(client, symbol, close_side, "TAKE_PROFIT_MARKET", tp_price)
             log.info("TP placed %s @ %.4f", coin, tp_price)
         except BinanceAPIException as e:
             log.warning("TP placement failed for %s: %s", coin, e)
