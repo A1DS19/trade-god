@@ -221,6 +221,17 @@ DCA bot settings in `app/config.py`, swing agent settings in `app/swing/config.p
 
 ---
 
+## Testing
+
+```bash
+python -m pytest              # full suite (testnet tests auto-skip)
+python -m pytest -m property  # Hypothesis property tests only
+```
+
+Covers the money paths (SL/TP sizing, position/PnL math, the client-side safety net), indicator correctness, Hypothesis property invariants, and a live↔backtest parity check. Full guide: [docs/testing.md](docs/testing.md).
+
+---
+
 ## Project structure
 
 ```
@@ -252,6 +263,8 @@ alembic/            — database migrations (run automatically on startup)
 main.py             — DCA bot entrypoint
 swing_main.py       — swing agent entrypoint
 api_main.py         — API entrypoint
+tests/              — pytest suite (see docs/testing.md)
+pyproject.toml      — pytest config + markers
 ```
 
 ---
