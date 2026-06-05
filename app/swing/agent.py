@@ -79,9 +79,11 @@ def decide(snapshot: dict) -> dict:
                                         stoch_k, atr_rank, vs_vwap, ls_ratio, taker_ratio,
                                         entry_mode)
         if direction == "short":
-            reason = f"short blocked — RSI {rsi:.1f} < {config.SHORT_ENTRY_RSI_FLOOR:.0f} (deep oversold, exit zone)"
+            reason = (f"short blocked — RSI {rsi:.1f} < {config.SHORT_ENTRY_RSI_FLOOR:.0f} "
+                      f"(deep oversold, exit zone) [would-be conf {would_be_conf:.2f}]")
         else:
-            reason = f"long blocked — RSI {rsi:.1f} > {config.LONG_ENTRY_RSI_CEIL:.0f} (deep overbought, exit zone)"
+            reason = (f"long blocked — RSI {rsi:.1f} > {config.LONG_ENTRY_RSI_CEIL:.0f} "
+                      f"(deep overbought, exit zone) [would-be conf {would_be_conf:.2f}]")
         decision = _hold(0.0, reason)
         decision["gate_block"] = {"direction": direction, "rsi": rsi, "would_be_conf": would_be_conf}
         return decision

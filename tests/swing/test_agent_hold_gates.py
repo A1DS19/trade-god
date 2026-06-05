@@ -149,6 +149,7 @@ def test_rsi_gate_blocks_short_when_deeply_oversold(snapshot):
     assert result["action"] == "hold"
     assert result["confidence"] == 0.0
     assert "short blocked" in result["reasoning"]
+    assert "would-be conf" in result["reasoning"]   # surfaces how near the block was to trading
 
 
 def test_rsi_gate_allows_short_above_floor(snapshot):
