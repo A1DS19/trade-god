@@ -70,6 +70,8 @@ DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, FET, ENS, TON, HY
 | MIN_ADX_ENTRY | 28.0 (hard entry gate) |
 | MIN_RSI_SHORT | 42.0 (soft — confidence penalty only) |
 | MAX_RSI_LONG | 58.0 (soft — confidence penalty only) |
+| SHORT_ENTRY_RSI_FLOOR | 32.0 (**HARD** gate — block short if RSI below; = exit floor) |
+| LONG_ENTRY_RSI_CEIL | 68.0 (**HARD** gate — block long if RSI above; = exit ceil) |
 | BORDERLINE_ADX_PENALTY | 0.08 |
 | ENABLE_PARTIAL_ENTRIES | False |
 | REQUIRE_DI_ALIGNMENT | True |
@@ -94,7 +96,7 @@ DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, FET, ENS, TON, HY
 **Step 3: Entry Conditions (ALL required)**
 - Short: daily EMA bearish + 4h EMA bearish (strict stack) + MACD hist < 0 + ADX ≥ 28 + -DI > +DI
 - Long: daily EMA bullish + 4h EMA bullish (strict stack) + MACD hist > 0 + ADX ≥ 28 + +DI > -DI
-- RSI is NOT a hard gate — it feeds confidence penalties only.
+- RSI **hard gate** (added 2026-06-05): block short if RSI < `SHORT_ENTRY_RSI_FLOOR` (32), block long if RSI > `LONG_ENTRY_RSI_CEIL` (68) — don't enter the zone your own exit rule would immediately close. The softer `MIN_RSI_SHORT` (42) / `MAX_RSI_LONG` (58) still feed confidence penalties on top. See `project_rsi_entry_gate_2026-06-05.md`.
 
 **Step 4: Confidence Scoring (must reach ≥ 0.80)**
 - Confirming signals: vol spike (+0.05), funding (+0.04), OI rising (+0.04), DI alignment (+0.04), Stoch RSI extreme (+0.04), L/S ratio crowded (+0.04), RSI healthy zone (+0.03), EMA200 alignment (+0.03), ATR rank >70% (+0.03), VWAP (+0.03), taker ratio (+0.03)
