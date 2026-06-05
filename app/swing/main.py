@@ -71,6 +71,23 @@ def _expected_move_ok(tp_pct: float) -> tuple[bool, str]:
     return True, ""
 
 
+def _safety_net_label(side: str, entry: float, price: float,
+                      sl_pct: float, tp_pct: float) -> str | None:
+    """Client-side stop check: 'SL', 'TP', or None for a position at ``price``.
+
+    Hourly backstop mirroring the exchange-side stops, which can fail to place
+    (see the -4120 history). SL takes priority if both somehow trigger.
+    """
+    chg = (price - entry) / entry
+    hit_sl = (side == "long" and chg <= -sl_pct) or (side == "short" and chg >= sl_pct)
+    hit_tp = (side == "long" and chg >= tp_pct) or (side == "short" and chg <= -tp_pct)
+    if hit_sl:
+        return "SL"
+    if hit_tp:
+        return "TP"
+    return None
+
+
 def run():
     db.init_db()
     client = Client(config.BINANCE_API_KEY, config.BINANCE_SECRET_KEY)
@@ -94,12 +111,11 @@ def run():
                     continue
                 price_now = get_price(client, coin)
                 chg = (price_now - pos["entry"]) / pos["entry"]
-                hit_sl = (pos["side"] == "long"  and chg <= -config.DEFAULT_SL_PCT) or \
-                         (pos["side"] == "short" and chg >=  config.DEFAULT_SL_PCT)
-                hit_tp = (pos["side"] == "long"  and chg >=  config.DEFAULT_TP_PCT) or \
-                         (pos["side"] == "short" and chg <= -config.DEFAULT_TP_PCT)
-                if hit_sl or hit_tp:
-                    label = "SL" if hit_sl else "TP"
+                label = _safety_net_label(
+                    pos["side"], pos["entry"], price_now,
+                    config.DEFAULT_SL_PCT, config.DEFAULT_TP_PCT,
+                )
+                if label:
                     exit_reason = f"client-side {label} ({chg*100:+.1f}%)"
                     log.info("CLIENT %s %s chg=%.2f%%", label, coin, chg * 100)
                     cancel_open_orders(client, coin)

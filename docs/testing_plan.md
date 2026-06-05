@@ -34,7 +34,7 @@ pyproject.toml     pytest config: testpaths, pythonpath, markers, coverage
 - [x] 1. **Swing money math** — `snapshot.py` SL/TP sizing (ATR×1.5 / ATR×3,
       mins) + confidence→size mapping. Property invariants (SL on loss side, TP
       on profit side, notional bounds, conf∈[0,1]).
-- [ ] 2. **Client-side safety net** (`swing/main.py`) — the *only* stop
+- [x] 2. **Client-side safety net** (`swing/main.py`) — the *only* stop
       protection: triggers at thresholds for long/short, no false trigger in band.
 - [ ] 3. **DCA bot** (`app/bot/`, currently ZERO) — buy gates (dip, EMA, RSI,
       macro, volume, caps, cooldown), partial-TP + trailing-stop exits.
