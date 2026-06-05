@@ -44,9 +44,12 @@ pyproject.toml     pytest config: testpaths, pythonpath, markers, coverage
       `agent.decide()` and the backtest strategy. Bridge to scope C.
 - [x] 6. **Integration** — Binance testnet order round-trip (place algoOrder +
       cancel), gated by `@pytest.mark.testnet` (opt-in, not CI).
-- [ ] 7. **Tidy-up** — move `grid_search.py`/`wf_grid_search.py` → `scripts/`;
-      `ALGO_IMPROVEMENTS.txt` → `docs/`; delete `migrate.sql` if dead; gitignore
+- [x] 7. **Tidy-up** — `ALGO_IMPROVEMENTS.txt` → `docs/algo_improvements.md`;
+      removed dead `migrate.sql` (one-off TAO position seed); gitignored
       `cache/` + `outputs/`.
+      Deferred: moving `grid_search.py`/`wf_grid_search.py` → `scripts/` changes the
+      `python -m app.swing.wf_grid_search` invocation (needs a shim + doc updates);
+      `.codex*` left as-is (user's other tool).
 
 ## Out of scope (separate project — scope C)
 Unify live (`agent.py`, `indicators.py`) and backtest
