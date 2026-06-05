@@ -40,7 +40,7 @@ pyproject.toml     pytest config: testpaths, pythonpath, markers, coverage
       macro, volume, caps, cooldown), partial-TP + trailing-stop exits.
 - [x] 4. **Indicators** — golden tests (bot + swing) + **no-lookahead** assertion
       (value at bar *t* uses only data ≤ *t*).
-- [ ] 5. **Live↔backtest parity** — same snapshot → same decision from
+- [x] 5. **Live↔backtest parity** — same snapshot → same decision from
       `agent.decide()` and the backtest strategy. Bridge to scope C.
 - [ ] 6. **Integration** — Binance testnet order round-trip (place algoOrder +
       cancel), gated by `@pytest.mark.testnet` (opt-in, not CI).
