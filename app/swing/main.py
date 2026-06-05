@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from binance.client import Client
 
 from app import db
-from app.swing import config, agent, notifier, snapshot
+from app.swing import config, agent, notifier, shadow, snapshot
 from app.swing.exchange import (
     get_open_positions, get_price,
     open_long, open_short, close_position, cancel_open_orders,
@@ -100,6 +100,8 @@ def run():
         f"Max positions: {config.MAX_OPEN}"
     )
 
+    tracker = shadow.ShadowTracker(config.SHADOW_MAX_CYCLES)
+
     while True:
         try:
             positions = get_open_positions(client)
@@ -143,6 +145,9 @@ def run():
                     conf     = decision["confidence"]
                     price    = snap["price"]
                     pos      = positions.get(coin)
+
+                    for _shadow_line in tracker.observe(coin, price, decision.get("gate_block"), config.MIN_CONFIDENCE):
+                        log.info(_shadow_line)
 
                     # ── Close existing position ────────────────────────
                     if action == "close" and pos:

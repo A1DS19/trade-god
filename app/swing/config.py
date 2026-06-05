@@ -71,3 +71,4 @@ SOFT_EXIT_MAX_LOSS_PCT = 0.020   # Delay soft exits while unrealized loss is sma
 # ── Loop ──────────────────────────────────────────────────
 CHECK_INTERVAL    = 3600  # Seconds between scans (1 hour)
 LOSS_COOLDOWN_HRS = 4     # Hours to skip a coin after a losing trade
+SHADOW_MAX_CYCLES = 8     # Track RSI-gate-blocked would-be trades for up to N cycles (observe-only diagnostic)
