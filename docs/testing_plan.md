@@ -36,9 +36,9 @@ pyproject.toml     pytest config: testpaths, pythonpath, markers, coverage
       on profit side, notional bounds, conf∈[0,1]).
 - [x] 2. **Client-side safety net** (`swing/main.py`) — the *only* stop
       protection: triggers at thresholds for long/short, no false trigger in band.
-- [ ] 3. **DCA bot** (`app/bot/`, currently ZERO) — buy gates (dip, EMA, RSI,
+- [x] 3. **DCA bot** (`app/bot/`, currently ZERO) — buy gates (dip, EMA, RSI,
       macro, volume, caps, cooldown), partial-TP + trailing-stop exits.
-- [ ] 4. **Indicators** — golden tests (bot + swing) + **no-lookahead** assertion
+- [x] 4. **Indicators** — golden tests (bot + swing) + **no-lookahead** assertion
       (value at bar *t* uses only data ≤ *t*).
 - [ ] 5. **Live↔backtest parity** — same snapshot → same decision from
       `agent.decide()` and the backtest strategy. Bridge to scope C.
