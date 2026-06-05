@@ -24,6 +24,8 @@ ENTRY_SCENARIOS = {
                            adx=33.0, plus_di=28.0, minus_di=12.0, macd_hist=0.0005, rsi=50.0),
     "short_strong":   dict(ema_alignment="bearish", daily_ema_alignment="bearish",
                            adx=40.0, plus_di=6.0, minus_di=35.0, macd_hist=-0.002, rsi=45.0),
+    "short_rsi_gated": dict(ema_alignment="bearish", daily_ema_alignment="bearish",
+                            adx=40.0, plus_di=6.0, minus_di=35.0, macd_hist=-0.002, rsi=18.0),
 }
 
 

@@ -132,3 +132,44 @@ def test_entry_gate_passes_when_all_blockers_removed(snapshot) -> None:
         assert "Confidence" in reasoning  # confidence-gated, not hard-gated
     else:
         assert result["action"] == "short"
+
+
+# ── RSI hard entry gate (added 2026-06-05 after trades 67/68/69) ────────────
+
+
+def test_rsi_gate_blocks_short_when_deeply_oversold(snapshot):
+    """A valid short stack but RSI below SHORT_ENTRY_RSI_FLOOR is hard-blocked —
+    don't short into the bounce zone (trades 67/68/69 lost exactly this way)."""
+    result = agent.decide(
+        snapshot(
+            ema_alignment="bearish", daily_ema_alignment="bearish",
+            adx=40.0, plus_di=6.0, minus_di=35.0, macd_hist=-0.002, rsi=18.0,
+        )
+    )
+    assert result["action"] == "hold"
+    assert result["confidence"] == 0.0
+    assert "short blocked" in result["reasoning"]
+
+
+def test_rsi_gate_allows_short_above_floor(snapshot):
+    """Same stack at RSI above the floor is NOT blocked by the RSI gate (it may
+    still be confidence-gated, but the hard gate must let it through)."""
+    result = agent.decide(
+        snapshot(
+            ema_alignment="bearish", daily_ema_alignment="bearish",
+            adx=40.0, plus_di=6.0, minus_di=35.0, macd_hist=-0.002, rsi=40.0,
+        )
+    )
+    assert "short blocked" not in result["reasoning"]
+
+
+def test_rsi_gate_blocks_long_when_deeply_overbought(snapshot):
+    result = agent.decide(
+        snapshot(
+            ema_alignment="bullish", daily_ema_alignment="bullish",
+            adx=40.0, plus_di=35.0, minus_di=6.0, macd_hist=0.002, rsi=80.0,
+        )
+    )
+    assert result["action"] == "hold"
+    assert result["confidence"] == 0.0
+    assert "long blocked" in result["reasoning"]

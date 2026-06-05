@@ -66,6 +66,12 @@ def decide(snapshot: dict) -> dict:
     if direction is None:
         return _hold(0.0, block_reason)
 
+    # ── STEP 3b: Hard RSI gate — don't enter into the exit/bounce zone ──
+    if direction == "short" and rsi < config.SHORT_ENTRY_RSI_FLOOR:
+        return _hold(0.0, f"short blocked — RSI {rsi:.1f} < {config.SHORT_ENTRY_RSI_FLOOR:.0f} (deep oversold, exit zone)")
+    if direction == "long" and rsi > config.LONG_ENTRY_RSI_CEIL:
+        return _hold(0.0, f"long blocked — RSI {rsi:.1f} > {config.LONG_ENTRY_RSI_CEIL:.0f} (deep overbought, exit zone)")
+
     # ── STEP 4: Confidence scoring ─────────────────────────────
     conf, reasons = _score_entry(direction, rsi, vol, funding, oi_chg,
                                  vs_ema200, plus_di, minus_di, macd, macd_p, regime,

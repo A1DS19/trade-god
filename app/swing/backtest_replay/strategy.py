@@ -24,6 +24,10 @@ V2_MIN_TP_TO_COST_MULT = 3.0
 V2_MIN_NET_TP_PCT = 0.004
 V2_MACD_DIV_EXIT_RSI_SHORT = 32.0  # mirrors config.MACD_DIV_EXIT_RSI_SHORT
 V2_MACD_DIV_EXIT_RSI_LONG = 68.0   # mirrors config.MACD_DIV_EXIT_RSI_LONG (raised from 62: fires on consolidation, 68 aligns with deep-overbought threshold)
+# Hard RSI entry gate — block entering into the exit/bounce zone. Mirrors
+# config.SHORT_ENTRY_RSI_FLOOR / LONG_ENTRY_RSI_CEIL. Overridable via env for sweeps.
+V2_SHORT_ENTRY_RSI_FLOOR = float(os.environ.get("V2_SHORT_RSI_FLOOR_OVERRIDE", "32"))
+V2_LONG_ENTRY_RSI_CEIL = float(os.environ.get("V2_LONG_RSI_CEIL_OVERRIDE", "68"))
 
 # Set in main() before threads start; read-only during replay.
 _DISABLE_MACD_DIV_EXIT: bool = False
@@ -329,6 +333,13 @@ def decide_v2(snapshot: dict[str, Any]) -> dict[str, Any]:
 
     if direction is None:
         return {"action": "hold", "confidence": 0.0, "reasoning": "no entry"}
+
+    if direction == "short" and rsi < V2_SHORT_ENTRY_RSI_FLOOR:
+        return {"action": "hold", "confidence": 0.0,
+                "reasoning": f"short blocked — RSI {rsi:.1f} < {V2_SHORT_ENTRY_RSI_FLOOR:.0f} (deep oversold)"}
+    if direction == "long" and rsi > V2_LONG_ENTRY_RSI_CEIL:
+        return {"action": "hold", "confidence": 0.0,
+                "reasoning": f"long blocked — RSI {rsi:.1f} > {V2_LONG_ENTRY_RSI_CEIL:.0f} (deep overbought)"}
 
     conf, reasons = _score_entry_common(
         direction,
