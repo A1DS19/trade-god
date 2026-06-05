@@ -55,8 +55,8 @@ docker compose logs --timestamps swing > logs.txt 2>&1
 
 ## Swing Agent (`app/swing/`)
 
-### Coins (12)
-DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, FET, ENS, TON — Binance USDT-M perpetuals. Screened from top 100 by market cap (see `docs/coin_screening_and_selection.md`). DOT removed 2026-04-11 (net-negative at MIN_CONFIDENCE=0.80). 2026-06-05: FET + ENS + TON added (walk-forward validated — positive in both train & OOS windows); ZEC/HYPE rejected (net-negative out-of-sample).
+### Coins (13)
+DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, FET, ENS, TON, HYPE — Binance USDT-M perpetuals. Screened from top 100 by market cap (see `docs/coin_screening_and_selection.md`). DOT removed 2026-04-11 (net-negative at MIN_CONFIDENCE=0.80). 2026-06-05: FET + ENS + TON added (walk-forward validated — positive in both train & OOS windows); ZEC rejected (net-negative OOS); HYPE re-added by user request despite failing walk-forward (only ~1yr history, −0.31 OOS — weakest in the book).
 
 ### Config (`app/swing/config.py`)
 | Param | Value |

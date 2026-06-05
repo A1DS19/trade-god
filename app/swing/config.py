@@ -7,7 +7,7 @@ from app.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID  # shared credentials
 BINANCE_API_KEY    = os.environ["BINANCE_API_KEY_FUTURES"]
 BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY_FUTURES"]
 # ── Coins to watch ────────────────────────────────────────
-COINS = ["DOGE", "1000SHIB", "RUNE", "RENDER", "1000FLOKI", "TURBO", "IP", "BSV", "IOTA", "FET", "ENS", "TON"]
+COINS = ["DOGE", "1000SHIB", "RUNE", "RENDER", "1000FLOKI", "TURBO", "IP", "BSV", "IOTA", "FET", "ENS", "TON", "HYPE"]
 # ── Coin selection notes (2026-04-11) ────────────────────────────────────
 # DOT removed 2026-04-11: at true live MIN_CONFIDENCE=0.80 it was net-negative
 # over 5yr (−$0.89 / 29 trades / 10 SL totaling −$13.73). Was originally picked
@@ -30,9 +30,11 @@ COINS = ["DOGE", "1000SHIB", "RUNE", "RENDER", "1000FLOKI", "TURBO", "IP", "BSV"
 #   +FET kept (robust: PF 7.27 / 75% win over 2yr).
 #   +ENS, +TON added — the only NEW top-100 candidates positive in BOTH windows
 #    (ENS +4.50/+3.98, TON +2.81/+6.13).
-#   -ZEC, -HYPE removed — net-negative out-of-sample (ZEC +2.54→−0.37; HYPE
-#    fails: no train data / −0.31 test). ZEC also had the worst drawdown in the
-#    top-100 (max_dd 10.90).
+#   -ZEC removed — net-negative out-of-sample (+2.54→−0.37, PF 0.97) and the
+#    worst drawdown in the top-100 (max_dd 10.90).
+#   HYPE: failed walk-forward (no train data, onboarded 2025-05-30; −0.31 OOS)
+#    but RE-ADDED by explicit user request 2026-06-05 — weakest coin in the book,
+#    watch it / re-evaluate once it has 2yr of history.
 #   Rejected despite top 2yr PnL: VET/INJ/TIA/WLD/JASMY — all overfit, NEGATIVE
 #    out-of-sample (e.g. VET +15.48 train → −1.08 test). Walk-forward caught them.
 
