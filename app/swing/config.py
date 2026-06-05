@@ -7,7 +7,7 @@ from app.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID  # shared credentials
 BINANCE_API_KEY    = os.environ["BINANCE_API_KEY_FUTURES"]
 BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY_FUTURES"]
 # ── Coins to watch ────────────────────────────────────────
-COINS = ["DOGE", "1000SHIB", "RUNE", "RENDER", "1000FLOKI", "TURBO", "IP", "BSV", "IOTA"]
+COINS = ["DOGE", "1000SHIB", "RUNE", "RENDER", "1000FLOKI", "TURBO", "IP", "BSV", "IOTA", "FET", "ZEC", "HYPE"]
 # ── Coin selection notes (2026-04-11) ────────────────────────────────────
 # DOT removed 2026-04-11: at true live MIN_CONFIDENCE=0.80 it was net-negative
 # over 5yr (−$0.89 / 29 trades / 10 SL totaling −$13.73). Was originally picked
@@ -24,6 +24,12 @@ COINS = ["DOGE", "1000SHIB", "RUNE", "RENDER", "1000FLOKI", "TURBO", "IP", "BSV"
 # See docs/swing_strategy_current.md §12 and project_walk_forward_2026-04-11.md
 # for the full walk-forward analysis. Forward-looking ROI estimate: ~15-22%
 # annual (NOT the 22.90% / 76.75% in-sample numbers).
+#
+# FET, ZEC, HYPE added 2026-06-05 (requested). NOT yet run through the
+# --screen / walk-forward pipeline. Caveats: HYPE has only ~1yr of futures
+# history (onboarded 2025-05-30) so it cannot be walk-forward validated; ZEC is
+# blacklisted in the DCA bot (privacy-coin delisting risk). Validate before
+# trusting live — see the 2026-06-05 backtest output.
 
 # ── Risk / sizing ─────────────────────────────────────────
 LEVERAGE       = 5      # Default futures leverage
