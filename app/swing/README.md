@@ -20,30 +20,35 @@ Every hour the agent:
 
 | Condition | Triggers close |
 |---|---|
-| 4h EMA flipped bullish or mixed | Short exits |
+| 4h EMA flipped bullish | Short exits |
 | Daily EMA flipped bullish | Short exits |
-| RSI < 38 | Short exits (approaching oversold) |
-| MACD hist rising AND RSI < 45 | Short exits (bearish momentum exhaustion) |
-| OI change < −3% AND MACD rising | Short exits (shorts covering) |
+| RSI < 32 | Short exits (deeply oversold) |
+| MACD divergence AND RSI < 32 | Short exits (momentum exhaustion) |
+| OI change < −3% AND MACD weakening | Short exits (shorts covering) |
 | ADX < 20 | Any position exits (trend collapsed) |
 | Symmetric inverses of the above | Long exits |
+
+A *mixed* 4h EMA stack alone does **not** exit (removed 2026-04-08 — it was net-negative over 8.5 years). Soft exits are delayed while the unrealized loss is still small (`< 2%`).
 
 ### 2. Regime gate
 
 ADX < 20 → no new entries (ranging/choppy market).  
-Minimum entry ADX is 22. ADX 22–25 is treated as borderline and penalized in confidence.
+ADX 20–25 is treated as borderline and penalized `−0.08` in confidence. `MIN_ADX_ENTRY = 28` is a separate, stricter hard gate, so trending setups with ADX 25–27 are still blocked at the entry check.
 
-### 3. Entry conditions
+### 3. Entry conditions (all required)
 
 | # | Short | Long |
 |---|---|---|
-| 1 | `ADX >= 25` | same |
+| 1 | `ADX >= 28` | same |
 | 2 | `daily_ema_alignment == "bearish"` | `"bullish"` |
-| 3 | 4h strict bearish OR partial bearish stack | 4h strict bullish OR partial bullish stack |
+| 3 | 4h strict bearish stack | 4h strict bullish stack |
 | 4 | `macd_hist < 0` | `macd_hist > 0` |
-| 5 | RSI affects confidence (soft penalties), not hard-block | same |
+| 5 | `-DI > +DI` | `+DI > -DI` |
+| 6 | RSI hard gate: block if `RSI < 32` | block if `RSI > 68` |
 
-Partial 4h alignment entries are allowed but get a confidence penalty.
+The RSI hard gate (added 2026-06-05) refuses to enter the zone the exit rule would immediately close. The softer `MIN_RSI_SHORT` (42) / `MAX_RSI_LONG` (58) thresholds still feed confidence penalties on top. Partial/mixed 4h entries are disabled (`ENABLE_PARTIAL_ENTRIES = False`) — quality-first.
+
+A **shadow tracker** (`shadow.py`, observe-only) logs the would-be PnL of RSI-gate-blocked trades as `SHADOW-CLOSE` lines (positive = the gate forwent a winner; negative = it avoided a loser) so the floor can be A/B-tuned from real outcomes.
 
 ### 4. Confidence scoring
 
@@ -93,7 +98,7 @@ Exchange-side SL/TP orders (`STOP_MARKET` / `TAKE_PROFIT_MARKET`) are attempted 
 
 ## Coins
 
-BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI (9 coins, configurable in `config.py`).
+DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, FET, ENS, TON, HYPE (13 coins, configurable in `config.py`). Screened from the top 100 by market cap and walk-forward validated — see [docs/coin_screening_and_selection.md](../../docs/coin_screening_and_selection.md). HYPE is the weakest name (re-added by user request despite failing walk-forward — only ~1yr of history).
 
 ---
 
@@ -103,7 +108,7 @@ All settings in `config.py`:
 
 | Setting | Default | Description |
 |---|---|---|
-| `COINS` | 9 pairs | Futures pairs to watch |
+| `COINS` | 13 pairs | Futures pairs to watch |
 | `LEVERAGE` | 5x | Futures leverage |
 | `POSITION_USDT_MIN` | $5 | Min trade size |
 | `POSITION_USDT_MAX` | $10 | Max trade size for high-confidence trades |
@@ -111,19 +116,23 @@ All settings in `config.py`:
 | `DEFAULT_SL_PCT` | 3% | Client-side stop loss fallback |
 | `DEFAULT_TP_PCT` | 8% | Client-side take profit fallback |
 | `MIN_CONFIDENCE` | 0.80 | Minimum confidence to enter |
-| `MIN_ADX_ENTRY` | 25.0 | Minimum ADX for entries |
-| `PARTIAL_MIN_ADX` | 25.0 | Minimum ADX for partial (mixed 4h) entries |
+| `MIN_ADX_ENTRY` | 28.0 | Minimum ADX for entries (hard gate) |
+| `SHORT_ENTRY_RSI_FLOOR` | 32.0 | **Hard** gate — block shorts when RSI below (= exit floor) |
+| `LONG_ENTRY_RSI_CEIL` | 68.0 | **Hard** gate — block longs when RSI above (= exit ceiling) |
+| `MIN_RSI_SHORT` | 42.0 | RSI comfort zone reference for shorts (soft penalty below) |
+| `MAX_RSI_LONG` | 58.0 | RSI comfort zone reference for longs (soft penalty above) |
+| `PARTIAL_MIN_ADX` | 32.0 | Minimum ADX for partial (mixed 4h) entries |
 | `PARTIAL_MIN_CONFIDENCE` | 0.80 | Higher confidence floor for partial entries |
 | `ENABLE_PARTIAL_ENTRIES` | `False` | Disable mixed/partial entries (quality-first) |
 | `REQUIRE_DI_ALIGNMENT` | `True` | Require `-DI > +DI` for shorts and `+DI > -DI` for longs |
-| `MIN_RSI_SHORT` | 42.0 | RSI comfort zone reference for shorts (soft penalty below) |
-| `MAX_RSI_LONG` | 58.0 | RSI comfort zone reference for longs (soft penalty above) |
+| `BORDERLINE_ADX_PENALTY` | 0.08 | Confidence penalty in borderline ADX (20–25) regime |
 | `EST_FEE_BPS` | 4.0 | Estimated fee per side used by expected-move filter |
 | `EST_SLIPPAGE_BPS` | 2.0 | Estimated slippage per side used by expected-move filter |
 | `MIN_TP_TO_COST_MULT` | 3.0 | Minimum TP multiple over estimated round-trip costs |
 | `MIN_NET_TP_PCT` | 0.40% | Minimum net TP after estimated costs |
 | `CHECK_INTERVAL` | 3600s | Seconds between scans |
 | `LOSS_COOLDOWN_HRS` | 4h | Hours to skip a coin after a losing trade |
+| `SHADOW_MAX_CYCLES` | 8 | RSI-gate would-be-PnL tracker horizon (observe-only) |
 
 ---
 
@@ -149,7 +158,9 @@ Binance futures keys require **Futures Trading** enabled. Keep withdrawals disab
 | `agent.py` | Deterministic rule engine — exit check, entry check, confidence scoring |
 | `snapshot.py` | Assembles market snapshot (indicators + ATR-based SL/TP hints) |
 | `indicators.py` | EMA, RSI, Stochastic RSI, MACD, ATR, ATR percentile, ADX, VWAP, volume ratio, OI change, L/S ratio, taker ratio |
-| `exchange.py` | Binance Futures wrappers (open/close, SL/TP, positions) |
+| `exchange.py` | Binance Futures wrappers (open/close, SL/TP via Algo `/fapi/v1/algoOrder`, positions) |
+| `shadow.py` | Observe-only tracker — would-be PnL of RSI-gate-blocked trades (`SHADOW-CLOSE` logs) |
+| `rebalance.py` | Periodic top-100 re-screen → backtest candidates → Telegram report |
 | `notifier.py` | Telegram alerts (open, close) |
 | `config.py` | Strategy constants and env vars |
 

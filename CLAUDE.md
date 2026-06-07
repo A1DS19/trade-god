@@ -13,12 +13,12 @@ Dual-strategy automated trading system on Binance:
 ```
 app/
 ├── bot/          # DCA spot bot (trader.py, exchange.py, indicators.py, universe.py, notifier.py, commands.py)
-├── swing/        # Swing futures agent (main.py, agent.py, snapshot.py, indicators.py, exchange.py, notifier.py, config.py)
+├── swing/        # Swing futures agent (main.py, agent.py, snapshot.py, indicators.py, exchange.py, notifier.py, config.py, shadow.py, rebalance.py, grid_search.py, wf_grid_search.py, backtest_replay/)
 ├── db/           # SQLAlchemy models (models.py)
 ├── api/          # FastAPI routes (main.py)
 └── config.py     # Shared DCA config + Telegram credentials
 
-alembic/versions/ # 4 migrations (001–004)
+alembic/versions/ # 5 migrations (001–005)
 docker-compose.yml
 main.py           # DCA entrypoint
 swing_main.py     # Swing entrypoint

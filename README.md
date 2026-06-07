@@ -33,11 +33,11 @@ Two independent trading strategies running in parallel on Binance.
 
 ## Swing Agent
 
-- Trades 5 USDT-M perpetual futures pairs (SOL, BNB, DOGE, LINK, SUI)
+- Trades 13 USDT-M perpetual futures pairs (DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, FET, ENS, TON, HYPE) — screened from the top 100 by market cap and walk-forward validated
 - Rule-based decision engine — no LLM, fully deterministic
 - Indicators: EMA stack (9/21/50 on 4h, 21/50/200 daily), RSI, Stochastic RSI, MACD, ATR, ATR percentile, ADX (+DI/−DI), VWAP, volume ratio, funding rate, open interest change, long/short ratio, taker buy/sell ratio
-- Regime filter: no entries in ranging markets (`ADX < 20`), minimum entry ADX `>= 22`
-- Entry uses daily bias + 4h strict or partial alignment + MACD direction + ADX gate; RSI now contributes via confidence penalties (not hard block)
+- Regime filter: no entries in ranging markets (`ADX < 20`), strict entry ADX gate `>= 28`
+- Entry uses daily bias + strict 4h alignment + MACD direction + ADX gate + DI alignment; RSI is a **hard gate** (block shorts when RSI < 32, longs when RSI > 68 — don't enter the zone the exit rule would immediately close) plus softer RSI confidence penalties on top
 - Confidence scored from 11 confirming/contradicting signals; minimum 0.80 to enter
 - Exit on MACD divergence, RSI threshold breach, EMA flip, ADX collapse, or OI drop
 - ATR-based SL/TP sizing (1.5× and 3× ATR14); client-side safety net enforced each cycle
@@ -254,6 +254,8 @@ app/
     indicators.py   — EMA, RSI, Stoch RSI, MACD, ATR, ATR percentile, ADX, VWAP, OI, L/S ratio, taker ratio
     exchange.py     — Binance Futures wrappers (open/close, SL/TP)
     notifier.py     — Telegram alerts (open, close)
+    shadow.py       — observe-only would-be-PnL tracker for RSI-gate-blocked trades
+    rebalance.py    — periodic top-100 re-screen + backtest, reports candidates via Telegram
     config.py       — swing-specific strategy constants and env vars
     backtest_replay/ — OHLCV replay backtest engine (v1 vs v2 comparison, charts)
   db/
