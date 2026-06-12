@@ -29,6 +29,7 @@ def _series(n: int, *, last_unclosed: bool, interval_ms: int = 4 * 3600 * 1000) 
         out.append(_kline(open_t, close, 1000.0, close_t))
     if last_unclosed:
         out[-1][6] = now_ms + interval_ms  # close_time in the future = forming
+        out[-1][1] = out[-1][2] = out[-1][3] = out[-1][4] = 999.0  # distinct price: tests must fail if this bar leaks in
     return out
 
 
