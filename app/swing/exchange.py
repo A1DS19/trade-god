@@ -43,6 +43,11 @@ def get_open_positions(client: Client) -> dict[str, dict]:
     return result
 
 
+def get_recent_fills(client: Client, coin: str, start_ms: int) -> list[dict]:
+    """Account trade fills for a symbol since ``start_ms`` (GET /fapi/v1/userTrades)."""
+    return client.futures_account_trades(symbol=f"{coin}USDT", startTime=start_ms, limit=100)
+
+
 def set_leverage(client: Client, coin: str, leverage: int):
     try:
         client.futures_change_leverage(symbol=f"{coin}USDT", leverage=leverage)

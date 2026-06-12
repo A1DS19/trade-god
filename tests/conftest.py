@@ -40,6 +40,8 @@ class FakeBinanceClient:
         self.algo_calls: list[dict] = []     # _request_futures_api('post', 'algoOrder', …)
         self.created_orders: list[dict] = []  # futures_create_order(…)
         self.cancelled: list[dict] = []
+        self.fills: list[dict] = []           # seed for futures_account_trades
+        self.fills_requests: list[dict] = []  # records requests for assertions
 
     # — order endpoints —
     def _request_futures_api(self, method, path, signed=False, **kwargs):
@@ -57,6 +59,10 @@ class FakeBinanceClient:
         return {"code": 200, "msg": "success"}
 
     # — market data / account —
+    def futures_account_trades(self, **params):
+        self.fills_requests.append(params)
+        return list(self.fills)
+
     def futures_symbol_ticker(self, **params):
         return {"price": str(self.price)}
 
