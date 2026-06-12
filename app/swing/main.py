@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from binance.client import Client
 
 from app import db
-from app.swing import config, agent, notifier, shadow, snapshot
+from app.swing import config, agent, notifier, reconcile, shadow, snapshot
 from app.swing.exchange import (
     get_open_positions, get_price,
     open_long, open_short, close_position, cancel_open_orders,
@@ -106,6 +106,9 @@ def run():
         try:
             positions = get_open_positions(client)
             log.info("Open positions: %s", list(positions.keys()) or "none")
+
+            for rec in reconcile.reconcile(client, positions):
+                log.info("RECONCILED %s — %s pnl=%.4f", rec["coin"], rec["reason"], rec["pnl"])
 
             # ── Client-side SL/TP safety net ──────────────────────────
             for coin, pos in list(positions.items()):
