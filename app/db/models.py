@@ -234,6 +234,16 @@ def get_open_swing_trade(coin: str) -> SwingTrade | None:
         )
 
 
+def get_all_open_swing_trades() -> list[SwingTrade]:
+    with Session(engine) as session:
+        return (
+            session.query(SwingTrade)
+            .filter(SwingTrade.status == "open")
+            .order_by(SwingTrade.id.asc())
+            .all()
+        )
+
+
 def get_last_closed_swing_trade(coin: str) -> SwingTrade | None:
     with Session(engine) as session:
         return (
