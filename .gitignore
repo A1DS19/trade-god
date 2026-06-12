@@ -216,3 +216,6 @@ charts_out/
 # Generated run artifacts
 cache/
 outputs/
+
+# research warehouse data (parquet) — local only
+research/warehouse/
