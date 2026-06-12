@@ -184,6 +184,19 @@ Tracking tables for DCA daily cap and universe cache.
 
 ## Known Issues & Fixes
 
+### Fixed (2026-06-13): silent exchange-side fills + safety-net override + algo cancel + forming-candle indicators
+- `app/swing/reconcile.py` diffs DB open rows vs exchange positions each cycle; backfills closes
+  from `futures_account_trades` (exit = closing-fill VWAP bounded by row qty, PnL = summed
+  realizedPnl), alerts, and feeds the loss cooldown. Empty fills retry 3 cycles before a
+  price-estimated fallback; userTrades window clamped to <7d (-1127). Repaired silent algo-SL
+  closes DOGE id=71 (2026-06-11) and BSV id=72 (2026-06-12) on first deploy.
+- Client safety net now uses per-trade `entry_sl_pct`/`entry_tp_pct` via `_net_thresholds`
+  (fallback: DEFAULT_*) — the flat 3%/8% net no longer preempts wider ATR stops.
+- `cancel_open_orders` also DELETEs `/fapi/v1/algoOpenOrders` (placement was fixed 2026-06-05;
+  cancellation wasn't) and never raises. `scripts/cleanup_orphan_algo_orders.py` audits orphans.
+- Indicators drop the still-forming last kline (4h + 1d), RSI warms up on the full 200-bar
+  series, daily fetch deepened to 601 for a converged EMA200. `snap["price"]` = last closed close.
+
 ### Fixed (2026-06-05): Binance -4120 SL/TP error — for real this time
 Binance migrated USDT-M conditional orders to the **Algo service on 2025-12-09**.
 `STOP_MARKET`/`TAKE_PROFIT_MARKET` on `POST /fapi/v1/order` now reject with `-4120`.
