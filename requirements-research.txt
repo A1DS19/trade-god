@@ -1,0 +1,5 @@
+# Research-only dependencies (dev machine). NEVER installed in the Docker image —
+# the live bot stays stdlib + python-binance. See docs/superpowers/specs/2026-06-12-*.md
+pandas==3.0.3
+pyarrow==24.0.0
+duckdb==1.5.3

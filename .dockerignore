@@ -11,3 +11,7 @@ tests
 .dockerignore
 Dockerfile
 docker-compose.yml
+
+# research tooling never ships in images (dev-only deps + data)
+research/
+requirements-research.txt
