@@ -1,0 +1,8 @@
+{
+  "M": 720,
+  "P": 0.98,
+  "exit_mode": "horizon",
+  "horizon_hours": 72,
+  "max_k": 3,
+  "_cliff": true
+}

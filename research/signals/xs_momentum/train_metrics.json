@@ -1,0 +1,110 @@
+{
+  "ls/base/W1_train": {
+    "total_return_pct": 1149.77,
+    "profit_factor": 1.069,
+    "max_dd_pct": 36.41,
+    "n_trades": 5545,
+    "turnover": 927.0,
+    "total_funding_pct": -6.64,
+    "total_trade_cost_pct": 92.7
+  },
+  "ls/base/W2_train": {
+    "total_return_pct": 1359.08,
+    "profit_factor": 1.0571,
+    "max_dd_pct": 36.41,
+    "n_trades": 7396,
+    "turnover": 1235.7,
+    "total_funding_pct": -5.85,
+    "total_trade_cost_pct": 123.57
+  },
+  "ls/base/W3_train": {
+    "total_return_pct": 1524.47,
+    "profit_factor": 1.0479,
+    "max_dd_pct": 40.83,
+    "n_trades": 9277,
+    "turnover": 1549.3,
+    "total_funding_pct": -8.63,
+    "total_trade_cost_pct": 154.93
+  },
+  "ls/stress/W1_train": {
+    "total_return_pct": 685.79,
+    "profit_factor": 1.0573,
+    "max_dd_pct": 40.13,
+    "n_trades": 5545,
+    "turnover": 927.0,
+    "total_funding_pct": -6.64,
+    "total_trade_cost_pct": 139.05
+  },
+  "ls/stress/W2_train": {
+    "total_return_pct": 686.08,
+    "profit_factor": 1.0453,
+    "max_dd_pct": 40.13,
+    "n_trades": 7396,
+    "turnover": 1235.7,
+    "total_funding_pct": -5.85,
+    "total_trade_cost_pct": 185.35
+  },
+  "ls/stress/W3_train": {
+    "total_return_pct": 648.01,
+    "profit_factor": 1.0364,
+    "max_dd_pct": 46.84,
+    "n_trades": 9277,
+    "turnover": 1549.3,
+    "total_funding_pct": -8.63,
+    "total_trade_cost_pct": 232.4
+  },
+  "long/base/W1_train": {
+    "total_return_pct": 8705.76,
+    "profit_factor": 1.0585,
+    "max_dd_pct": 86.08,
+    "n_trades": 2433,
+    "turnover": 811.0,
+    "total_funding_pct": 39.53,
+    "total_trade_cost_pct": 81.1
+  },
+  "long/base/W2_train": {
+    "total_return_pct": 24959.72,
+    "profit_factor": 1.057,
+    "max_dd_pct": 86.08,
+    "n_trades": 3239,
+    "turnover": 1079.7,
+    "total_funding_pct": 50.41,
+    "total_trade_cost_pct": 107.97
+  },
+  "long/base/W3_train": {
+    "total_return_pct": 41087.44,
+    "profit_factor": 1.0523,
+    "max_dd_pct": 86.08,
+    "n_trades": 4069,
+    "turnover": 1356.3,
+    "total_funding_pct": 46.25,
+    "total_trade_cost_pct": 135.63
+  },
+  "short/base/W1_train": {
+    "total_return_pct": -93.49,
+    "profit_factor": 0.9879,
+    "max_dd_pct": 96.3,
+    "n_trades": 3129,
+    "turnover": 1043.0,
+    "total_funding_pct": -52.81,
+    "total_trade_cost_pct": 104.3
+  },
+  "short/base/W2_train": {
+    "total_return_pct": -98.32,
+    "profit_factor": 0.9815,
+    "max_dd_pct": 98.87,
+    "n_trades": 4175,
+    "turnover": 1391.7,
+    "total_funding_pct": -62.11,
+    "total_trade_cost_pct": 139.17
+  },
+  "short/base/W3_train": {
+    "total_return_pct": -99.44,
+    "profit_factor": 0.9809,
+    "max_dd_pct": 99.52,
+    "n_trades": 5227,
+    "turnover": 1742.3,
+    "total_funding_pct": -63.5,
+    "total_trade_cost_pct": 174.23
+  }
+}

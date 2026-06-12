@@ -1,0 +1,8 @@
+{
+  "form": "abs",
+  "x": 20.0,
+  "m_events": 1,
+  "k_max": 3,
+  "filter": "trend72",
+  "exit_frac": 1.0
+}

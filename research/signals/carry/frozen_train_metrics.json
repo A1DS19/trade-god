@@ -1,0 +1,89 @@
+{
+  "frozen_params": {
+    "form": "abs",
+    "x": 20.0,
+    "m_events": 1,
+    "k_max": 3,
+    "filter": "trend72",
+    "exit_frac": 1.0
+  },
+  "n_combos": 324,
+  "train_windows": {
+    "W1_train": {
+      "total_return_pct": 175.22,
+      "profit_factor": 1.163,
+      "max_dd_pct": 47.16,
+      "n_trades": 702,
+      "sharpe": 0.79,
+      "total_funding_pnl_pct": 30.91,
+      "total_trade_cost_pct": 41.83
+    },
+    "W2_train": {
+      "total_return_pct": 101.85,
+      "profit_factor": 1.112,
+      "max_dd_pct": 47.16,
+      "n_trades": 742,
+      "sharpe": 0.54,
+      "total_funding_pnl_pct": 43.03,
+      "total_trade_cost_pct": 45.83
+    },
+    "W3_train": {
+      "total_return_pct": 114.81,
+      "profit_factor": 1.089,
+      "max_dd_pct": 52.98,
+      "n_trades": 936,
+      "sharpe": 0.51,
+      "total_funding_pnl_pct": 72.46,
+      "total_trade_cost_pct": 63.43
+    }
+  },
+  "train_windows_stress": {
+    "W1_train": {
+      "total_return_pct": 123.17,
+      "profit_factor": 1.137,
+      "max_dd_pct": 47.38,
+      "n_trades": 702,
+      "sharpe": 0.67,
+      "total_funding_pnl_pct": 30.91,
+      "total_trade_cost_pct": 62.75
+    },
+    "W2_train": {
+      "total_return_pct": 60.43,
+      "profit_factor": 1.089,
+      "max_dd_pct": 47.38,
+      "n_trades": 742,
+      "sharpe": 0.44,
+      "total_funding_pnl_pct": 43.03,
+      "total_trade_cost_pct": 68.75
+    },
+    "W3_train": {
+      "total_return_pct": 56.36,
+      "profit_factor": 1.068,
+      "max_dd_pct": 55.43,
+      "n_trades": 936,
+      "sharpe": 0.4,
+      "total_funding_pnl_pct": 72.46,
+      "total_trade_cost_pct": 95.15
+    }
+  },
+  "attribution_full_train": {
+    "short_side": {
+      "total_return_pct": 10.84,
+      "profit_factor": 1.055,
+      "max_dd_pct": 29.11,
+      "n_trades": 536,
+      "sharpe": 0.19,
+      "total_funding_pnl_pct": 14.45,
+      "total_trade_cost_pct": 26.17
+    },
+    "long_side": {
+      "total_return_pct": 93.98,
+      "profit_factor": 1.097,
+      "max_dd_pct": 52.98,
+      "n_trades": 400,
+      "sharpe": 0.48,
+      "total_funding_pnl_pct": 58.01,
+      "total_trade_cost_pct": 37.27
+    }
+  }
+}

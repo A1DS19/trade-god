@@ -1,0 +1,7 @@
+{
+  "lookback_days": 7,
+  "k": 3,
+  "rebalance_hours": 24,
+  "vol_norm": true,
+  "leg": "ls"
+}
