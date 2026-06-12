@@ -127,6 +127,22 @@ def test_per_row_errors_isolated(fake_client, capture, monkeypatch) -> None:
     assert len(results) == 1
 
 
+def test_fills_window_clamped_to_seven_days(fake_client, capture) -> None:
+    """userTrades rejects windows >7 days (-1127); old entries must be clamped
+    so reconcile degrades to the no-fills fallback instead of erroring forever."""
+    import time as _time
+
+    capture["rows"] = [_row(entry_time="2026-01-01T00:00:00+00:00")]  # months old
+    fake_client.fills = []
+
+    reconcile.reconcile(fake_client, positions={})
+
+    requested_start = fake_client.fills_requests[0]["startTime"]
+    now_ms = int(_time.time() * 1000)
+    assert requested_start >= now_ms - 7 * 24 * 3600 * 1000
+    assert requested_start <= now_ms  # sane upper bound
+
+
 def test_reentry_fills_do_not_pollute_older_row(fake_client, capture) -> None:
     """Closing fills of a LATER trade in the same coin (same side) must not be
     blended into a stale row's VWAP/PnL — only the first row.qty of closing

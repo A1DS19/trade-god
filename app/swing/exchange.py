@@ -2,6 +2,7 @@
 
 import html
 import logging
+import time
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from app.swing import notifier
@@ -43,12 +44,20 @@ def get_open_positions(client: Client) -> dict[str, dict]:
     return result
 
 
+# userTrades rejects windows wider than 7 days (-1127); clamp with margin.
+# Closing fills land seconds after a position closes, so a ~6.5-day window
+# never misses them — and if they ARE older, reconcile's no-fills retry →
+# price-estimated fallback takes over instead of erroring forever.
+_FILLS_WINDOW_MS = int(6.5 * 24 * 3600 * 1000)
+
+
 def get_recent_fills(client: Client, coin: str, start_ms: int) -> list[dict]:
     """Account trade fills for a symbol since ``start_ms`` (GET /fapi/v1/userTrades).
 
     500 is the userTrades API max page size; reconciliation computes exit VWAP from
     these fills, so a too-small page could silently truncate closing fills.
     """
+    start_ms = max(start_ms, int(time.time() * 1000) - _FILLS_WINDOW_MS)
     return client.futures_account_trades(symbol=f"{coin}USDT", startTime=start_ms, limit=500)
 
 
