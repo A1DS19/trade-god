@@ -1,9 +1,26 @@
 """Market indicators for the swing agent — 4h candles, EMAs, RSI, MACD, ATR, ADX, OI."""
 
 import logging
+import time
 from binance.client import Client
 
 log = logging.getLogger(__name__)
+
+
+def _drop_unclosed(klines: list, now_ms: int | None = None) -> list:
+    """Drop the still-forming last candle (close_time in the future).
+
+    Binance always includes the current candle; every indicator here must see
+    closed bars only, or signals repaint intra-bar and vol_ratio compares a
+    partial candle against full ones.
+    """
+    if not klines:
+        return klines
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    if int(klines[-1][6]) > now_ms:
+        return klines[:-1]
+    return klines
 
 
 def calc_ema(closes: list[float], period: int) -> float:
@@ -174,7 +191,9 @@ def get_indicators(client: Client, coin: str) -> dict:
     symbol = f"{coin}USDT"
 
     # ── 4h candles ────────────────────────────────────────────
-    klines_4h  = client.futures_klines(symbol=symbol, interval=Client.KLINE_INTERVAL_4HOUR, limit=200)
+    klines_4h  = _drop_unclosed(
+        client.futures_klines(symbol=symbol, interval=Client.KLINE_INTERVAL_4HOUR, limit=200)
+    )
     closes_4h  = [float(k[4]) for k in klines_4h]
     highs_4h   = [float(k[2]) for k in klines_4h]
     lows_4h    = [float(k[3]) for k in klines_4h]
@@ -183,7 +202,7 @@ def get_indicators(client: Client, coin: str) -> dict:
     ema9  = calc_ema(closes_4h, 9)
     ema21 = calc_ema(closes_4h, 21)
     ema50 = calc_ema(closes_4h, 50)
-    rsi14 = calc_rsi(closes_4h[-30:], 14)
+    rsi14 = calc_rsi(closes_4h, 14)
 
     avg_vol   = sum(volumes_4h[-21:-1]) / 20
     vol_ratio = volumes_4h[-1] / avg_vol if avg_vol > 0 else 1.0
@@ -202,7 +221,9 @@ def get_indicators(client: Client, coin: str) -> dict:
     ]
 
     # ── Daily candles (bias + EMA200) ─────────────────────────
-    klines_1d    = client.futures_klines(symbol=symbol, interval=Client.KLINE_INTERVAL_1DAY, limit=220)
+    klines_1d    = _drop_unclosed(
+        client.futures_klines(symbol=symbol, interval=Client.KLINE_INTERVAL_1DAY, limit=601)
+    )
     closes_1d    = [float(k[4]) for k in klines_1d]
     ema21_daily  = calc_ema(closes_1d, 21)
     ema50_daily  = calc_ema(closes_1d, 50)
