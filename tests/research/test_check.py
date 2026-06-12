@@ -38,3 +38,11 @@ def test_irregular_datasets_skip_gap_check(warehouse):
     store.upsert("universe", "ALL", [{"snapshot_key": "1:A", "symbol": "A"}], "snapshot_key")
     [entry] = check.scan()
     assert entry["gaps"] is None
+
+
+def test_ms_jitter_is_not_a_gap(warehouse):
+    h = 3_600_000
+    times = [0, h, 2 * h + 47, 3 * h + 50, 4 * h + 12]  # ms jitter only
+    store.upsert("klines_1h", "DOGEUSDT", [{"open_time": t, "close": 1.0} for t in times], "open_time")
+    [entry] = check.scan()
+    assert entry["gaps"] == 0

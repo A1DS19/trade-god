@@ -7,6 +7,11 @@ from __future__ import annotations
 
 from research import config, store
 
+# A real hole is at least a missing bar (2x step); Binance timestamps carry
+# ms-level jitter (funding: +1..50ms on 8h steps), so a strict > step flags
+# thousands of false positives. 1.5x splits the difference safely.
+GAP_TOLERANCE = 1.5
+
 
 def scan() -> list[dict]:
     report = []
@@ -22,7 +27,7 @@ def scan() -> list[dict]:
             if step_ms is not None and len(df) > 1:
                 times = df[time_col].sort_values()
                 diffs = times.diff().dropna()
-                gaps = diffs[diffs > step_ms]
+                gaps = diffs[diffs > step_ms * GAP_TOLERANCE]
                 entry["gaps"] = int(len(gaps))
                 entry["largest_gap_ms"] = int(gaps.max()) if len(gaps) else 0
                 entry["first"] = int(times.iloc[0])
