@@ -63,6 +63,31 @@ def test_backfill_starts_from_onboard_then_resumes(warehouse, monkeypatch):
     assert all(v == 5001 for v in starts2.values())
 
 
+class FakeExchangeInfoClient:
+    """Minimal stub for futures_exchange_info."""
+
+    def __init__(self, symbols_info: list[dict]):
+        self._info = symbols_info
+
+    def futures_exchange_info(self):
+        return {"symbols": self._info}
+
+
+def test_resolve_onboard_uses_exchange_info():
+    client = FakeExchangeInfoClient([
+        {"symbol": "DOGEUSDT", "onboardDate": 1580000000000},
+        {"symbol": "BSVUSDT"},  # no onboardDate key
+        {"symbol": "BTCUSDT", "onboardDate": 0},
+    ])
+
+    targets = backfill._resolve_onboard(client, ["DOGEUSDT", "BSVUSDT", "BTCUSDT"])
+
+    symbols = {t["symbol"]: t["onboard_date_ms"] for t in targets}
+    assert symbols["DOGEUSDT"] == 1580000000000   # real date carried through
+    assert symbols["BSVUSDT"] == 0                # missing key → 0
+    assert symbols["BTCUSDT"] == 0                # onboardDate=0 → 0
+
+
 def test_backfill_isolates_failures(warehouse, monkeypatch):
     stub = StubSource()
     stub.fail_on.add(("klines_1h", "DOGEUSDT"))

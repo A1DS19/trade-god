@@ -66,6 +66,20 @@ def run(client, targets: list[dict], datasets: list[str], delay: float) -> Summa
     return summary
 
 
+def _resolve_onboard(client, symbols: list[str]) -> list[dict]:
+    """Resolve real onboard dates for explicit symbols via futures_exchange_info().
+
+    Binance returns onboardDate (epoch ms) per symbol; fall back to 0 when the key
+    is absent or zero so the high-water-mark logic in run() handles it gracefully.
+    """
+    info = client.futures_exchange_info()
+    date_by_symbol = {
+        s["symbol"]: int(s.get("onboardDate") or 0)
+        for s in info.get("symbols", [])
+    }
+    return [{"symbol": sym, "onboard_date_ms": date_by_symbol.get(sym, 0)} for sym in symbols]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--top", type=int, default=100)
@@ -84,7 +98,8 @@ def main() -> None:
         parser.error(f"unknown datasets: {unknown}")
 
     if args.symbols:
-        targets = [{"symbol": s.strip(), "onboard_date_ms": 0} for s in args.symbols.split(",")]
+        symbols = [s.strip() for s in args.symbols.split(",")]
+        targets = _resolve_onboard(client, symbols)
     else:
         rows = universe.resolve_top(client, args.top)
         universe.save_snapshot(rows, snapshot_ms=int(time.time() * 1000))

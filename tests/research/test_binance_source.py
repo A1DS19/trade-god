@@ -105,21 +105,89 @@ def test_premium_index_uses_unsigned_raw_endpoint():
     assert rows[0]["close"] == 1.5 and "volume" not in rows[0]
 
 
-def test_open_interest_clamps_to_rolling_window():
+def test_open_interest_windowed_pagination():
+    """Replacing the single-page test: _fetch_rolling must walk explicit [s,e] windows,
+    clamp the start to now-30d, pass endTime on every call, and collect all windows.
+
+    ROLLING_WINDOW_MS = 29 days = 696h; ROLLING_PAGE = 500h → exactly 2 windows fit.
+    Window 1: [clamped_start, clamped_start+500h]
+    Window 2: [clamped_start+500h+1, now]
+    Both carry real data; the empty-window advance is covered by a separate test below.
+    """
+    h = src.HOUR_MS
     now = int(time.time() * 1000)
-    client = FakePagedClient(oi_pages=[[{"timestamp": now - 1000, "sumOpenInterest": "5", "sumOpenInterestValue": "10"}]])
+    # 696h window → window1 spans [now-696h, now-196h], window2 spans [now-196h+1, now]
+    window1_ts = now - 500 * h + 100   # sits in window 1
+    window2_ts = now - 100 * h + 100   # sits in window 2
+    pages = [
+        [{"timestamp": window1_ts, "sumOpenInterest": "5", "sumOpenInterestValue": "10"}],
+        [{"timestamp": window2_ts, "sumOpenInterest": "7", "sumOpenInterestValue": "14"}],
+    ]
+    client = FakePagedClient(oi_pages=pages)
 
     rows = src.fetch_open_interest(client, "DOGEUSDT", 0, delay=0)  # asks from epoch 0
 
-    requested = client.oi_calls[0]["startTime"]
-    assert requested >= now - 30 * 24 * src.HOUR_MS  # clamped
-    assert rows == [{"timestamp": now - 1000, "sum_open_interest": 5.0, "sum_open_interest_value": 10.0}]
+    # Clamp: first startTime must be >= now-30d
+    first_start = client.oi_calls[0]["startTime"]
+    assert first_start >= now - 30 * 24 * h, "start was not clamped to rolling window"
+
+    # Every request carries an endTime
+    for call in client.oi_calls:
+        assert "endTime" in call, f"request missing endTime: {call}"
+
+    # endTime on first request = startTime + ROLLING_PAGE hours (clamped to now)
+    expected_end = min(first_start + src.ROLLING_PAGE * h, now)
+    # Allow ±2 seconds for time() drift
+    assert abs(client.oi_calls[0]["endTime"] - expected_end) < 2000
+
+    # Both windows land in the result
+    assert len(rows) == 2
+    assert rows[0] == {"timestamp": window1_ts, "sum_open_interest": 5.0, "sum_open_interest_value": 10.0}
+    assert rows[1] == {"timestamp": window2_ts, "sum_open_interest": 7.0, "sum_open_interest_value": 14.0}
 
 
-def test_long_short_normalization():
+def test_fetch_rolling_empty_window_advances():
+    """An empty API response for a window must advance the cursor, not stall."""
+    h = src.HOUR_MS
+    # Use a small synthetic start that produces 3 windows; inject an empty middle window.
+    now_approx = int(time.time() * 1000)
+    start = now_approx - 3 * src.ROLLING_PAGE * h - 1  # will be clamped to now-29d
+
+    call_args: list[tuple] = []
+
+    def fake_fetch(s, e):
+        call_args.append((s, e))
+        # first call: return data; second (middle): empty; third: data
+        if len(call_args) == 2:
+            return []
+        return [{"timestamp": s + 1, "sumOpenInterest": "1", "sumOpenInterestValue": "2"}]
+
+    out = src._fetch_rolling(fake_fetch, start, delay=0)
+
+    # Must have called at least twice (empty window did not re-issue the same cursor)
+    assert len(call_args) >= 2
+    # Cursors must be strictly increasing
+    starts = [a[0] for a in call_args]
+    assert starts == sorted(starts) and len(set(starts)) == len(starts), "cursor did not advance"
+
+
+def test_long_short_windowed_and_normalization():
+    """L/S uses the same _fetch_rolling path: both windows collected, endTime present."""
+    h = src.HOUR_MS
     now = int(time.time() * 1000)
-    client = FakePagedClient(oi_pages=[[{"timestamp": now - 1000, "longShortRatio": "2.5", "longAccount": "0.71", "shortAccount": "0.29"}]])
+    window1_ts = now - 3 * src.ROLLING_PAGE * h + 200
+    window2_ts = now - src.ROLLING_PAGE * h + 200
+    pages = [
+        [{"timestamp": window1_ts, "longShortRatio": "2.5", "longAccount": "0.71", "shortAccount": "0.29"}],
+        [{"timestamp": window2_ts, "longShortRatio": "1.1", "longAccount": "0.52", "shortAccount": "0.48"}],
+    ]
+    client = FakePagedClient(oi_pages=pages)
 
-    rows = src.fetch_long_short(client, "DOGEUSDT", now - 2000, delay=0)
+    rows = src.fetch_long_short(client, "DOGEUSDT", 0, delay=0)
 
-    assert rows == [{"timestamp": now - 1000, "long_short_ratio": 2.5, "long_account": 0.71, "short_account": 0.29}]
+    for call in client.oi_calls:
+        assert "endTime" in call
+
+    assert len(rows) == 2
+    assert rows[0] == {"timestamp": window1_ts, "long_short_ratio": 2.5, "long_account": 0.71, "short_account": 0.29}
+    assert rows[1] == {"timestamp": window2_ts, "long_short_ratio": 1.1, "long_account": 0.52, "short_account": 0.48}

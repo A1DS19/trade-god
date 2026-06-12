@@ -111,11 +111,28 @@ def _clamp_rolling(start_ms: int) -> int:
     return max(start_ms, _now_ms() - ROLLING_WINDOW_MS)
 
 
+def _fetch_rolling(fetch_window, start_ms: int, *, delay: float) -> list:
+    """The futures-data endpoints (OI, L/S) anchor to the END of the range:
+    startTime-only returns the NEWEST `limit` rows. Walk explicit windows of
+    ROLLING_PAGE hours instead so the oldest rows aren't silently dropped."""
+    out: list = []
+    cursor = _clamp_rolling(start_ms)
+    now = _now_ms()
+    while cursor < now:
+        end = min(cursor + ROLLING_PAGE * HOUR_MS, now)
+        if delay > 0:
+            time.sleep(delay)
+        out.extend(fetch_window(cursor, end))
+        cursor = end + 1
+    return out
+
+
 def fetch_open_interest(client, symbol: str, start_ms: int, *, delay: float) -> list[dict]:
-    raw = _paginate(
-        lambda c: client.futures_open_interest_hist(symbol=symbol, period="1h", startTime=c, limit=ROLLING_PAGE),
-        _clamp_rolling(start_ms), step_ms=HOUR_MS, page_size=ROLLING_PAGE, delay=delay,
-        row_time=lambda r: int(r["timestamp"]),
+    raw = _fetch_rolling(
+        lambda s, e: client.futures_open_interest_hist(
+            symbol=symbol, period="1h", startTime=s, endTime=e, limit=ROLLING_PAGE
+        ),
+        start_ms, delay=delay,
     )
     return [
         {"timestamp": int(r["timestamp"]), "sum_open_interest": float(r["sumOpenInterest"]),
@@ -125,10 +142,11 @@ def fetch_open_interest(client, symbol: str, start_ms: int, *, delay: float) -> 
 
 
 def fetch_long_short(client, symbol: str, start_ms: int, *, delay: float) -> list[dict]:
-    raw = _paginate(
-        lambda c: client.futures_global_longshort_ratio(symbol=symbol, period="1h", startTime=c, limit=ROLLING_PAGE),
-        _clamp_rolling(start_ms), step_ms=HOUR_MS, page_size=ROLLING_PAGE, delay=delay,
-        row_time=lambda r: int(r["timestamp"]),
+    raw = _fetch_rolling(
+        lambda s, e: client.futures_global_longshort_ratio(
+            symbol=symbol, period="1h", startTime=s, endTime=e, limit=ROLLING_PAGE
+        ),
+        start_ms, delay=delay,
     )
     return [
         {"timestamp": int(r["timestamp"]), "long_short_ratio": float(r["longShortRatio"]),
