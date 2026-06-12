@@ -25,4 +25,3 @@ DATASETS: dict[str, tuple[str, int | None]] = {
 
 # OI / long-short endpoints only serve the trailing ~30 days; clamp with margin.
 ROLLING_WINDOW_MS = 29 * DAY_MS
-ROLLING_DATASETS = {"oi_1h", "long_short_1h"}
