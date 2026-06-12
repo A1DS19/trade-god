@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from binance.client import Client
 
 from app import db
-from app.swing import config, agent, notifier, shadow, snapshot
+from app.swing import config, agent, notifier, reconcile, shadow, snapshot
 from app.swing.exchange import (
     get_open_positions, get_price,
     open_long, open_short, close_position, cancel_open_orders,
@@ -88,6 +88,18 @@ def _safety_net_label(side: str, entry: float, price: float,
     return None
 
 
+def _net_thresholds(db_trade) -> tuple[float, float]:
+    """Per-trade SL/TP for the client-side net, falling back to the defaults.
+
+    The net exists to back up the exchange-side ATR-sized stops, so it must use
+    the same percentages — a flat default tighter than the ATR stop would
+    preempt the exchange order and become the de-facto (wrong) stop.
+    """
+    sl = getattr(db_trade, "entry_sl_pct", None) or config.DEFAULT_SL_PCT
+    tp = getattr(db_trade, "entry_tp_pct", None) or config.DEFAULT_TP_PCT
+    return sl, tp
+
+
 def run():
     db.init_db()
     client = Client(config.BINANCE_API_KEY, config.BINANCE_SECRET_KEY)
@@ -107,15 +119,20 @@ def run():
             positions = get_open_positions(client)
             log.info("Open positions: %s", list(positions.keys()) or "none")
 
+            for rec in reconcile.reconcile(client, positions):
+                log.info("RECONCILED %s — %s pnl=%.4f", rec["coin"], rec["reason"], rec["pnl"])
+
             # ── Client-side SL/TP safety net ──────────────────────────
             for coin, pos in list(positions.items()):
                 if coin not in config.COINS:
                     continue
                 price_now = get_price(client, coin)
                 chg = (price_now - pos["entry"]) / pos["entry"]
+                db_trade = db.get_open_swing_trade(coin)
+                sl_pct, tp_pct = _net_thresholds(db_trade)
                 label = _safety_net_label(
                     pos["side"], pos["entry"], price_now,
-                    config.DEFAULT_SL_PCT, config.DEFAULT_TP_PCT,
+                    sl_pct, tp_pct,
                 )
                 if label:
                     exit_reason = f"client-side {label} ({chg*100:+.1f}%)"
@@ -126,7 +143,6 @@ def run():
                     pnl, pnl_pct = _calc_realized_pnl(pos, exit_price)
                     log.info("NOTIFY client-%s %s pnl=%.4f", label, coin, pnl)
                     notifier.notify_close(coin, pos, pnl, exit_reason)
-                    db_trade = db.get_open_swing_trade(coin)
                     if db_trade:
                         db.log_swing_close(
                             trade_id=db_trade.id,
