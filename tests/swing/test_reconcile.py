@@ -67,6 +67,9 @@ def test_stale_row_closed_from_fills(fake_client, capture) -> None:
     assert close["realized_pnl_usd"] == pytest.approx(-1.45)
     assert close["realized_pnl_pct"] == pytest.approx(-1.45 / 41.62)
     assert "SL" in close["exit_reason"] and "reconciled" in close["exit_reason"]
+    # exit_time must be the ACTUAL last fill time, not "now" (fills are at
+    # 1781199900000/1781199901000 = 2026-06-11 ~17:45 UTC)
+    assert close["exit_time"].startswith("2026-06-11T17:4")
     assert capture["alerts"] and capture["alerts"][0][0] == "DOGE"
     assert results[0]["coin"] == "DOGE"
     # Fills were requested from the trade's entry time onward
@@ -112,6 +115,8 @@ def test_no_fills_falls_back_to_current_price(fake_client, capture) -> None:
     # short from 0.0834 to 0.0850 = a loss of (0.0834-0.0850)*499
     assert close["realized_pnl_usd"] == pytest.approx((0.0834 - 0.0850) * 499)
     assert "no fills" in close["exit_reason"]
+    # actual close time unknown on this path — DB stamps now
+    assert close["exit_time"] is None
 
 
 def test_per_row_errors_isolated(fake_client, capture, monkeypatch) -> None:

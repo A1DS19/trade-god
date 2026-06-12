@@ -57,7 +57,8 @@ def _close_from_fills(row, fills: list[dict]) -> tuple[float, float, str] | None
     exit_price = sum(float(f["price"]) * float(f["qty"]) for f in take) / cum
     pnl = sum(float(f["realizedPnl"]) for f in take)
     label = "SL" if pnl < 0 else "TP"
-    return exit_price, pnl, f"exchange-side {label} fill (reconciled)"
+    last_fill_ms = max(int(f["time"]) for f in take)
+    return exit_price, pnl, f"exchange-side {label} fill (reconciled)", last_fill_ms
 
 
 def reconcile(client, positions: dict) -> list[dict]:
@@ -90,8 +91,10 @@ def reconcile(client, positions: dict) -> list[dict]:
                 else:
                     pnl = (row.entry_price - exit_price) * row.qty
                 reason = "reconciled (no fills found; price-estimated)"
+                exit_time = None  # actual close time unknown — let the DB stamp now
             else:
-                exit_price, pnl, reason = closed
+                exit_price, pnl, reason, last_fill_ms = closed
+                exit_time = datetime.fromtimestamp(last_fill_ms / 1000, tz=timezone.utc).isoformat()
             pnl_pct = pnl / row.notional_usdt if row.notional_usdt else 0.0
             db.log_swing_close(
                 trade_id=row.id,
@@ -99,6 +102,7 @@ def reconcile(client, positions: dict) -> list[dict]:
                 realized_pnl_usd=pnl,
                 realized_pnl_pct=pnl_pct,
                 exit_reason=reason,
+                exit_time=exit_time,
             )
             _no_fill_misses.pop(row.id, None)
             notifier.notify_close(row.coin, {"entry": row.entry_price}, pnl, reason)
