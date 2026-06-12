@@ -44,8 +44,12 @@ def get_open_positions(client: Client) -> dict[str, dict]:
 
 
 def get_recent_fills(client: Client, coin: str, start_ms: int) -> list[dict]:
-    """Account trade fills for a symbol since ``start_ms`` (GET /fapi/v1/userTrades)."""
-    return client.futures_account_trades(symbol=f"{coin}USDT", startTime=start_ms, limit=100)
+    """Account trade fills for a symbol since ``start_ms`` (GET /fapi/v1/userTrades).
+
+    500 is the userTrades API max page size; reconciliation computes exit VWAP from
+    these fills, so a too-small page could silently truncate closing fills.
+    """
+    return client.futures_account_trades(symbol=f"{coin}USDT", startTime=start_ms, limit=500)
 
 
 def set_leverage(client: Client, coin: str, leverage: int):
@@ -120,11 +124,11 @@ def cancel_open_orders(client: Client, coin: str):
     symbol = f"{coin}USDT"
     try:
         client.futures_cancel_all_open_orders(symbol=symbol)
-    except BinanceAPIException as e:
+    except Exception as e:
         log.warning("Could not cancel open orders for %s: %s", coin, e)
     try:
         client._request_futures_api("delete", "algoOpenOrders", True, data={"symbol": symbol})
-    except BinanceAPIException as e:
+    except Exception as e:
         log.warning("Could not cancel algo orders for %s: %s", coin, e)
 
 

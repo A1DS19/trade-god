@@ -35,3 +35,18 @@ def test_cancel_algo_failure_does_not_raise(fake_client, monkeypatch) -> None:
     monkeypatch.setattr(fake_client, "_request_futures_api", _raise)
     exchange.cancel_open_orders(fake_client, "IOTA")  # must not raise
     assert fake_client.cancelled == [{"symbol": "IOTAUSDT"}]
+
+
+def test_cancel_network_failure_does_not_raise(fake_client, monkeypatch) -> None:
+    """Network-class errors (not just API rejections) must not abort the close path:
+    cancel runs immediately before close_position at every call site."""
+    import requests
+
+    def _raise_legacy(**params):
+        raise requests.exceptions.ConnectionError("boom")
+
+    monkeypatch.setattr(fake_client, "futures_cancel_all_open_orders", _raise_legacy)
+    exchange.cancel_open_orders(fake_client, "IOTA")  # must not raise
+    # algo-layer cancel must still be attempted despite the legacy failure
+    deletes = [c for c in fake_client.algo_calls if c["method"] == "delete"]
+    assert len(deletes) == 1
