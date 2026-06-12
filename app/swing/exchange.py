@@ -106,10 +106,21 @@ def close_position(client: Client, coin: str, positions: dict) -> dict | None:
 
 
 def cancel_open_orders(client: Client, coin: str):
+    """Cancel BOTH order layers for a symbol.
+
+    Regular orders live on /fapi/v1/allOpenOrders; conditional SL/TP orders
+    live on the Algo service since 2025-12-09 and need their own cancel
+    (DELETE /fapi/v1/algoOpenOrders) — the legacy call does not touch them.
+    """
+    symbol = f"{coin}USDT"
     try:
-        client.futures_cancel_all_open_orders(symbol=f"{coin}USDT")
+        client.futures_cancel_all_open_orders(symbol=symbol)
     except BinanceAPIException as e:
         log.warning("Could not cancel open orders for %s: %s", coin, e)
+    try:
+        client._request_futures_api("delete", "algoOpenOrders", True, data={"symbol": symbol})
+    except BinanceAPIException as e:
+        log.warning("Could not cancel algo orders for %s: %s", coin, e)
 
 
 def _place_conditional(client: Client, symbol: str, close_side: str,
