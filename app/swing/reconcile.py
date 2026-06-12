@@ -18,6 +18,13 @@ from app.swing.exchange import get_price, get_recent_fills
 
 log = logging.getLogger(__name__)
 
+# Cycles to wait for fills to appear before booking an estimated exit price.
+# An algo fill normally lands in userTrades within seconds, so a persistent
+# miss means pruned/unavailable history. In-memory: a restart resets the
+# count, which only delays the fallback — never fabricates earlier.
+NO_FILL_RETRY_CYCLES = 3
+_no_fill_misses: dict[int, int] = {}
+
 
 def _entry_ms(entry_time: str) -> int:
     dt = datetime.fromisoformat(entry_time)
@@ -27,16 +34,28 @@ def _entry_ms(entry_time: str) -> int:
 
 
 def _close_from_fills(row, fills: list[dict]) -> tuple[float, float, str] | None:
-    """(exit_price, pnl_usd, reason) from closing-side fills, or None if absent."""
+    """(exit_price, pnl_usd, reason) from closing-side fills, or None if absent.
+
+    Only the first ``row.qty`` of closing-side quantity belongs to this position:
+    a later re-entry in the same coin closes with same-side fills, and an
+    unbounded sum would pollute this row's VWAP/PnL. realizedPnl intentionally
+    excludes commission — consistent with PnL everywhere else in the bot.
+    """
     closing_side = "SELL" if row.direction == "long" else "BUY"
-    closing = [f for f in fills if f["side"] == closing_side]
-    if not closing:
+    closing = sorted(
+        (f for f in fills if f["side"] == closing_side), key=lambda f: f["time"]
+    )
+    take: list[dict] = []
+    cum = 0.0
+    for f in closing:
+        if cum >= row.qty * 0.999:
+            break
+        take.append(f)
+        cum += float(f["qty"])
+    if not take or cum <= 0:
         return None
-    qty_total = sum(float(f["qty"]) for f in closing)
-    if qty_total <= 0:
-        return None
-    exit_price = sum(float(f["price"]) * float(f["qty"]) for f in closing) / qty_total
-    pnl = sum(float(f["realizedPnl"]) for f in closing)
+    exit_price = sum(float(f["price"]) * float(f["qty"]) for f in take) / cum
+    pnl = sum(float(f["realizedPnl"]) for f in take)
     label = "SL" if pnl < 0 else "TP"
     return exit_price, pnl, f"exchange-side {label} fill (reconciled)"
 
@@ -55,14 +74,22 @@ def reconcile(client, positions: dict) -> list[dict]:
             fills = get_recent_fills(client, row.coin, _entry_ms(row.entry_time))
             closed = _close_from_fills(row, fills)
             if closed is None:
-                # Fills unavailable (pruned history / data gap): close at the
-                # current price so the row can't stay stale forever, but say so.
+                misses = _no_fill_misses.get(row.id, 0) + 1
+                _no_fill_misses[row.id] = misses
+                if misses < NO_FILL_RETRY_CYCLES:
+                    log.warning(
+                        "Reconcile %s (id=%s): no closing fills yet (attempt %d/%d) — retrying next cycle",
+                        row.coin, row.id, misses, NO_FILL_RETRY_CYCLES,
+                    )
+                    continue
+                # Fills persistently unavailable: close at the current price so
+                # the row can't stay stale forever, but say so in the reason.
                 exit_price = get_price(client, row.coin)
                 if row.direction == "long":
                     pnl = (exit_price - row.entry_price) * row.qty
                 else:
                     pnl = (row.entry_price - exit_price) * row.qty
-                reason = "reconciled (no fills found)"
+                reason = "reconciled (no fills found; price-estimated)"
             else:
                 exit_price, pnl, reason = closed
             pnl_pct = pnl / row.notional_usdt if row.notional_usdt else 0.0
@@ -73,6 +100,7 @@ def reconcile(client, positions: dict) -> list[dict]:
                 realized_pnl_pct=pnl_pct,
                 exit_reason=reason,
             )
+            _no_fill_misses.pop(row.id, None)
             notifier.notify_close(row.coin, {"entry": row.entry_price}, pnl, reason)
             results.append({"coin": row.coin, "pnl": pnl, "reason": reason})
         except Exception as e:

@@ -44,6 +44,8 @@ def capture(monkeypatch):
         reconcile.notifier, "notify_close",
         lambda coin, pos, pnl, reason: cap["alerts"].append((coin, pnl, reason)),
     )
+    # Reset retry state so tests that exercise the no-fills fallback start clean.
+    reconcile._no_fill_misses.clear()
     return cap
 
 
@@ -90,10 +92,19 @@ def test_open_position_left_alone(fake_client, capture) -> None:
 
 
 def test_no_fills_falls_back_to_current_price(fake_client, capture) -> None:
+    """Retry NO_FILL_RETRY_CYCLES times before booking the price-estimated close."""
     capture["rows"] = [_row()]
     fake_client.fills = []
     fake_client.price = 0.0850
 
+    # First two calls: no close yet — still within the retry window.
+    reconcile.reconcile(fake_client, positions={})
+    assert capture["closes"] == []
+
+    reconcile.reconcile(fake_client, positions={})
+    assert capture["closes"] == []
+
+    # Third call: retry limit hit — book the estimated close.
     reconcile.reconcile(fake_client, positions={})
 
     close = capture["closes"][0]
@@ -114,3 +125,22 @@ def test_per_row_errors_isolated(fake_client, capture, monkeypatch) -> None:
 
     assert [c["trade_id"] for c in capture["closes"]] == [2]
     assert len(results) == 1
+
+
+def test_reentry_fills_do_not_pollute_older_row(fake_client, capture) -> None:
+    """Closing fills of a LATER trade in the same coin (same side) must not be
+    blended into a stale row's VWAP/PnL — only the first row.qty of closing
+    quantity belongs to this position."""
+    capture["rows"] = [_row()]  # short, qty=499
+    fake_client.fills = [
+        {"side": "BUY", "price": "0.0863", "qty": "300", "realizedPnl": "-0.87", "time": 1781199900000},
+        {"side": "BUY", "price": "0.0863", "qty": "199", "realizedPnl": "-0.58", "time": 1781199901000},
+        # a later re-entry's closing fills — must be ignored
+        {"side": "BUY", "price": "0.0900", "qty": "400", "realizedPnl": "-3.00", "time": 1781290000000},
+    ]
+
+    reconcile.reconcile(fake_client, positions={})
+
+    close = capture["closes"][0]
+    assert close["exit_price"] == pytest.approx(0.0863)
+    assert close["realized_pnl_usd"] == pytest.approx(-1.45)
