@@ -32,6 +32,8 @@ def high_water_mark(dataset: str, symbol: str, time_col: str) -> int | None:
     df = load(dataset, symbol)
     if df.empty or time_col not in df.columns:
         return None
+    if not pd.api.types.is_numeric_dtype(df[time_col]):
+        return None
     return int(df[time_col].max())
 
 

@@ -20,6 +20,7 @@ DATASETS: dict[str, tuple[str, int | None]] = {
     "premium_index_1h": ("open_time", HOUR_MS),
     "oi_1h": ("timestamp", HOUR_MS),
     "long_short_1h": ("timestamp", HOUR_MS),
+    "universe": ("snapshot_key", None),
 }
 
 # OI / long-short endpoints only serve the trailing ~30 days; clamp with margin.
