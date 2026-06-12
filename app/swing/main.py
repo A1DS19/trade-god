@@ -88,6 +88,18 @@ def _safety_net_label(side: str, entry: float, price: float,
     return None
 
 
+def _direction_enabled(action: str) -> bool:
+    """Per-direction kill-switch for new entries (exits are never gated).
+
+    Shorts disabled 2026-06-12: all six post-overhaul losses were shorts, and
+    the Phase C research measured short-leg momentum at PF 0.979 on this
+    universe — negative expectancy after costs.
+    """
+    if action == "short":
+        return config.ENABLE_SHORTS
+    return True
+
+
 def _net_thresholds(db_trade) -> tuple[float, float]:
     """Per-trade SL/TP for the client-side net, falling back to the defaults.
 
@@ -206,6 +218,11 @@ def run():
                     if action == "hold":
                         label = f"{conf * 100:.0f}%" if conf > 0 else "blocked"
                         log.info("HOLD %s (%s) — %s", coin, label, decision["reasoning"])
+                        continue
+
+                    # ── Direction kill-switch ─────────────────────────
+                    if not _direction_enabled(action):
+                        log.info("SKIP %s — %s entries disabled (conf %.2f)", coin, action, conf)
                         continue
 
                     # ── Loss cooldown ─────────────────────────────────

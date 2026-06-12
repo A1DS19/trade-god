@@ -211,12 +211,15 @@ def log_swing_close(
     realized_pnl_usd: float,
     realized_pnl_pct: float,
     exit_reason: str,
+    exit_time: str | None = None,
 ):
+    """exit_time: pass the ACTUAL close time (ISO) when known — e.g. reconciled
+    exchange-side fills that happened cycles ago; defaults to now."""
     with Session(engine) as session:
         row = session.get(SwingTrade, trade_id)
         if row:
             row.exit_price       = exit_price
-            row.exit_time        = datetime.now(timezone.utc).isoformat()
+            row.exit_time        = exit_time or datetime.now(timezone.utc).isoformat()
             row.realized_pnl_usd = realized_pnl_usd
             row.realized_pnl_pct = realized_pnl_pct
             row.exit_reason      = exit_reason

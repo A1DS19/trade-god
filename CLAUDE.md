@@ -102,6 +102,7 @@ DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, FET, ENS, TON, HY
 | BORDERLINE_ADX_PENALTY | 0.08 |
 | ENABLE_PARTIAL_ENTRIES | False |
 | REQUIRE_DI_ALIGNMENT | True |
+| ENABLE_SHORTS | **False** (2026-06-12 — shorts 0/6 post-overhaul, Phase C short-leg PF 0.979; longs unaffected, exits never gated) |
 | LONG_EXIT_RSI_CEIL | 68.0 |
 | SHORT_EXIT_RSI_FLOOR | 32.0 |
 | CHECK_INTERVAL | 3600s (1 hour) |

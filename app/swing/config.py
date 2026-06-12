@@ -58,6 +58,7 @@ PARTIAL_MIN_ADX = 32.0  # Allow mixed/partial entries only in stronger trends
 PARTIAL_MIN_CONFIDENCE = 0.80  # Require extra conviction for partial entries
 ENABLE_PARTIAL_ENTRIES = False  # v2.1: disable partial entries for quality-first filtering
 REQUIRE_DI_ALIGNMENT = True  # v2.2: require directional DI alignment at entry
+ENABLE_SHORTS = False  # 2026-06-12: shorts 0/6 since the overhaul (-$8.28) and 8/25 lifetime; Phase C measured short-leg momentum PF 0.979 on this universe. Re-enable only with new OOS evidence.
 EST_FEE_BPS = 4.0  # Estimated exchange fee per side (bps) for entry filtering
 EST_SLIPPAGE_BPS = 2.0  # Estimated adverse slippage per side (bps) for entry filtering
 MIN_TP_TO_COST_MULT = 3.0  # Require TP to be at least this multiple of round-trip costs
