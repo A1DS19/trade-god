@@ -45,6 +45,33 @@ docker compose logs --timestamps swing > logs.txt 2>&1
 
 ---
 
+## Research Warehouse (`research/`, dev machine only)
+
+Point-in-time market data for signal research/backtests — parquet per dataset per symbol under
+gitignored `research/warehouse/` (~360MB, 6M+ rows, top-100 USDT perps since listing).
+**Never ships to prod**: excluded via `.dockerignore`; deps in `requirements-research.txt`
+(pandas/pyarrow/duckdb) are never installed on the Lightsail box.
+
+Datasets: `klines_1h/4h/1d`, `funding` (full history), `premium_index_1h` (basis),
+`oi_1h` + `long_short_1h` (Binance serves trailing 30d only — refresh ≥ monthly or history is lost),
+`universe` (top-N snapshots with onboard dates).
+
+```bash
+python -m research.backfill --top 100          # resumable (per symbol×dataset high-water mark)
+python -m research.backfill --symbols DOGEUSDT --datasets funding
+python -m research.check                       # gap/staleness report
+```
+
+**Rules:** run backfills from the DEV machine only — never the prod IP (2026-06-05 -1003 ban).
+All endpoints are unsigned (no API keys). Weekly refresh cron (also stitches the 30d OI/L-S window):
+`0 6 * * 1 cd /home/dev/projects/trade-god && python -m research.backfill --top 100 >> /tmp/research-backfill.log 2>&1`
+
+**Known data quirks:** Binance funding timestamps carry ms jitter (gap checker tolerates 1.5×);
+ICPUSDT premium index has a genuine 77-day hole (2022-07-12 → 2022-09-27); OI/L-S endpoints are
+END-anchored (`startTime`-only returns newest rows — fetchers paginate with explicit windows).
+
+---
+
 ## Credentials (`.env`)
 - `BINANCE_API_KEY` / `BINANCE_SECRET_KEY` — Spot (DCA bot)
 - `BINANCE_API_KEY_FUTURES` / `BINANCE_SECRET_KEY_FUTURES` — Futures (swing agent)
