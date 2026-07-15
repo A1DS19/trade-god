@@ -24,11 +24,12 @@ from research import config, store, universe
 class _FetchSpec:
     fn: object
     needs_interval: str | None = None
+    cron_default: bool = True
 
 
 FETCHERS: dict[str, _FetchSpec] = {
-    "klines_5m": _FetchSpec(src.fetch_klines, "5m"),
-    "klines_15m": _FetchSpec(src.fetch_klines, "15m"),
+    "klines_5m": _FetchSpec(src.fetch_klines, "5m", cron_default=False),
+    "klines_15m": _FetchSpec(src.fetch_klines, "15m", cron_default=False),
     "klines_1h": _FetchSpec(src.fetch_klines, "1h"),
     "klines_4h": _FetchSpec(src.fetch_klines, "4h"),
     "klines_1d": _FetchSpec(src.fetch_klines, "1d"),
@@ -40,7 +41,7 @@ FETCHERS: dict[str, _FetchSpec] = {
 
 # The weekly --top 100 cron uses the default list; minute-level klines for 100
 # symbols would blow the request budget, so intraday is explicit opt-in.
-DEFAULT_DATASETS = [d for d in FETCHERS if d not in ("klines_5m", "klines_15m")]
+DEFAULT_DATASETS = [d for d, s in FETCHERS.items() if s.cron_default]
 
 
 @dataclass
@@ -106,8 +107,10 @@ def main() -> None:
     if unknown:
         parser.error(f"unknown datasets: {unknown}")
 
-    if args.symbols:
-        symbols = [s.strip() for s in args.symbols.split(",")]
+    if args.symbols is not None:
+        symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+        if not symbols:
+            parser.error("--symbols given but empty")
         targets = _resolve_onboard(client, symbols)
     else:
         rows = universe.resolve_top(client, args.top)

@@ -77,3 +77,39 @@ def test_save_snapshot_writes_keyed_rows(warehouse):
     snap = store.load("intraday_universe", "ALL")
     assert snap.iloc[0]["snapshot_key"] == "1234:AAAUSDT"
     assert snap.iloc[0]["symbol"] == "AAAUSDT"
+
+
+def test_main_prints_csv_symbol_list(warehouse, monkeypatch, capsys):
+    _write_1d("AAAUSDT", [100.0] * 40)
+    _write_1d("BBBUSDT", [300.0] * 40)
+    monkeypatch.setattr(intraday_universe.time, "time", lambda: NOW_40D / 1000)
+    monkeypatch.setattr("sys.argv", ["intraday_universe", "--top", "2"])
+
+    intraday_universe.main()
+
+    captured = capsys.readouterr()
+    assert captured.out == "BBBUSDT,AAAUSDT\n"
+    assert captured.err == ""
+
+
+def test_main_save_writes_snapshot(warehouse, monkeypatch, capsys):
+    _write_1d("AAAUSDT", [100.0] * 40)
+    monkeypatch.setattr(intraday_universe.time, "time", lambda: NOW_40D / 1000)
+    monkeypatch.setattr("sys.argv", ["intraday_universe", "--top", "1", "--save"])
+
+    intraday_universe.main()
+
+    snap = store.load("intraday_universe", "ALL")
+    assert snap.iloc[0]["symbol"] == "AAAUSDT"
+
+
+def test_main_empty_selection_exits_nonzero_with_hint(warehouse, monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["intraday_universe", "--top", "5"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        intraday_universe.main()
+
+    assert exc_info.value.code != 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "backfill" in captured.err

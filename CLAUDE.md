@@ -64,7 +64,7 @@ python -m research.backfill --top 100          # resumable (per symbol×dataset 
 python -m research.backfill --symbols DOGEUSDT --datasets funding
 python -m research.check                       # gap/staleness report
 python -m research.intraday_universe --top 30 --save   # print + snapshot intraday top-30
-# refresh intraday klines (dev machine only):
+# refresh klines_1d first so the 30d medians are current, then intraday klines (dev machine only):
 python -m research.backfill --symbols "$(python -m research.intraday_universe --top 30 --save)" --datasets klines_5m,klines_15m
 ```
 

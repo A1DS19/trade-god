@@ -22,5 +22,6 @@ def test_start_floor_5m_is_trailing_window():
 
 def test_no_floor_for_classic_datasets():
     for ds in ("klines_1h", "klines_4h", "klines_1d", "funding",
-               "premium_index_1h", "oi_1h", "long_short_1h", "universe"):
+               "premium_index_1h", "oi_1h", "long_short_1h", "universe",
+               "intraday_universe"):
         assert config.dataset_start_floor(ds, NOW_MS) == 0

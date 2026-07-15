@@ -32,6 +32,8 @@ ROLLING_WINDOW_MS = 29 * DAY_MS
 
 # Minute-level klines are capped so they never backfill to listing:
 # 15m from 2023-01-01 (or listing, whichever is later), 5m trailing ~18 months.
+# If a symbol's refresh lapses longer than the window, the clamp leaves a
+# permanent internal gap that research.check will keep flagging.
 KLINES_15M_FLOOR_MS = 1_672_531_200_000  # 2023-01-01T00:00:00Z
 KLINES_5M_WINDOW_MS = 548 * DAY_MS
 

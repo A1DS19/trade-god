@@ -13,6 +13,7 @@ Output feeds straight into: python -m research.backfill --symbols "$(...)".
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 
 from research import config, store
@@ -60,6 +61,13 @@ def main() -> None:
     args = parser.parse_args()
 
     top = select_top(args.top)
+    if not top:
+        print(
+            "no symbols selected — klines_1d missing or stale; run: "
+            "python -m research.backfill --top 100 --datasets klines_1d",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     if args.save:
         save_snapshot(top, snapshot_ms=int(time.time() * 1000))
     print(",".join(r["symbol"] for r in top))
