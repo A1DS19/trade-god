@@ -54,12 +54,18 @@ gitignored `research/warehouse/` (~360MB, 6M+ rows, top-100 USDT perps since lis
 
 Datasets: `klines_1h/4h/1d`, `funding` (full history), `premium_index_1h` (basis),
 `oi_1h` + `long_short_1h` (Binance serves trailing 30d only — refresh ≥ monthly or history is lost),
-`universe` (top-N snapshots with onboard dates).
+`universe` (top-N snapshots with onboard dates), `klines_5m/15m` (intraday top-30 subset only —
+5m trailing ~18 months, 15m since 2023-01-01; **excluded from the default dataset list** so the
+weekly `--top 100` cron never fetches minute data for 100 symbols), `intraday_universe`
+(top-30-by-30d-median-quote-volume snapshots).
 
 ```bash
 python -m research.backfill --top 100          # resumable (per symbol×dataset high-water mark)
 python -m research.backfill --symbols DOGEUSDT --datasets funding
 python -m research.check                       # gap/staleness report
+python -m research.intraday_universe --top 30 --save   # print + snapshot intraday top-30
+# refresh intraday klines (dev machine only):
+python -m research.backfill --symbols "$(python -m research.intraday_universe --top 30 --save)" --datasets klines_5m,klines_15m
 ```
 
 **Rules:** run backfills from the DEV machine only — never the prod IP (2026-06-05 -1003 ban).
