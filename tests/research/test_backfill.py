@@ -49,7 +49,7 @@ def test_backfill_starts_from_onboard_then_resumes(warehouse, monkeypatch):
     _wire(monkeypatch, stub, rows)
     targets = [{"symbol": "DOGEUSDT", "onboard_date_ms": 1234}]
 
-    summary1 = backfill.run(client=None, targets=targets, datasets=list(backfill.FETCHERS), delay=0)
+    summary1 = backfill.run(client=None, targets=targets, datasets=list(backfill.DEFAULT_DATASETS), delay=0)
     # first run: every dataset starts at onboard date
     # a[-1] because interval datasets pass (interval, start_ms) so start is last positional
     starts = {(d, s): a[-1] if a else k.get("start_ms") for d, s, a, k in stub.calls}
@@ -57,7 +57,7 @@ def test_backfill_starts_from_onboard_then_resumes(warehouse, monkeypatch):
     assert summary1.failures == []
 
     stub.calls.clear()
-    backfill.run(client=None, targets=targets, datasets=list(backfill.FETCHERS), delay=0)
+    backfill.run(client=None, targets=targets, datasets=list(backfill.DEFAULT_DATASETS), delay=0)
     # second run: resumes from hwm+1
     starts2 = {(d, s): a[-1] if a else k.get("start_ms") for d, s, a, k in stub.calls}
     assert all(v == 5001 for v in starts2.values())
@@ -102,3 +102,33 @@ def test_backfill_isolates_failures(warehouse, monkeypatch):
 
     assert summary.failures == [("klines_1h", "DOGEUSDT")]
     assert store.load("klines_4h", "DOGEUSDT").shape[0] == 1  # other dataset still landed
+
+
+def test_backfill_clamps_intraday_start_to_floor(warehouse, monkeypatch):
+    from research import config
+
+    stub = StubSource()
+    rows = {ds: (lambda s: [{"open_time": 5000, "close": 1.0}]) for ds in backfill.FETCHERS}
+    rows["funding"] = lambda s: [{"funding_time": 5000, "funding_rate": 0.0}]
+    rows["oi_1h"] = lambda s: [{"timestamp": 5000, "sum_open_interest": 1.0}]
+    rows["long_short_1h"] = lambda s: [{"timestamp": 5000, "long_short_ratio": 1.0}]
+    _wire(monkeypatch, stub, rows)
+    targets = [{"symbol": "DOGEUSDT", "onboard_date_ms": 1234}]
+
+    before = int(time.time() * 1000)
+    backfill.run(client=None, targets=targets, datasets=["klines_15m", "klines_5m"], delay=0)
+    after = int(time.time() * 1000)
+
+    starts = {d: a[-1] for d, s, a, k in stub.calls}
+    assert starts["klines_15m"] == config.KLINES_15M_FLOOR_MS
+    assert (before - config.KLINES_5M_WINDOW_MS
+            <= starts["klines_5m"]
+            <= after - config.KLINES_5M_WINDOW_MS)
+
+
+def test_default_datasets_exclude_intraday_klines():
+    assert "klines_5m" not in backfill.DEFAULT_DATASETS
+    assert "klines_15m" not in backfill.DEFAULT_DATASETS
+    assert set(backfill.DEFAULT_DATASETS) < set(backfill.FETCHERS)
+    assert backfill.FETCHERS["klines_15m"].needs_interval == "15m"
+    assert backfill.FETCHERS["klines_5m"].needs_interval == "5m"

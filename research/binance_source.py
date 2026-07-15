@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import time
 
-from research.config import HOUR_MS, ROLLING_WINDOW_MS
+from research.config import HOUR_MS, MINUTE_MS, ROLLING_WINDOW_MS
 
-INTERVAL_MS = {"1h": HOUR_MS, "4h": 4 * HOUR_MS, "1d": 24 * HOUR_MS}
+INTERVAL_MS = {"5m": 5 * MINUTE_MS, "15m": 15 * MINUTE_MS,
+               "1h": HOUR_MS, "4h": 4 * HOUR_MS, "1d": 24 * HOUR_MS}
 
 KLINES_PAGE = 1500
 FUNDING_PAGE = 1000

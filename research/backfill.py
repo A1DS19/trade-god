@@ -27,6 +27,8 @@ class _FetchSpec:
 
 
 FETCHERS: dict[str, _FetchSpec] = {
+    "klines_5m": _FetchSpec(src.fetch_klines, "5m"),
+    "klines_15m": _FetchSpec(src.fetch_klines, "15m"),
     "klines_1h": _FetchSpec(src.fetch_klines, "1h"),
     "klines_4h": _FetchSpec(src.fetch_klines, "4h"),
     "klines_1d": _FetchSpec(src.fetch_klines, "1d"),
@@ -35,6 +37,10 @@ FETCHERS: dict[str, _FetchSpec] = {
     "oi_1h": _FetchSpec(src.fetch_open_interest),
     "long_short_1h": _FetchSpec(src.fetch_long_short),
 }
+
+# The weekly --top 100 cron uses the default list; minute-level klines for 100
+# symbols would blow the request budget, so intraday is explicit opt-in.
+DEFAULT_DATASETS = [d for d in FETCHERS if d not in ("klines_5m", "klines_15m")]
 
 
 @dataclass
@@ -45,6 +51,7 @@ class Summary:
 
 def run(client, targets: list[dict], datasets: list[str], delay: float) -> Summary:
     summary = Summary()
+    now_ms = int(time.time() * 1000)
     for t in targets:
         symbol = t["symbol"]
         for dataset in datasets:
@@ -52,6 +59,7 @@ def run(client, targets: list[dict], datasets: list[str], delay: float) -> Summa
             time_col, _ = config.DATASETS[dataset]
             hwm = store.high_water_mark(dataset, symbol, time_col)
             start_ms = (hwm + 1) if hwm is not None else int(t.get("onboard_date_ms") or 0)
+            start_ms = max(start_ms, config.dataset_start_floor(dataset, now_ms))
             try:
                 if spec.needs_interval:
                     rows = spec.fn(client, symbol, spec.needs_interval, start_ms, delay=delay)
@@ -84,7 +92,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--top", type=int, default=100)
     parser.add_argument("--symbols", help="comma-separated symbol override (skips top-N resolution)")
-    parser.add_argument("--datasets", default=",".join(FETCHERS), help=f"subset of: {','.join(FETCHERS)}")
+    parser.add_argument("--datasets", default=",".join(DEFAULT_DATASETS),
+                        help=f"subset of: {','.join(FETCHERS)} (default excludes klines_5m/15m)")
     parser.add_argument("--delay", type=float, default=config.RATE_LIMIT_DELAY)
     parser.add_argument("--dry-run", action="store_true", help="list the work, fetch nothing")
     args = parser.parse_args()
