@@ -99,6 +99,48 @@ class CoinList(Base):
     coins = Column(JSON, nullable=False)
 
 
+class IntradayTrade(Base):
+    __tablename__ = "intraday_trades"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    symbol      = Column(String(20), nullable=False)
+    direction   = Column(String(5), nullable=False, default="long")
+    mode        = Column(String(5), nullable=False)          # paper | live
+    limit_price = Column(Float, nullable=False)
+    entry_price = Column(Float, nullable=False)
+    exit_price  = Column(Float, nullable=True)
+    slot_usd    = Column(Float, nullable=False)
+    entry_time  = Column(String(50), nullable=False)
+    exit_time   = Column(String(50), nullable=True)
+    hold_bars   = Column(Integer, nullable=True)
+    pnl_pct     = Column(Float, nullable=True)
+    pnl_usd     = Column(Float, nullable=True)
+    fill_type   = Column(String(15), nullable=False)         # trade_through
+    exit_reason = Column(String(30), nullable=True)
+    status      = Column(String(6), nullable=False, default="open")
+
+
+class IntradayLimit(Base):
+    __tablename__ = "intraday_limits"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    symbol      = Column(String(20), nullable=False)
+    limit_price = Column(Float, nullable=False)
+    placed_at   = Column(String(50), nullable=False)
+    resolved_at = Column(String(50), nullable=True)
+    outcome     = Column(String(15), nullable=True)   # trade_through|touch_only|miss|no_data
+    bar_low     = Column(Float, nullable=True)
+    admitted    = Column(Boolean, nullable=True)
+
+
+class IntradayState(Base):
+    __tablename__ = "intraday_state"
+
+    key     = Column(String(40), primary_key=True)
+    value   = Column(JSON, nullable=False)
+    updated = Column(String(50), nullable=False)
+
+
 # ── DB init ───────────────────────────────────────────────
 def init_db():
     Base.metadata.create_all(engine)
@@ -280,4 +322,51 @@ def log_trade(
             exit_reason=exit_reason,
             timestamp=datetime.now(timezone.utc).isoformat(),
         ))
+        session.commit()
+
+
+# ── Intraday helpers ──────────────────────────────────────
+def intraday_state_get(key: str) -> dict | None:
+    with Session(engine) as session:
+        row = session.get(IntradayState, key)
+        return dict(row.value) if row else None
+
+
+def intraday_state_set(key: str, value: dict):
+    with Session(engine) as session:
+        session.merge(IntradayState(
+            key=key, value=value,
+            updated=datetime.now(timezone.utc).isoformat(),
+        ))
+        session.commit()
+
+
+def log_intraday_trade(**fields) -> int:
+    with Session(engine) as session:
+        row = IntradayTrade(**fields)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row.id
+
+
+def close_intraday_trade(trade_id: int, exit_price: float, exit_time: str,
+                         hold_bars: int, pnl_pct: float, pnl_usd: float,
+                         exit_reason: str):
+    with Session(engine) as session:
+        row = session.get(IntradayTrade, trade_id)
+        if row:
+            row.exit_price = exit_price
+            row.exit_time = exit_time
+            row.hold_bars = hold_bars
+            row.pnl_pct = pnl_pct
+            row.pnl_usd = pnl_usd
+            row.exit_reason = exit_reason
+            row.status = "closed"
+            session.commit()
+
+
+def log_intraday_limit(**fields):
+    with Session(engine) as session:
+        session.add(IntradayLimit(**fields))
         session.commit()
