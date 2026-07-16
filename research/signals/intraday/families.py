@@ -69,6 +69,50 @@ def squeeze_buckets(data: dict) -> pd.DataFrame:
     )
 
 
+def funding_buckets(data: dict) -> pd.DataFrame:
+    close = _close(data)
+    f = data["funding"].pivot(index="funding_time", columns="symbol",
+                              values="funding_rate")
+    f = f.reindex(columns=close.columns)
+    rate = (
+        f.reindex(f.index.union(close.index)).sort_index().ffill()
+        .loc[close.index]
+    )
+    rate = rate.where(close.notna())
+    return cut_panel(
+        rate,
+        [-np.inf, -1e-3, -3e-4, -1e-4, 1e-4, 3e-4, 1e-3, np.inf],
+        ["f<-.1%", "-.1..-.03%", "-.03..-.01%", "-.01..+.01%",
+         "+.01..+.03%", "+.03..+.1%", "f>+.1%"],
+    )
+
+
+def vol_impulse_buckets(data: dict) -> pd.DataFrame:
+    v = sdata.to_panel(data["klines_15m"], "volume")
+    tb = sdata.to_panel(data["klines_15m"], "taker_buy_volume")
+    imb = (tb / v.where(v > 0)) - 0.5
+    base = v.rolling(BARS_24H, min_periods=BARS_24H).mean().shift(1)
+    surge = (v / base.where(base > 0)).clip(upper=10.0)
+    impulse = imb * surge
+    return cut_panel(
+        impulse,
+        [-np.inf, -1.5, -0.75, -0.25, 0.25, 0.75, 1.5, np.inf],
+        ["i<-1.5", "-1.5..-.75", "-.75..-.25", "-.25...25",
+         ".25..0.75", ".75..1.5", "i>1.5"],
+    )
+
+
+def tod_buckets(data: dict) -> pd.DataFrame:
+    close = _close(data)
+    hours = (close.index.to_numpy() // 3_600_000) % 24
+    labels = pd.Series([f"h{h:02d}" for h in hours], index=close.index)
+    panel = pd.DataFrame(
+        np.broadcast_to(labels.to_numpy()[:, None], close.shape).copy(),
+        index=close.index, columns=close.columns,
+    )
+    return panel.where(close.notna())
+
+
 FAMILIES: list[FamilySpec] = [
     FamilySpec(
         name="breakout", build=breakout_buckets,
@@ -90,3 +134,24 @@ FAMILIES: list[FamilySpec] = [
         abs_mode=True,
     ),
 ]
+
+FAMILIES.extend([
+    FamilySpec(
+        name="funding_window", build=funding_buckets,
+        extreme={"f<-.1%": 1, "f>+.1%": -1},
+        middle=["-.01..+.01%"],
+        horizons_bars=(16, 32, 96),
+    ),
+    FamilySpec(
+        name="vol_impulse", build=vol_impulse_buckets,
+        extreme={"i>1.5": 1, "i<-1.5": -1},
+        middle=["-.25...25"],
+        horizons_bars=(1, 4, 16, 32),
+    ),
+    FamilySpec(
+        name="time_of_day", build=tod_buckets,
+        extreme={f"h{h:02d}": 0 for h in range(24)},
+        middle=None,
+        horizons_bars=(4,),
+    ),
+])

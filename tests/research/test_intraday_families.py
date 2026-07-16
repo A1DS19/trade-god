@@ -78,6 +78,40 @@ def _synthetic_data(n=900, seed=11):
     return {"klines_15m": df, "funding": funding}
 
 
+def test_funding_buckets_use_last_known_rate_no_lookahead():
+    n = 200
+    data = {"klines_15m": _frame([100.0] * n)}
+    data["funding"] = pd.DataFrame({
+        "symbol": "AAAUSDT",
+        "funding_time": [50 * BAR_MS, 120 * BAR_MS],
+        "funding_rate": [2e-3, -2e-3],
+        "mark_price": 100.0,
+    })
+    b = families.funding_buckets(data)
+    assert pd.isna(b["AAAUSDT"].iloc[10])          # before first event: unknown
+    assert b["AAAUSDT"].iloc[60] == "f>+.1%"       # after +0.2% event
+    assert b["AAAUSDT"].iloc[119] == "f>+.1%"      # event at bar 120 not yet known at 119
+    assert b["AAAUSDT"].iloc[125] == "f<-.1%"      # after -0.2% event
+
+
+def test_vol_impulse_flags_buy_surge():
+    n = 200
+    vol = [10.0] * n
+    taker = [5.0] * n
+    vol[-1] = 100.0       # 10x surge
+    taker[-1] = 90.0      # 90% taker-buy
+    data = {"klines_15m": _frame([100.0] * n, volume=vol, taker=taker)}
+    b = families.vol_impulse_buckets(data)
+    assert b["AAAUSDT"].iloc[-1] == "i>1.5"
+
+
+def test_tod_buckets_are_utc_hour():
+    data = {"klines_15m": _frame([100.0] * 8)}   # bars at 00:00..01:45 UTC
+    b = families.tod_buckets(data)
+    assert b["AAAUSDT"].iloc[0] == "h00"
+    assert b["AAAUSDT"].iloc[4] == "h01"
+
+
 @pytest.mark.parametrize("spec", families.FAMILIES, ids=lambda s: s.name)
 def test_no_lookahead_truncation_invariance(spec):
     data = _synthetic_data()
