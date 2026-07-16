@@ -8,8 +8,10 @@
 Pre-registered in `docs/superpowers/plans/2026-07-15-intraday-edge-hunt.md` (commit `b073f50`).
 All rule/family/CLI code was committed **before** this run: harness + survivor rule `e146e75`/`8b5ba04`,
 families `17ed720`/`d9f2e36`, CLI `24288ed`. Data: `klines_15m` + `funding`, strictly before
-`TRAIN_END = 2025-07-01` — 24 of 30 intraday-universe symbols had train data (6 listed after ~2025-05),
-87,552 bars. OOS (2025-07-01 → 2026-07-15) remains sealed for Phase 2b.
+`TRAIN_END = 2025-07-01` — 24 of 30 intraday-universe symbols had train data (6 listed after ~2025-05;
+effectively 23 contributed events, as HYPEUSDT's 2025-05-30 start never cleared the 60-day
+eligibility rule before TRAIN_END), 87,552 bars. OOS (2025-07-01 → 2026-07-15) remains sealed for
+Phase 2b.
 
 Survivor rule (mechanical): for ≥1 pre-declared (extreme bucket, horizon) pair — directional edge
 > 0.0016 (round-trip cost), |t| ≥ 3 (descriptive), count ≥ 500, split-half sign consistency.
@@ -59,6 +61,16 @@ No deviations from the pre-registered protocol occurred.
 4. **Funding staleness** — rate assigned at bar open (conservative by ≤1 bar).
 5. **Edge decay** — the surviving pair's second-half edge (0.078%) is below the cost hurdle on its
    own; the effect may be fading. This is the primary risk Phase 2b's OOS windows will adjudicate.
+6. **Entry-convention concentration (final-review finding)** — the study measures forward returns
+   from the signal bar's own close (pre-registered convention). From the committed CSVs, the z<-3
+   h=1 edge is +0.088% — **52% of the surviving +0.171% accrues in the first 15 minutes**, and part
+   of that first bar is bid-ask bounce selection (a z<-3 close is disproportionately a bid-side
+   print) that generic 3 bps slippage does not model. Under siglib's own next-bar backtest
+   convention the residual edge is **≈ +0.083% — below the 0.16% hurdle; the survivor would have
+   been REJECTED on next-bar entry**. Reality sits between the conventions (perps trade
+   continuously), but Phase 2b must treat +0.083% next-bar as the realistic base case, +0.171%
+   same-bar as an upper bound stacked on the survivorship upper bound, and survivor failure as the
+   expected outcome.
 
 ## 5. Phase 2b scope
 
@@ -66,7 +78,12 @@ No deviations from the pre-registered protocol occurred.
 (entry: z<-3; horizon region ~4h; long-only), evaluated against the pre-registered pass bar
 (net PF ≥ 1.15, ≥ 100 OOS trades, positive in ≥ 2 of 3 OOS windows over 2025-07→2026-07-15,
 max DD ≤ 20%) at baseline (5+3 bps/side) and stress costs, with a 5m robustness check and
-point-in-time universe gating.
+point-in-time universe gating. Per the final review, the 2b pre-registration must additionally:
+fix **next-bar entry** as the convention (caveat #6 — failure is the base-case expectation),
+gate on the **t of the edge vs baseline** (not the raw bucket mean, which was vacuous for
+abs-mode families), and produce **per-symbol / per-episode / regime-slice diagnostics** before
+the OOS unseal (the pooled edge may carry regime and composition effects; n=10,560 counts
+overlapping bar-events, not independent episodes).
 
 **Does not proceed:** all five rejected families; the z>3 short side (edge is continuation, not
 reversion — and a fresh momentum hypothesis on it would be post-hoc, outside this pre-registration).
