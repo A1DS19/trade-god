@@ -42,13 +42,11 @@ def breakout_buckets(data: dict) -> pd.DataFrame:
 
 
 def mr_vwap_z(data: dict) -> pd.DataFrame:
+    from app.intraday.strategy import zscore
     close = _close(data)
     v = sdata.to_panel(data["klines_15m"], "volume")
     qv = sdata.to_panel(data["klines_15m"], "quote_volume")
-    vsum = v.rolling(BARS_24H, min_periods=BARS_24H).sum()
-    vwap = qv.rolling(BARS_24H, min_periods=BARS_24H).sum() / vsum.where(vsum > 0)
-    sd = close.rolling(BARS_24H, min_periods=BARS_24H).std()
-    return (close - vwap) / sd.where(sd > 0)
+    return zscore(close, v, qv)
 
 
 def mr_vwap_buckets(data: dict) -> pd.DataFrame:
