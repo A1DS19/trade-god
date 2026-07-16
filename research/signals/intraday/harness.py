@@ -93,6 +93,19 @@ def evaluate_family(
         for bucket, hyp in spec.extreme.items():
             edge = _edge(full, bucket, spec.middle)
             if edge is None:
+                # Pre-registered pair with no computable edge (bucket never
+                # fires, or baseline pool empty) — still report it, so a
+                # mis-specified FamilySpec can't hide as a 0-row REJECTED.
+                in_full = bucket in full.index
+                rows.append({
+                    "family": spec.name, "bucket": bucket, "horizon_bars": h,
+                    "count": int(full.loc[bucket, "count"]) if in_full else 0,
+                    "t_stat": (float(full.loc[bucket, "t_stat"])
+                               if in_full else float("nan")),
+                    "edge": float("nan"), "edge_h1": None, "edge_h2": None,
+                    "direction": int(hyp) if hyp != 0 else 0,
+                    "passes": False,
+                })
                 continue
             e1 = _edge(h1, bucket, spec.middle)
             e2 = _edge(h2, bucket, spec.middle)

@@ -108,6 +108,19 @@ def test_none_middle_uses_all_other_buckets():
     assert verdict == "SURVIVOR"
 
 
+def test_absent_declared_bucket_still_reported():
+    close, buckets = _panels(drift_after_x=0.01)
+    spec = FamilySpec(
+        name="synthetic", build=lambda data: None,
+        extreme={"NEVER": 1}, middle=["M"], horizons_bars=(4,),
+    )
+    _, checks, verdict = harness.evaluate_family(spec, close, buckets)
+    assert verdict == "REJECTED"
+    assert len(checks) == 1
+    row = checks.iloc[0]
+    assert row["bucket"] == "NEVER" and not row["passes"] and row["count"] == 0
+
+
 def test_cut_panel_labels_and_shape():
     panel = pd.DataFrame({"AAAUSDT": [0.05, 0.5, 0.95, np.nan]},
                          index=pd.Index([0, 1, 2, 3], name="open_time"))
