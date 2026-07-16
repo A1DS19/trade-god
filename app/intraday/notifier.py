@@ -47,4 +47,4 @@ def notify_error_strikes(symbol: str, n: int):
 
 
 def notify_daily_summary(text: str):
-    send(f"📊 <b>Intraday daily summary</b>\n{text}")
+    send(f"📊 <b>Intraday daily summary</b>\n{html.escape(text)}")

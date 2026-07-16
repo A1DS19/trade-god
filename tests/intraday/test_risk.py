@@ -52,3 +52,11 @@ def test_resume_and_serialization():
     clone.resume()
     assert not clone.halted
     assert clone.check(93.0, "2026-07-16") is None    # resumed; re-anchor guards re-trip
+
+
+def test_notify_daily_summary_escapes_html(monkeypatch):
+    from app.intraday import notifier
+    sent = {}
+    monkeypatch.setattr(notifier, "send", lambda msg: sent.update(msg=msg))
+    notifier.notify_daily_summary("a<b>&c")
+    assert "a&lt;b&gt;&amp;c" in sent["msg"]
