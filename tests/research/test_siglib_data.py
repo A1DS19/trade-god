@@ -35,6 +35,7 @@ def _klines(times, closes):
             "volume": [1.0] * len(times),
             "close_time": [t + HOUR - 1 for t in times],  # extra col, must be dropped
             "quote_volume": [2.0] * len(times),
+            "taker_buy_volume": [1.2] * len(times),
             "trades": [3] * len(times),
         }
     )

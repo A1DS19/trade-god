@@ -18,6 +18,7 @@ def event_study(
     panel_close: pd.DataFrame,
     signal_panel: pd.DataFrame,
     horizons_hours=DEFAULT_HORIZONS,
+    absolute: bool = False,
 ) -> pd.DataFrame:
     """Conditional forward-return stats per signal bucket and horizon.
 
@@ -27,6 +28,7 @@ def event_study(
     Forward return at horizon h: close[t+h]/close[t] - 1, aligned so the
     signal observed at t predicts the NEXT h hours (the backtest engine adds
     its own one-bar shift; here the convention is forward-from-t).
+    absolute=True studies |forward return| (movement magnitude, direction-free).
 
     Returns long DataFrame: [bucket, horizon_hours, count, mean, median, std, t_stat].
     t_stat = mean / (std / sqrt(count)) — see module caveat re overlap.
@@ -36,6 +38,8 @@ def event_study(
     out = []
     for h in horizons_hours:
         fwd = (panel_close.shift(-h) / panel_close - 1.0).stack().dropna()
+        if absolute:
+            fwd = fwd.abs()
         fwd.name = "fwd"
         joined = pd.concat([sig, fwd], axis=1, join="inner").dropna()
         stats = joined.groupby("bucket")["fwd"].agg(

@@ -15,7 +15,8 @@ from research import config, store
 # A symbol is tradable at time T only if it has >= this many days of 1h history before T.
 ELIGIBILITY_DAYS = 60
 
-KLINE_COLS = ["open_time", "open", "high", "low", "close", "volume", "quote_volume"]
+KLINE_COLS = ["open_time", "open", "high", "low", "close", "volume",
+              "quote_volume", "taker_buy_volume", "trades"]
 FUNDING_COLS = ["funding_time", "funding_rate", "mark_price"]
 PREMIUM_COLS = ["open_time", "open", "high", "low", "close"]
 
