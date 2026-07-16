@@ -110,3 +110,13 @@ already violate an OOS gate); flag grid-corner winners; commit every diagnostic 
    without silent failures.
 3. The fill-telemetry dataset answers: how optimistic was the strict trade-through model, and is
    there any maker-execution path worth a future pre-registered study?
+
+### Deploy record (2026-07-16)
+
+Deployed to the Lightsail box at 16:31 UTC (`b1fdd76`): legacy `bot`/`swing`/`rebalance`
+containers removed, migration 006 applied, engine up keyless. First cycle 16:32 UTC:
+`symbols_ok=30, errors=0, equity_mark=100.0, halted=False`; all 7 state keys persisted;
+startup/daily/weekly Telegram messages received. Three clean cycles observed (16:32, 16:45,
+17:00). First live telemetry within the watch window: ALLOUSDT limit 0.37888 (z=−3.58) placed
+at 16:45, resolved `trade_through` at 17:00 (bar low 0.37627) → trade id=1 open, $10 slot.
+Criterion 1 met; criterion 2 window runs through 2026-08-13.
