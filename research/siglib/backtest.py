@@ -151,6 +151,7 @@ def run_backtest(
     cost_model: CostModel,
     funding_long: pd.DataFrame | None = None,
     eligibility: pd.DataFrame | None = None,
+    sell_cost_model: CostModel | None = None,
 ) -> BacktestResult:
     """Run the next-bar backtest. See module docstring for the exact semantics.
 
@@ -160,6 +161,7 @@ def run_backtest(
         caller's responsibility (protocol: 1.0 split across open positions).
     funding_long: optional long frame [symbol, funding_time, funding_rate].
     eligibility: optional boolean panel (data.eligible_mask); False forces 0.
+    sell_cost_model: optional separate rate for negative executed weight changes (sells); buys stay on cost_model. For long-only books this splits entry/exit costs. None = symmetric (unchanged behavior).
     """
     prices = prices_1h_panel
     if not (prices.index.is_monotonic_increasing and prices.index.is_unique):
@@ -188,10 +190,17 @@ def run_backtest(
 
     # Decided change at t executes at t+1 (final-bar decisions fall off the end).
     dw = w - w.shift(1).fillna(0.0)
-    dw_exec = dw.shift(1).fillna(0.0).abs()
+    dw_exec_signed = dw.shift(1).fillna(0.0)
+    dw_exec = dw_exec_signed.abs()
     turnover_per_bar = dw_exec.sum(axis=1)
     trades_per_bar = (dw_exec > _TRADE_TOL).sum(axis=1)
-    trade_costs = turnover_per_bar * cost_model.cost_per_side
+    if sell_cost_model is None:
+        trade_costs = turnover_per_bar * cost_model.cost_per_side
+    else:
+        buy_turnover = dw_exec_signed.clip(lower=0.0).sum(axis=1)
+        sell_turnover = (-dw_exec_signed.clip(upper=0.0)).sum(axis=1)
+        trade_costs = (buy_turnover * cost_model.cost_per_side
+                       + sell_turnover * sell_cost_model.cost_per_side)
 
     funding_costs = pd.Series(0.0, index=prices.index)
     if funding_long is not None and len(funding_long):

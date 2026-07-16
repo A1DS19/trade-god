@@ -128,3 +128,23 @@ def test_cut_panel_labels_and_shape():
     assert list(out["AAAUSDT"][:3]) == ["lo", "mid", "hi"]
     assert pd.isna(out["AAAUSDT"].iloc[3])
     assert out.shape == panel.shape
+
+
+def test_min_t_gate_binds_independently(monkeypatch):
+    close, buckets = _panels(drift_after_x=0.01)
+    monkeypatch.setattr(harness, "MIN_T", 1e9)
+    _, checks, verdict = harness.evaluate_family(_spec(), close, buckets)
+    assert verdict == "REJECTED"
+    row = checks.iloc[0]
+    assert row["edge"] > harness.ROUND_TRIP and row["count"] >= harness.MIN_COUNT
+    assert not row["passes"]
+
+
+def test_edge_uses_count_weighted_middle_baseline():
+    stats = pd.DataFrame({
+        "bucket": ["X", "M1", "M2"],
+        "count": [50, 100, 300],
+        "mean": [0.05, 0.01, 0.02],
+    }).set_index("bucket")
+    edge = harness._edge(stats, "X", ["M1", "M2"])
+    assert edge == pytest.approx(0.05 - (0.01 * 100 + 0.02 * 300) / 400)

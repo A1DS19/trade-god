@@ -21,3 +21,8 @@ STRESS = CostModel(taker_bps=5.0, slippage_bps=10.0)
 
 # Spec 2026-07-15 §3 intraday model: 5 bps taker + 3 bps slippage per side.
 INTRADAY = CostModel(taker_bps=5.0, slippage_bps=3.0)
+
+# Phase 2b maker-limit entry model: 2 bps maker fee, no slippage at the limit
+# price (the fill IS the quoted price); stress adds 2 bps adverse-fill drift.
+MAKER_ENTRY = CostModel(taker_bps=2.0, slippage_bps=0.0)
+MAKER_ENTRY_STRESS = CostModel(taker_bps=2.0, slippage_bps=2.0)
