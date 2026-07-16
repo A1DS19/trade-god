@@ -5,9 +5,7 @@ the cycle's observable behavior is what's pinned."""
 from __future__ import annotations
 
 import time
-import types
 
-import numpy as np
 import pytest
 
 from app.intraday import engine
@@ -105,3 +103,38 @@ def test_restart_recovers_book_from_state(ctx):
     engine.persist(ctx)
     restored = PaperBook.from_dict(ctx._state["paper_book"])
     assert restored.pending["AAAUSDT"]["free_at_placement"] == 10
+
+
+def test_fetch_failure_aborts_cycle_without_raising(ctx, monkeypatch):
+    def boom(client, symbols, bars=200):
+        raise RuntimeError("total fetch failure")
+    monkeypatch.setattr(engine, "fetch_panels", boom)
+    before = ctx.book.to_dict()
+    summary = engine.run_cycle(ctx)
+    assert summary.get("aborted") == "data"
+    assert ctx.book.to_dict() == before
+
+
+def test_close_failure_keeps_trade_id_for_retry(ctx, monkeypatch):
+    ctx.book.positions["AAAUSDT"] = {"entry": 100.0, "bars_held": 999,
+                                     "funding_usd": 0.0, "entry_ms": 0}
+    ctx._state["trade_ids"] = {"AAAUSDT": 42}
+    def fail_close(*a, **k):
+        raise RuntimeError("db down")
+    engine.models.close_intraday_trade = fail_close
+    engine.run_cycle(ctx)
+    assert ctx._state["trade_ids"].get("AAAUSDT") == 42   # id survives for reconciliation
+    exits = [c for c in ctx.notify.calls if c[0] == "notify_exit"]
+    assert exits                                          # operator still notified
+
+
+def test_failed_universe_refresh_backs_off(ctx, monkeypatch):
+    ctx.universe_refreshed_ms = 0    # due for refresh
+    calls = {"n": 0}
+    def boom(client):
+        calls["n"] += 1
+        raise RuntimeError("resolve failed")
+    monkeypatch.setattr(engine.iuniverse, "resolve_top30", boom)
+    engine.run_cycle(ctx)
+    engine.run_cycle(ctx)
+    assert calls["n"] == 1           # second cycle did NOT retry immediately

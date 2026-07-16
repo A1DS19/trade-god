@@ -4,6 +4,7 @@ TON/IP postmortem is the design constraint here)."""
 
 from __future__ import annotations
 
+import html
 import logging
 import time
 from dataclasses import dataclass
@@ -50,13 +51,18 @@ def refresh_universe(ctx: Context):
         if new and new != ctx.universe:
             added = sorted(set(new) - set(ctx.universe))
             dropped = sorted(set(ctx.universe) - set(new))
-            ctx.notify.send(f"🔄 Universe refreshed: +{added} -{dropped}")
+            ctx.notify.send(f"🔄 Universe refreshed: "
+                            f"+{html.escape(str(added))} "
+                            f"-{html.escape(str(dropped))}")
         if new:
             ctx.universe = new
         ctx.universe_refreshed_ms = now_ms
         ctx.tracker.record("__universe__", ok=True)
     except Exception as e:
         log.error("universe refresh failed: %s", e)
+        # back off ~24h — a 100-symbol resolve every 15m risks a -1003 ban
+        ctx.universe_refreshed_ms = (
+            now_ms - config.UNIVERSE_REFRESH_DAYS * DAY_MS + DAY_MS)
         if ctx.tracker.record("__universe__", ok=False):
             ctx.notify.notify_error_strikes("__universe__", config.ERROR_ALERT_STRIKES)
 
@@ -66,18 +72,26 @@ def run_cycle(ctx: Context) -> dict:
 
     watch = sorted(set(ctx.universe)
                    | set(ctx.book.positions) | set(ctx.book.pending))
-    panels, errors = fetch_panels(ctx.client, watch)
-    for sym in watch:
-        ok = sym not in errors
-        if ctx.tracker.record(sym, ok) and not ok:
-            ctx.notify.notify_error_strikes(sym, config.ERROR_ALERT_STRIKES)
+    try:
+        panels, errors = fetch_panels(ctx.client, watch)
+        for sym in watch:
+            ok = sym not in errors
+            if ctx.tracker.record(sym, ok) and not ok:
+                ctx.notify.notify_error_strikes(sym, config.ERROR_ALERT_STRIKES)
 
-    bars = latest_bars(panels)
-    z_row: dict = {}
-    if not ctx.killswitch.halted and len(panels["close"]):
-        z = strategy.zscore(panels["close"], panels["volume"],
-                            panels["quote_volume"])
-        z_row = {s: float(z[s].iloc[-1]) for s in z.columns}
+        bars = latest_bars(panels)
+        z_row: dict = {}
+        if not ctx.killswitch.halted and len(panels["close"]):
+            z = strategy.zscore(panels["close"], panels["volume"],
+                                panels["quote_volume"])
+            z_row = {s: float(z[s].iloc[-1]) for s in z.columns}
+        ctx.tracker.record("__data__", ok=True)
+    except Exception as e:
+        # book untouched and state unchanged — safe to abort without persist
+        log.error("data stage failed: %s", e)
+        if ctx.tracker.record("__data__", ok=False):
+            ctx.notify.notify_error_strikes("__data__", config.ERROR_ALERT_STRIKES)
+        return {"aborted": "data", "halted": ctx.killswitch.halted}
 
     try:
         if ctx.book.positions:
@@ -90,6 +104,9 @@ def run_cycle(ctx: Context) -> dict:
         log.error("funding failed: %s", e)
 
     active_universe = set() if ctx.killswitch.halted else set(ctx.universe)
+    # Deliberately unwrapped: on_bar is pure in-memory — an exception here is
+    # a code bug and must NOT be followed by persist (partial-mutation state
+    # would be baked in); the outer main-loop catch alerts.
     res = ctx.book.on_bar(bars, z_row, active_universe)
 
     trade_ids = ctx.state_get("trade_ids") or {}
@@ -111,31 +128,51 @@ def run_cycle(ctx: Context) -> dict:
                 limit_price=e_["entry_price"], entry_price=e_["entry_price"],
                 slot_usd=ctx.book.slot_usd, entry_time=now,
                 fill_type="trade_through")
-            ctx.notify.notify_fill(e_["symbol"], e_["entry_price"], e_["z"])
         except Exception as ex:
             log.error("trade open log failed: %s", ex)
+            ctx.notify.send(f"⚠️ trade open log failed for {e_['symbol']}")
+        try:
+            ctx.notify.notify_fill(e_["symbol"], e_["entry_price"], e_["z"])
+        except Exception as ex:
+            log.error("fill notify failed: %s", ex)
     for x in res.exits:
         try:
-            tid = trade_ids.pop(x["symbol"], None)
+            tid = trade_ids.get(x["symbol"])
             if tid is not None:
                 models.close_intraday_trade(
                     tid, exit_price=x["exit_price"], exit_time=now,
                     hold_bars=x["hold_bars"], pnl_pct=x["pnl_pct"],
                     pnl_usd=x["pnl_usd"], exit_reason="horizon")
+            # pop only after the close succeeded — a DB failure leaves the id
+            # in state for a later retry or manual reconciliation
+            trade_ids.pop(x["symbol"], None)
+        except Exception as ex:
+            log.error("trade close log failed (id kept for retry): %s", ex)
+        try:
             ctx.notify.notify_exit(x["symbol"], x["pnl_usd"], x["pnl_pct"],
                                    x["hold_bars"])
         except Exception as ex:
-            log.error("trade close log failed: %s", ex)
+            log.error("exit notify failed: %s", ex)
 
-    closes = {s: b.close for s, b in bars.items()}
-    mark = ctx.book.mark_equity(closes)
-    reason = ctx.killswitch.check(mark, _utc_date())
-    if reason:
-        ctx.notify.notify_halt(reason, mark)
+    mark = None
+    try:
+        closes = {s: b.close for s, b in bars.items()}
+        mark = ctx.book.mark_equity(closes)
+        reason = ctx.killswitch.check(mark, _utc_date())
+        if reason:
+            ctx.notify.notify_halt(reason, mark)
+    except Exception as e:
+        log.error("equity mark / kill-switch check failed: %s", e)
 
-    maybe_send_summaries(ctx, mark)
-    ctx.state_set("trade_ids", trade_ids)
-    persist(ctx)
+    if mark is not None:
+        maybe_send_summaries(ctx, mark)
+    try:
+        ctx.state_set("trade_ids", trade_ids)
+        persist(ctx)
+    except Exception as e:
+        # state_set writes full snapshots — the next cycle self-heals
+        log.error("state persist failed: %s", e)
+        ctx.notify.send("⚠️ state persist failed — will retry next cycle")
     summary = {"symbols_ok": len(bars), "errors": len(errors),
                "placements": len(res.placements), "entries": len(res.entries),
                "exits": len(res.exits), "equity_mark": mark,
