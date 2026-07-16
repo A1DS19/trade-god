@@ -18,7 +18,7 @@ import pandas as pd
 
 from research.signals.intraday import mr_vwap_train as train
 from research.signals.intraday.mr_vwap_train import VARIANTS, load_panels, run_combo
-from research.siglib.costs import INTRADAY, MAKER_ENTRY, MAKER_ENTRY_STRESS, STRESS
+from research.siglib.costs import MAKER_ENTRY_STRESS, STRESS
 
 DEFAULT_OUT = Path(__file__).parent / "output" / "2b"
 OOS_START = "2025-07-01"
@@ -60,7 +60,7 @@ def main() -> None:
             ("baseline", VARIANTS[vname][1:]),
             ("stress", STRESS_COSTS[vname]),
         ):
-            s, w, res = run_combo(panels, p, fill, buy, sell)
+            _, _, res = run_combo(panels, p, fill, buy, sell)
             oos_res = res.window(start=OOS_START)
             full = oos_res.summary()
             full["sharpe"] = train.annualized_sharpe(oos_res.returns)
