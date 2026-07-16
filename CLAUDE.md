@@ -175,9 +175,7 @@ Escape all dynamic text with `html.escape()` before sending.
 ---
 
 ## Testing
-- Run: `python -m pytest` (fast; testnet tests auto-skip). Config in `pyproject.toml`. Full guide: `docs/testing.md`.
-- Layout: `tests/{swing,bot,backtest,property,integration}/` + `tests/conftest.py`. Dev deps `pytest`+`hypothesis` in `requirements.txt`.
-- Fixtures (conftest): `snapshot` (swing-snapshot factory), `fake_client` (FakeBinanceClient recording order calls), env stub set at import time. **Don't re-add env/`sys.path` boilerplate in test files.**
+- Run: `python -m pytest` (fast; fully green — no excepted failures). Config in `pyproject.toml`.
+- Layout: `tests/{intraday,research}/` + `tests/conftest.py` (env stub set at import time — **don't re-add env/`sys.path` boilerplate in test files**). Legacy bot/swing tests live in `legacy/tests/` and are not collected.
 - Markers: `property`, `integration`, `testnet` (skipped unless `RUN_TESTNET=1`), `slow`.
-- Philosophy: money-paths first; Hypothesis invariants; indicator golden tests vs analytically-known values; `tests/backtest/test_live_backtest_parity.py` fails if live `agent.decide()` and backtest `decide_v2()` diverge.
-- **Scope C (not yet done):** DCA buy/sell gates are inline in `trader.run()` (untested); live & backtest duplicate strategy logic (`agent.py` vs `backtest_replay/strategy.py`) — the parity test guards it.
+- Philosophy: money-paths first; the strategy lives ONCE in `app/intraday/strategy.py` (research imports it), and `tests/intraday/test_paper_book.py::test_replay_parity_with_batch_builder` pins the live PaperBook to the batch builder bar-for-bar.
