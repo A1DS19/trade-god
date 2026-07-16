@@ -146,13 +146,18 @@ class PaperBook:
             "equity": self.equity, "max_k": self.max_k,
             "horizon_bars": self.horizon_bars,
             "entry_cost": self.entry_cost, "exit_cost": self.exit_cost,
-            "pending": self.pending, "positions": self.positions,
+            "slot_usd": self.slot_usd,
+            "pending": {k: dict(v) for k, v in self.pending.items()},
+            "positions": {k: dict(v) for k, v in self.positions.items()},
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "PaperBook":
         book = cls(d["equity"], d["max_k"], d["horizon_bars"],
                    d["entry_cost"], d["exit_cost"])
+        # sizing must not drift with realized PnL across restarts; fall back
+        # to the derived value only for pre-fix state rows without the key
+        book.slot_usd = d.get("slot_usd", book.slot_usd)
         book.pending = {k: dict(v) for k, v in d["pending"].items()}
         book.positions = {k: dict(v) for k, v in d["positions"].items()}
         return book

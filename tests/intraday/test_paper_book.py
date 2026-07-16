@@ -87,6 +87,25 @@ def test_serialization_roundtrip_preserves_behavior():
     assert book.to_dict() == clone.to_dict()
 
 
+def test_slot_usd_survives_restart_after_realized_pnl():
+    book = _book(k=1, horizon=2)
+    book.on_bar({"A": _bar(0, 100.0)}, {"A": -5.0}, {"A"})
+    book.on_bar({"A": _bar(1, 100.0, low=99.0)}, {"A": 0.0}, {"A"})
+    book.on_bar({"A": _bar(2, 102.0)}, {"A": 0.0}, {"A"})      # realized +1.9
+    clone = PaperBook.from_dict(book.to_dict())
+    assert clone.slot_usd == book.slot_usd == 100.0
+    assert clone.equity == pytest.approx(book.equity)
+
+
+def test_to_dict_is_a_snapshot_not_a_view():
+    book = _book(k=1, horizon=2)
+    book.on_bar({"A": _bar(0, 100.0)}, {"A": -5.0}, {"A"})
+    snap = book.to_dict()
+    pending_before = dict(snap["pending"])
+    book.on_bar({"A": _bar(1, 100.0, low=99.0)}, {"A": 0.0}, {"A"})
+    assert snap["pending"] == pending_before
+
+
 def test_replay_parity_with_batch_builder():
     rng = np.random.default_rng(42)
     n, syms, k, horizon = 400, ["A", "B", "C"], 2, 4
