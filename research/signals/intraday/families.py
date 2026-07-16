@@ -41,16 +41,19 @@ def breakout_buckets(data: dict) -> pd.DataFrame:
     )
 
 
-def mr_vwap_buckets(data: dict) -> pd.DataFrame:
+def mr_vwap_z(data: dict) -> pd.DataFrame:
     close = _close(data)
     v = sdata.to_panel(data["klines_15m"], "volume")
     qv = sdata.to_panel(data["klines_15m"], "quote_volume")
     vsum = v.rolling(BARS_24H, min_periods=BARS_24H).sum()
     vwap = qv.rolling(BARS_24H, min_periods=BARS_24H).sum() / vsum.where(vsum > 0)
     sd = close.rolling(BARS_24H, min_periods=BARS_24H).std()
-    z = (close - vwap) / sd.where(sd > 0)
+    return (close - vwap) / sd.where(sd > 0)
+
+
+def mr_vwap_buckets(data: dict) -> pd.DataFrame:
     return cut_panel(
-        z,
+        mr_vwap_z(data),
         [-np.inf, -3.0, -2.0, -1.0, 1.0, 2.0, 3.0, np.inf],
         ["z<-3", "z-3..-2", "z-2..-1", "z-1..1", "z1..2", "z2..3", "z>3"],
     )
