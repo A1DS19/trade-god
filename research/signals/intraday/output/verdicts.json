@@ -1,0 +1,8 @@
+{
+  "breakout": "REJECTED",
+  "mr_vwap": "SURVIVOR",
+  "squeeze": "REJECTED",
+  "funding_window": "REJECTED",
+  "vol_impulse": "REJECTED",
+  "time_of_day": "REJECTED"
+}
