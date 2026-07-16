@@ -67,6 +67,20 @@ def test_select_frozen_params_mechanical_rule():
     assert train.select_frozen(none_eligible) == (None, False)
 
 
+def test_plateau_guard_rejects_nan_sharpe_neighbor():
+    log = pd.DataFrame([
+        {"fill": "next_bar", "horizon_bars": 8, "exit": "horizon", "max_k": 3,
+         "n_trades": 200, "total_return": 0.10, "sharpe": float("nan")},
+        {"fill": "next_bar", "horizon_bars": 16, "exit": "horizon", "max_k": 3,
+         "n_trades": 200, "total_return": 0.20, "sharpe": 3.0},
+        {"fill": "next_bar", "horizon_bars": 32, "exit": "horizon", "max_k": 3,
+         "n_trades": 200, "total_return": 0.05, "sharpe": 1.0},
+    ])
+    chosen, cliff = train.select_frozen(log)
+    assert chosen["horizon_bars"] == 16
+    assert cliff   # NaN neighbor => no certified plateau; global best with cliff flag
+
+
 def test_train_cli_end_to_end(warehouse, tmp_path, monkeypatch):
     _seed()
     out = tmp_path / "2b"

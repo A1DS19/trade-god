@@ -3,8 +3,9 @@
 PRE-REGISTERED (2026-07-16): TRAIN_END = 2025-07-01 — nothing on/after is
 loaded here. Grid 3H x 2exit x 3K per fill variant; selection = eligible
 (n_trades >= 100, total_return > 0) -> max annualized Sharpe with the
-basis_mr plateau guard on H/K neighbors (same exit). Diagnostics are
-descriptive and must not alter frozen params. OOS stays sealed.
+plateau guard from the basis_mr protocol on H/K neighbors (same exit).
+Diagnostics are descriptive and must not alter frozen params. OOS stays
+sealed.
 
 Run:  python -m research.signals.intraday.mr_vwap_train
 """
@@ -90,7 +91,12 @@ def select_frozen(log: pd.DataFrame):
                     nb = log[(log.horizon_bars == q["horizon_bars"])
                              & (log.max_k == q["max_k"])
                              & (log.exit == row["exit"])]
-                    if len(nb) and float(nb.iloc[0].sharpe) <= 0:
+                    # An in-grid neighbor that is absent from the log or has
+                    # NaN sharpe (never traded) cannot certify a plateau.
+                    if not len(nb):
+                        return False
+                    s = float(nb.iloc[0].sharpe)
+                    if np.isnan(s) or s <= 0:
                         return False
         return True
 
@@ -108,7 +114,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     panels = load_panels(TRAIN_END)
-    rows, best = [], {}
+    rows = []
     for vname, (fill, buy, sell) in VARIANTS.items():
         for H, E, K in itertools.product(GRID_H, GRID_EXIT, GRID_K):
             params = {"horizon_bars": H, "exit": E, "max_k": K}
