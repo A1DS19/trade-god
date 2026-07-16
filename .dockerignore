@@ -15,3 +15,6 @@ docker-compose.yml
 # research tooling never ships in images (dev-only deps + data)
 research/
 requirements-research.txt
+
+# retired bots — frozen archive, not part of the running system
+legacy/

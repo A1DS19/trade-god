@@ -219,11 +219,11 @@ def swing_trades(
 # ── Swing stats ────────────────────────────────────────────
 @app.get("/swing/stats")
 def swing_stats(since: str | None = Query(default=None)):
-    """Aggregate swing performance.
+    """Aggregate swing performance (historical — the swing agent retired 2026-07-16).
 
-    Field names mirror the backtest_replay output so a reconciliation against
-    `python -m app.swing.backtest_replay` output is a direct dict diff.
-    Pass `since=<ISO datetime>` to restrict to trades with entry_time >= since.
+    Field names mirror the retired backtest_replay output for reconciliation
+    against archived runs. Pass `since=<ISO datetime>` to restrict to trades
+    with entry_time >= since.
     """
     with SASession(engine) as session:
         q = session.query(SwingTrade).filter(SwingTrade.status == "closed")

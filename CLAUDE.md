@@ -32,16 +32,30 @@ api_main.py       # API entrypoint
 |---------|-------------|------|
 | db | PostgreSQL 16 | 5432 (internal) |
 | migrate | Alembic upgrade head (run-once) | — |
-| bot | DCA spot bot | 8080 (health) |
-| swing | Swing futures agent | — |
+| intraday | Intraday paper engine — keyless | — |
 | api | FastAPI monitoring | 8000 |
 
 **Key commands:**
 ```bash
 docker compose up -d --build
-docker compose logs -f swing
-docker compose logs --timestamps swing > logs.txt 2>&1
+docker compose logs -f intraday
+docker compose logs --timestamps intraday > logs.txt 2>&1
 ```
+
+---
+
+## Intraday Engine (`app/intraday/`)
+
+Phase 3 replacement for the DCA bot and swing agent: `mr_vwap` maker-limit mean-reversion,
+paper mode only (`EXECUTION_MODE=paper`; `live` raises `NotImplementedError`), no API keys
+required. Strategy params are **frozen** (pre-registered from 2b research — H=32 bars, K=10
+slots, Z_ENTRY=−3.0; do not tune without a new research phase), 900s cycle aligned to 15m
+candle close, $100 paper equity. Every placed virtual limit resolves to `trade_through` /
+`touch_only` / `miss` and is logged as fill telemetry. Kill-switches (5% daily paper loss or
+20% drawdown) halt trading and persist in `intraday_state`; resume requires an operator
+restart with `INTRADAY_RESUME=1`. Universe: weekly top-30 by 30-day median quote volume.
+Telemetry lives in `intraday_trades` / `intraday_limits` / `intraday_state`. Full design:
+`docs/superpowers/specs/2026-07-15-intraday-engine-design.md`.
 
 ---
 
@@ -88,105 +102,14 @@ END-anchored (`startTime`-only returns newest rows — fetchers paginate with ex
 
 ## Swing Agent (`app/swing/`)
 
-### Coins (13)
-DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, FET, ENS, TON, HYPE — Binance USDT-M perpetuals. Screened from top 100 by market cap (see `docs/coin_screening_and_selection.md`). DOT removed 2026-04-11 (net-negative at MIN_CONFIDENCE=0.80). 2026-06-05: FET + ENS + TON added (walk-forward validated — positive in both train & OOS windows); ZEC rejected (net-negative OOS); HYPE re-added by user request despite failing walk-forward (only ~1yr history, −0.31 OOS — weakest in the book).
-
-### Config (`app/swing/config.py`)
-| Param | Value |
-|-------|-------|
-| LEVERAGE | 5x |
-| POSITION_USDT | $5–$10 (confidence-scaled, notional $25–$50) |
-| MAX_OPEN | 3 simultaneous positions |
-| DEFAULT_SL_PCT | 3% (client-side safety net) |
-| DEFAULT_TP_PCT | 8% (client-side safety net) |
-| MIN_CONFIDENCE | 0.80 |
-| MIN_ADX_ENTRY | 28.0 (hard entry gate) |
-| MIN_RSI_SHORT | 42.0 (soft — confidence penalty only) |
-| MAX_RSI_LONG | 58.0 (soft — confidence penalty only) |
-| SHORT_ENTRY_RSI_FLOOR | 32.0 (**HARD** gate — block short if RSI below; = exit floor) |
-| LONG_ENTRY_RSI_CEIL | 68.0 (**HARD** gate — block long if RSI above; = exit ceil) |
-| BORDERLINE_ADX_PENALTY | 0.08 |
-| ENABLE_PARTIAL_ENTRIES | False |
-| REQUIRE_DI_ALIGNMENT | True |
-| ENABLE_SHORTS | **False** (2026-06-12 — shorts 0/6 post-overhaul, Phase C short-leg PF 0.979; longs unaffected, exits never gated) |
-| LONG_EXIT_RSI_CEIL | 68.0 |
-| SHORT_EXIT_RSI_FLOOR | 32.0 |
-| CHECK_INTERVAL | 3600s (1 hour) |
-| LOSS_COOLDOWN_HRS | 4h |
-| SHADOW_MAX_CYCLES | 8 (RSI-gate would-be-PnL tracker horizon) |
-
-### Strategy — 4-step pipeline (`app/swing/agent.py`)
-
-**Step 1: Exit Check**
-- Longs exit: 4h EMA bearish, daily EMA bearish, RSI > 68, MACD divergence with RSI > 68, OI drop >3% + MACD weakening, ADX < 20
-- Shorts exit: inverse conditions (RSI < 32, MACD_DIV_EXIT_RSI_SHORT = 32)
-- Mixed EMA alone does NOT exit (removed 2026-04-08 — see `project_exit_tuning_2026-04-08.md`)
-
-**Step 2: Regime Gate**
-- ADX > 25 → trending label
-- ADX 20–25 → borderline label (−0.08 confidence penalty)
-- ADX < 20 → ranging (NO new entries)
-- Note: `MIN_ADX_ENTRY = 28` is a separate, stricter hard gate — trending setups with ADX 25–27 are blocked at the entry check.
-
-**Step 3: Entry Conditions (ALL required)**
-- Short: daily EMA bearish + 4h EMA bearish (strict stack) + MACD hist < 0 + ADX ≥ 28 + -DI > +DI
-- Long: daily EMA bullish + 4h EMA bullish (strict stack) + MACD hist > 0 + ADX ≥ 28 + +DI > -DI
-- RSI **hard gate** (added 2026-06-05): block short if RSI < `SHORT_ENTRY_RSI_FLOOR` (32), block long if RSI > `LONG_ENTRY_RSI_CEIL` (68) — don't enter the zone your own exit rule would immediately close. The softer `MIN_RSI_SHORT` (42) / `MAX_RSI_LONG` (58) still feed confidence penalties on top. See `project_rsi_entry_gate_2026-06-05.md`.
-- **Shadow tracker** (`app/swing/shadow.py`, observe-only): logs the would-be PnL of RSI-gate-blocked trades — `SHADOW-CLOSE` lines where **positive = the gate forwent a winner**, **negative = it avoided a loser**. The gate attaches `decision["gate_block"]`; `main.py` runs the tracker each cycle. Grep `SHADOW-CLOSE` and sum to judge whether 32 is right or to A/B 35.
-
-**Step 4: Confidence Scoring (must reach ≥ 0.80)**
-- Confirming signals: vol spike (+0.05), funding (+0.04), OI rising (+0.04), DI alignment (+0.04), Stoch RSI extreme (+0.04), L/S ratio crowded (+0.04), RSI healthy zone (+0.03), EMA200 alignment (+0.03), ATR rank >70% (+0.03), VWAP (+0.03), taker ratio (+0.03)
-- Contradicting signals: −0.02 to −0.08 each
-- Borderline ADX penalty: −0.08
-
-### SL/TP Sizing (`app/swing/snapshot.py`)
-```
-SL = ATR14 × 1.5  (min 1%)
-TP = ATR14 × 3.0  (min 2%)
-```
-
-### Two-Layer SL/TP
-1. **Exchange-side:** `STOP_MARKET` + `TAKE_PROFIT_MARKET` orders in `app/swing/exchange.py:_place_sl_tp()`
-2. **Client-side safety net:** Every cycle checks price vs entry in `main.py`
-
-### Indicators (`app/swing/indicators.py`)
-4h: EMA 9/21/50, RSI14, Stoch RSI, MACD 12/26/9, ATR14 + percentile rank, ADX14 + DI+/DI−, VWAP, OI%, L/S ratio, taker ratio, vol ratio
-Daily: EMA 21/50/200
-
----
+Retired 2026-07-16 to `legacy/` (code + tests: `legacy/app/swing/`, `legacy/tests/swing/`,
+`legacy/tests/backtest/`, `legacy/tests/property/`, `legacy/tests/integration/`, `legacy/swing_main.py`).
+`swing_trades` table kept as history (see Database Schema); superseded by `app/intraday/` above.
 
 ## DCA Bot (`app/bot/`)
 
-### Universe
-Top 20 by market cap (CoinGecko, refreshed daily). Blacklist: stablecoins, wrapped tokens, WLFI, ZEC.
-
-### Config (`app/config.py`)
-| Param | Value |
-|-------|-------|
-| TRADE_AMOUNT_USDT | $8 per buy |
-| MAX_POSITION_USDT | $50 per coin |
-| MAX_DAILY_SPEND | $80/day |
-| DIP_THRESHOLD | 3% (dynamic: max(ATR14×0.8%, 3%)) |
-| TAKE_PROFIT | +5% → partial sell |
-| PARTIAL_TAKE_PROFIT_PCT | 60% sold at TP |
-| TRAILING_STOP_PCT | 10% from peak |
-| DCA_DROP_PCT | 3% below avg_buy → rebuy |
-| BUY_COOLDOWN_HRS | 4h |
-| CHECK_INTERVAL | 300s (5 min) |
-| RSI_BUY_THRESHOLD | 45 (above EMA50) |
-| RSI_BUY_BELOW_EMA50 | 38 (in pullback zone) |
-| VOLUME_SPIKE_RATIO | 2.0 |
-
-### Buy Logic (all conditions required)
-1. Dip ≥ max(ATR14×0.8%, 3%) from 24h high OR Bollinger %B < 0.2
-2. Price > EMA200, EMA200 slope rising, price > weekly EMA200
-3. BTC above 200-day AND 200-week EMA (macro gate)
-4. RSI < 45 (or < 38 in pullback zone)
-5. MACD histogram improving
-6. Volume ratio < 2.0
-7. Cooldown ok + position cap ok + daily cap ok
-
-### Exit: Partial TP at +5% (sell 60%), trailing stop at −10% from peak
+Retired 2026-07-16 to `legacy/` (code + tests: `legacy/app/bot/`, `legacy/tests/bot/`, `legacy/main.py`).
+`positions`/`trades` tables kept as history; DCA spot holdings on Binance are left held, managed manually.
 
 ---
 
