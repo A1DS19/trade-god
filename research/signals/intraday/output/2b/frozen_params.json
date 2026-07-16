@@ -1,0 +1,9 @@
+{
+  "next_bar": null,
+  "maker_limit": {
+    "horizon_bars": 32,
+    "exit": "horizon",
+    "max_k": 10,
+    "_cliff": false
+  }
+}

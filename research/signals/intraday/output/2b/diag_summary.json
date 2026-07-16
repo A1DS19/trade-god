@@ -1,0 +1,10 @@
+{
+  "maker_limit": {
+    "edge_t": 0.7423789047880378,
+    "episodes": 2844,
+    "total_return": 0.2507698779364258,
+    "profit_factor": 1.020994442914647,
+    "max_drawdown": 0.26513372443124394,
+    "n_trades": 5688
+  }
+}

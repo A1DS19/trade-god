@@ -1,0 +1,22 @@
+{
+  "next_bar": "NOT_VIABLE_ON_TRAIN",
+  "maker_limit": {
+    "judge": {
+      "pf_ok": false,
+      "trades_ok": true,
+      "windows_ok": false,
+      "dd_ok": false,
+      "passes": false
+    },
+    "params": {
+      "horizon_bars": 32,
+      "exit": "horizon",
+      "max_k": 10
+    },
+    "window_returns": [
+      -0.10399087517851124,
+      -0.11359463800219283,
+      0.0678738324515682
+    ]
+  }
+}
