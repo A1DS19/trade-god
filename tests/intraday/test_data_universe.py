@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
 
 from app.intraday import data as idata
 from app.intraday import universe as iuni
@@ -82,6 +81,34 @@ def test_fetch_funding_since_filters_and_isolates():
     events = idata.fetch_funding_since(client, ["A", "B"], since_ms=100)
 
     assert events == [{"symbol": "A", "funding_time": 200, "funding_rate": 0.0002}]
+
+
+def test_resolve_top30_rejects_29_closed_days_plus_forming_bar():
+    now_ms = int(time.time() * 1000)
+
+    def closed_daily(qv, days):
+        start = now_ms - (days + 1) * DAY_MS
+        return [[start + d * DAY_MS, "1", "1", "1", "1", "1",
+                 start + d * DAY_MS + DAY_MS - 1, str(qv), 1, "0", "0", "0"]
+                for d in range(days)]
+
+    def with_forming(rows, qv):
+        t = now_ms - (now_ms % DAY_MS)
+        return rows + [[t, "1", "1", "1", "1", "1", t + DAY_MS - 1 + DAY_MS,
+                        str(qv), 1, "0", "0", "0"]]   # close_time in the future
+
+    info = [{"symbol": s, "contractType": "PERPETUAL", "quoteAsset": "USDT",
+             "status": "TRADING"} for s in ("OLDUSDT", "YOUNGUSDT")]
+    tickers = [{"symbol": "OLDUSDT", "quoteVolume": "1000"},
+               {"symbol": "YOUNGUSDT", "quoteVolume": "9999"}]
+    client = FakeClient(info_symbols=info, tickers=tickers, daily={
+        "OLDUSDT": with_forming(closed_daily(1000.0, 31), 1.0),
+        "YOUNGUSDT": with_forming(closed_daily(9999.0, 29), 5.0),  # 29 closed + forming
+    })
+
+    top = iuni.resolve_top30(client)
+
+    assert top == ["OLDUSDT"]
 
 
 def test_resolve_top30_ranks_by_30d_median():

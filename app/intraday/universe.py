@@ -4,6 +4,7 @@ top-100 USDT perps by 24h volume (live twin of the research PIT rule)."""
 from __future__ import annotations
 
 import statistics
+import time
 
 UNIVERSE_SIZE = 30
 POOL_SIZE = 100
@@ -11,6 +12,7 @@ MEDIAN_DAYS = 30
 
 
 def resolve_top30(client) -> list[str]:
+    now_ms = int(time.time() * 1000)
     info = client.futures_exchange_info()
     perps = {
         s["symbol"]
@@ -30,7 +32,9 @@ def resolve_top30(client) -> list[str]:
                                           limit=MEDIAN_DAYS + 1)
         except Exception:
             continue
-        closed = daily[:-1] if len(daily) > MEDIAN_DAYS else daily
+        # closed-bar discipline by close_time (same as data.py) — list length
+        # can't tell a forming candle apart: 29 closed + today forming is 30 rows
+        closed = [k for k in daily if int(k[6]) <= now_ms]
         if len(closed) < MEDIAN_DAYS:
             continue
         qv = [float(k[7]) for k in closed[-MEDIAN_DAYS:]]
