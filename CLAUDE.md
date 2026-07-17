@@ -55,7 +55,8 @@ candle close, $100 paper equity. Every placed virtual limit resolves to `trade_t
 20% drawdown) halt trading and persist in `intraday_state`; resume requires an operator
 restart with `INTRADAY_RESUME=1`. Universe: weekly top-30 by 30-day median quote volume.
 Telemetry lives in `intraday_trades` / `intraday_limits` / `intraday_state`. Full design:
-`docs/superpowers/specs/2026-07-15-intraday-engine-design.md`.
+`docs/superpowers/specs/2026-07-15-intraday-engine-design.md`. Ops runbook (message
+reference, monitoring SQL, resume procedure): `docs/intraday_operations.md`.
 
 ---
 

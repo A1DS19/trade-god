@@ -4,104 +4,60 @@
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
-![Binance](https://img.shields.io/badge/Binance-Futures%20%26%20Spot-F0B90B?logo=binance&logoColor=black)
+![Binance](https://img.shields.io/badge/Binance-USDT--M%20market%20data-F0B90B?logo=binance&logoColor=black)
 ![Deploy](https://img.shields.io/badge/Deployed-AWS%20Lightsail-FF9900?logo=amazonaws&logoColor=white)
 
-Two independent trading strategies running in parallel on Binance.
+A research-first intraday trading system on Binance USDT-M futures — currently running
+**paper-only**, by design.
 
-| Strategy | Market | Style | Docs |
-|---|---|---|---|
-| **DCA Bot** | Spot | Buy dips, partial TP, trailing stop | [app/bot/README.md](app/bot/README.md) |
-| **Swing Agent** | USDT-M Futures | Rule-based longs & shorts, hourly re-evaluation | [app/swing/README.md](app/swing/README.md) |
+The live component is a mean-reversion paper engine (`app/intraday/`) whose strategy
+survived a pre-registered research pipeline but **failed its out-of-sample cost gates** —
+so instead of trading it, the engine shadow-trades it with full fill telemetry to answer
+the one question no backtest can: *do maker limits actually fill the way the backtest
+assumed?* Live execution is gated behind four weeks of positive paper PnL and a manual
+operator decision.
 
----
+## The intraday engine
 
-## DCA Bot
+- **Strategy:** `mr_vwap` — long-only mean reversion on deep oversold vs 24h VWAP
+  (z < −3.0 on 15m bars). Parameters are frozen from pre-registered research
+  (H=32 bars, K=10 slots) — no live tuning.
+- **Execution:** virtual maker limits on $100 paper equity. A limit only "fills" on
+  strict trade-through (bar low below the limit) — every placement is logged as
+  `trade_through` / `touch_only` / `miss` fill telemetry.
+- **Keyless:** unsigned market-data endpoints only. No Binance API keys on the box.
+- **Cycle:** every 15 minutes, aligned to candle close. Universe: weekly top-30 USDT
+  perps by 30-day median quote volume.
+- **Risk:** kill-switches halt trading at 5% daily paper loss or 20% drawdown; halts
+  persist across restarts and require an explicit operator resume.
+- **Telegram:** per-fill and per-exit alerts, daily equity summary, weekly fill-telemetry
+  report.
 
-- Watches the top 20 coins by market cap (refreshed daily from CoinGecko)
-- Buys when price dips ≥ ATR-adjusted threshold from 24h high, or Bollinger %B < 0.2
-- Requires: RSI < 45 (or < 38 in EMA50–200 pullback zone), price above 200 EMA, EMA slope up, MACD histogram improving, no volume spike, BTC above 200-day and 200-week EMA
-- Partial exit at +5% take profit (sells 60%, lets 40% ride to trailing stop)
-- Trailing stop at -10% from position peak
-- DCA buys more if price drops 3% below avg buy price
-- Logs every trade (buy/sell) with realized P&L to the database
-- REST API for portfolio data, trade history, and strategy stats
-- Telegram commands: `/status`, `/pnl`, `/trades`, `/balance`
-- Telegram notifications for every trade + daily summary at 8am UTC
-- Health check endpoint at `GET /health` (port 8080)
-- Watchdog alert via Telegram if no cycle completes in 15 minutes
+Full docs: [operations guide](docs/intraday_operations.md) ·
+[design spec](docs/superpowers/specs/2026-07-15-intraday-engine-design.md)
 
-## Swing Agent
+## Research warehouse (dev machine only)
 
-- Trades 13 USDT-M perpetual futures pairs (DOGE, 1000SHIB, RUNE, RENDER, 1000FLOKI, TURBO, IP, BSV, IOTA, FET, ENS, TON, HYPE) — screened from the top 100 by market cap and walk-forward validated
-- Rule-based decision engine — no LLM, fully deterministic
-- Indicators: EMA stack (9/21/50 on 4h, 21/50/200 daily), RSI, Stochastic RSI, MACD, ATR, ATR percentile, ADX (+DI/−DI), VWAP, volume ratio, funding rate, open interest change, long/short ratio, taker buy/sell ratio
-- Regime filter: no entries in ranging markets (`ADX < 20`), strict entry ADX gate `>= 28`
-- Entry uses daily bias + strict 4h alignment + MACD direction + ADX gate + DI alignment; RSI is a **hard gate** (block shorts when RSI < 32, longs when RSI > 68 — don't enter the zone the exit rule would immediately close) plus softer RSI confidence penalties on top
-- Confidence scored from 11 confirming/contradicting signals; minimum 0.80 to enter
-- Exit on MACD divergence, RSI threshold breach, EMA flip, ADX collapse, or OI drop
-- ATR-based SL/TP sizing (1.5× and 3× ATR14); client-side safety net enforced each cycle
-- Position size scales by confidence (`$5` to `$10`)
-- Telegram notifications for every open and close
-
-### Swing replay benchmark (v1 vs v2)
-
-Run date: `2026-04-08` (UTC)  
-Window: `2016-04-08` to `2026-04-09` (~8.5 years, data from Binance futures launch Sep 2017)  
-Universe: `BTC, ETH, SOL, BNB, XRP, DOGE, AVAX, LINK, SUI`
-
-Cost-aware aggregate snapshot (`fee=4 bps`, `slippage=2 bps`, per side):
-
-| Strategy | Trades | Win rate | Net PnL | Gross PnL | Fees | Avg PnL/trade | Profit factor | Max DD |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `v1` (legacy strict) | 60 | 50.00% | 16.68 | 17.87 | 1.19 | 0.28 | 1.52 | 20.89 |
-| `v2` (current tuned) | 98 | 48.98% | 26.49 | 29.00 | 2.51 | 0.27 | 1.48 | 33.40 |
-
-Tuning applied (2026-04-08): removed mixed-EMA soft exit (net negative over 8.5 years), raised `MACD_DIV_EXIT_RSI_LONG` from 62 to 68 (62 fires on normal consolidation, not genuine reversals).
-
-Reproduce:
-
-```bash
-python -m app.swing.backtest_replay \
-  --start 2016-04-08T00:00:00Z \
-  --end 2026-04-09T00:00:00Z \
-  --fee-bps 4 --slippage-bps 2 \
-  --exit-breakdown --entry-analysis \
-  --charts charts_out/10yr \
-  --workers 9
-```
-
-Notes: public kline replay, neutralized funding/OI/L-S/taker features, configurable fees/slippage, no latency modeling. Charts saved as PNG to the `--charts` directory.
-
----
+`research/` maintains a point-in-time parquet warehouse (klines, funding, basis, OI,
+long/short, universe snapshots for the top-100 USDT perps) used for signal research and
+backtests. It never ships to prod. The strategy code is shared: research imports
+`app/intraday/strategy.py`, and a replay-parity test pins the live engine to the batch
+backtester bar-for-bar.
 
 ## Stack
 
-- **Python 3.12** — trading loop + API
-- **FastAPI + Uvicorn** — REST API (port 8000)
-- **PostgreSQL** — persists positions, trades, daily spend, coin list, swing trade history
-- **Alembic** — database migrations (run automatically on startup via `migrate` service)
-- **Docker Compose** — five services: `db`, `migrate`, `bot`, `swing`, `api`
-- **Binance API** — market data + order execution (spot + futures)
-- **CoinGecko / CoinPaprika** — coin universe (CoinPaprika fallback)
-- **Telegram Bot API** — trade alerts, daily summary, commands
+- **Python 3.12** — engine loop + API
+- **FastAPI + Uvicorn** — REST API (port 8000, legacy trade history)
+- **PostgreSQL 16** — paper trades, fill telemetry, engine state (+ legacy history)
+- **Alembic** — migrations (run automatically via the `migrate` service)
+- **Docker Compose** — four services: `db`, `migrate`, `intraday`, `api`
+- **Telegram Bot API** — alerts and summaries
 
-No external AI APIs — fully self-contained.
+No API keys, no external AI — fully self-contained.
 
 ---
 
-## Step 1 — Binance API Keys
-
-1. Binance → Profile → API Management → Create API key
-2. Enable: **Spot & Margin Trading**
-3. Disable: Withdrawals
-4. Copy the key and secret into `.env`
-
-For the swing agent, create a **second** API key with **Futures Trading** enabled.
-
----
-
-## Step 2 — Telegram Bot
+## Step 1 — Telegram Bot
 
 1. Open Telegram → **@BotFather** → `/newbot` → copy the token
 2. Start a chat with your new bot
@@ -112,30 +68,19 @@ For the swing agent, create a **second** API key with **Futures Trading** enable
    Send a message to the bot first, then copy the `"id"` from `"chat"` in the response
 4. Paste both into `.env`
 
----
-
-## Step 3 — Environment variables
+## Step 2 — Environment variables
 
 Create a `.env` file in the project root:
 
 ```env
-# DCA Bot (spot)
-BINANCE_API_KEY=your_spot_key
-BINANCE_SECRET_KEY=your_spot_secret
-
-# Swing Agent (futures) — separate API key with Futures Trading enabled
-BINANCE_API_KEY_FUTURES=your_futures_key
-BINANCE_SECRET_KEY_FUTURES=your_futures_secret
-
-# Shared
 TELEGRAM_BOT_TOKEN=your_token
 TELEGRAM_CHAT_ID=your_chat_id
 DATABASE_URL=postgresql://tradegod:tradegod@db:5432/tradegod
 ```
 
----
+No Binance keys are required — the paper engine only reads public market data.
 
-## Step 4 — Deploy on AWS Lightsail (recommended)
+## Step 3 — Deploy on AWS Lightsail (recommended)
 
 **Instance:** 2GB RAM, Ubuntu 24.04
 
@@ -153,13 +98,13 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 git clone https://github.com/your-username/trade-god.git && cd trade-god
 # copy your .env file here
 docker compose up -d --build
-docker compose logs -f bot
+docker compose logs -f intraday
 ```
 
 On startup, Docker Compose will:
 1. Start PostgreSQL and wait for it to be healthy
 2. Run `alembic upgrade head` (the `migrate` service)
-3. Start `bot`, `swing`, and `api` only after migrations succeed
+3. Start `intraday` and `api` only after migrations succeed
 
 **Firewall (Lightsail → Networking tab):**
 
@@ -167,68 +112,40 @@ On startup, Docker Compose will:
 |---|---|
 | 22 | Your IP only |
 | 8000 | Your IP only |
-| 8080 | Your IP only |
-| 5432 | Remove rule (internal only) |
+
+Postgres (5432) is bound to loopback in `docker-compose.yml` — access it via an SSH
+tunnel, never a firewall rule.
+
+Monitoring, kill-switch resume, and telemetry SQL:
+[docs/intraday_operations.md](docs/intraday_operations.md).
 
 ---
 
 ## API
 
-The API runs on port 8000. Interactive docs at `http://<your-ip>:8000/docs`.
+The API runs on port 8000 (interactive docs at `http://<your-ip>:8000/docs`) and serves
+**historical data from the retired strategies** (`positions`/`trades`); intraday paper
+telemetry is read via SQL for now.
 
 | Endpoint | Description |
 |---|---|
 | `GET /health` | Health check |
-| `GET /portfolio` | Open positions with cost basis |
-| `GET /pnl` | Realized P&L today and all-time |
-| `GET /trades?limit=20&coin=BTC&side=SELL` | Trade history |
-| `GET /stats` | Win rate, avg P&L, best/worst trade |
-
----
-
-## Telegram Commands
-
-| Command | Description |
-|---|---|
-| `/status` | Open positions |
-| `/pnl` | Realized P&L + win rate |
-| `/trades [n]` | Last N trades (default 5) |
-| `/balance` | Free USDT + portfolio cost |
-| `/help` | Command list |
-
----
-
-## Configuration
-
-DCA bot settings in `app/config.py`, swing agent settings in `app/swing/config.py`.
-
-| Setting | Default | What it does |
-|---|---|---|
-| `TOP_N_COINS` | 20 | Coins to watch (by market cap) |
-| `TRADE_AMOUNT_USDT` | $8 | Spent per buy |
-| `MAX_POSITION_USDT` | $50 | Max cost basis per coin |
-| `MAX_DAILY_SPEND` | $80 | Max spend per UTC day |
-| `DIP_THRESHOLD` | 3% | Minimum dip from 24h high to trigger buy |
-| `RSI_BUY_THRESHOLD` | 45 | RSI(14) limit when price is above EMA50 |
-| `RSI_BUY_BELOW_EMA50` | 38 | Stricter RSI limit in EMA50–EMA200 pullback zone |
-| `TAKE_PROFIT` | 5% | Partial sell trigger |
-| `PARTIAL_TAKE_PROFIT_PCT` | 60% | Fraction sold at take profit |
-| `TRAILING_STOP_PCT` | 10% | Sell if price drops this much from peak |
-| `DCA_DROP_PCT` | 3% | Buy more if price drops below avg buy by this much |
-| `BUY_COOLDOWN_HRS` | 4h | Min time between buys per coin |
-| `CHECK_INTERVAL` | 300s | Seconds between market scans |
-| `WATCHDOG_TIMEOUT_MINS` | 15 | Telegram alert if no cycle in this many minutes |
+| `GET /portfolio` | Open positions with cost basis (legacy DCA) |
+| `GET /pnl` | Realized P&L today and all-time (legacy DCA) |
+| `GET /trades?limit=20&coin=BTC&side=SELL` | Trade history (legacy DCA) |
+| `GET /stats` | Win rate, avg P&L, best/worst trade (legacy DCA) |
 
 ---
 
 ## Testing
 
 ```bash
-python -m pytest              # full suite (testnet tests auto-skip)
-python -m pytest -m property  # Hypothesis property tests only
+python -m pytest              # full suite (fast, fully green)
 ```
 
-Covers the money paths (SL/TP sizing, position/PnL math, the client-side safety net), indicator correctness, Hypothesis property invariants, and a live↔backtest parity check. Full guide: [docs/testing.md](docs/testing.md).
+Money-paths first: strategy core parity with research, PaperBook goldens, the
+live↔backtest replay-parity test, engine cycle/halt semantics, kill-switch edges.
+Full guide: [docs/testing.md](docs/testing.md).
 
 ---
 
@@ -236,56 +153,41 @@ Covers the money paths (SL/TP sizing, position/PnL math, the client-side safety 
 
 ```
 app/
-  api/
-    main.py         — FastAPI routes (/portfolio, /pnl, /trades, /stats)
-  bot/              — DCA spot bot (see app/bot/README.md)
-    trader.py       — main loop, buy/sell logic
-    commands.py     — Telegram command handler (polling)
-    exchange.py     — Binance spot wrappers with retry logic
-    indicators.py   — EMA, RSI, MACD, Bollinger Bands, ATR, volume ratio
-    universe.py     — top coin list (CoinGecko + CoinPaprika fallback)
-    notifier.py     — Telegram alerts and daily summary
-    heartbeat.py    — shared cycle heartbeat for watchdog + health check
-    healthcheck.py  — HTTP health check server (port 8080)
-  swing/            — Rule-based swing agent on futures (see app/swing/README.md)
-    main.py         — main loop, trade execution, client-side SL/TP safety net
-    agent.py        — deterministic rule engine (regime, entry, exit, confidence scoring)
-    snapshot.py     — market snapshot assembly with ATR-based SL/TP hints
-    indicators.py   — EMA, RSI, Stoch RSI, MACD, ATR, ATR percentile, ADX, VWAP, OI, L/S ratio, taker ratio
-    exchange.py     — Binance Futures wrappers (open/close, SL/TP)
-    notifier.py     — Telegram alerts (open, close)
-    shadow.py       — observe-only would-be-PnL tracker for RSI-gate-blocked trades
-    rebalance.py    — periodic top-100 re-screen + backtest, reports candidates via Telegram
-    config.py       — swing-specific strategy constants and env vars
-    backtest_replay/ — OHLCV replay backtest engine (v1 vs v2 comparison, charts)
-  db/
-    models.py       — SQLAlchemy models, state persistence, log_trade()
-  config.py         — shared env vars and DCA strategy constants
-alembic/            — database migrations (run automatically on startup)
-main.py             — DCA bot entrypoint
-swing_main.py       — swing agent entrypoint
-api_main.py         — API entrypoint
-tests/              — pytest suite (see docs/testing.md)
-pyproject.toml      — pytest config + markers
+  intraday/          — the paper engine
+    main.py          — entrypoint: state restore, resume flag, 15m-aligned loop
+    engine.py        — the cycle: data → z → paper book → risk → persist → Telegram
+    strategy.py      — frozen mr_vwap core (shared with research backtests)
+    paper.py         — PaperBook: virtual limits, fills, horizon exits, funding
+    risk.py          — kill-switches + consecutive-error tracker
+    data.py          — closed-bar kline/funding fetchers
+    universe.py      — weekly top-30 resolve
+    notifier.py      — Telegram messages
+    config.py        — frozen params + env flags
+  api/main.py        — FastAPI routes (legacy history)
+  db/models.py       — SQLAlchemy models + intraday persistence helpers
+  config.py          — shared env vars
+research/            — parquet warehouse + backtest harness (dev only, see CLAUDE.md)
+legacy/              — retired DCA bot + swing agent (code, tests, docs)
+alembic/             — migrations (001–006)
+intraday_main.py     — engine entrypoint
+api_main.py          — API entrypoint
+tests/               — pytest suite (see docs/testing.md)
 ```
 
 ---
 
-## Manually seeding a position
+## History
 
-If you bought a coin outside the bot, insert it directly into the DB:
-
-```sql
-INSERT INTO positions (coin, avg_buy, qty, last_buy, partial_taken)
-VALUES ('BTC', 82000.00, 0.0001, '2026-03-15T19:25:11+00:00', false)
-ON CONFLICT (coin) DO UPDATE
-  SET avg_buy = EXCLUDED.avg_buy, qty = EXCLUDED.qty, last_buy = EXCLUDED.last_buy;
-```
+Two earlier strategies (a DCA spot bot and a rule-based swing futures agent) ran live
+from 2026-03 to 2026-07. After an honest walk-forward evaluation showed no durable edge,
+both were retired on 2026-07-16 — code and docs preserved under [`legacy/`](legacy/),
+research trail under [`docs/superpowers/`](docs/superpowers/). Their trade history
+remains in the database and API.
 
 ---
 
 ## ⚠️ Risk Warning
 
-This bot trades real money. Past performance doesn't guarantee future results.
-Start with small amounts and monitor the first few days closely.
-Never invest more than you can afford to lose.
+The engine currently places **no real orders** — it is a paper-trading telemetry system.
+If a future phase enables live execution, the same rules apply as ever: past performance
+doesn't guarantee future results; never risk more than you can afford to lose.
