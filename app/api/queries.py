@@ -7,7 +7,7 @@ Engine access is via the models module attribute (see tests/api/conftest.py).
 from __future__ import annotations
 
 import statistics
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -189,3 +189,47 @@ def _age_days(refreshed_ms: int | None, now: datetime) -> float | None:
         return None
     then = datetime.fromtimestamp(refreshed_ms / 1000, tz=timezone.utc)
     return round((now - then).total_seconds() / 86400, 1)
+
+
+# 4-week telemetry window — docs/intraday_operations.md "Go-live gate (manual only)".
+GATE_START = date(2026, 7, 16)
+GATE_END = date(2026, 8, 13)
+
+
+def gate_progress(today: date | None = None) -> dict:
+    today = today or datetime.now(timezone.utc).date()
+    stats = trade_stats()
+    ks = engine_state()["killswitch"]
+    fills = fill_stats()
+
+    net_pnl = stats["net_pnl_usd"] if stats["trades"] else 0.0
+    resolved = fills["total_placed"] - fills["pending"]
+    tt_pct = fills["by_outcome"]["trade_through"]["pct"] if resolved else None
+    halted = bool(ks["halted"])
+    window_days = (GATE_END - GATE_START).days
+
+    return {
+        "window": {
+            "start": GATE_START.isoformat(),
+            "end": GATE_END.isoformat(),
+            "days_elapsed": min(max((today - GATE_START).days, 0), window_days),
+            "days_remaining": max((GATE_END - today).days, 0),
+        },
+        "criteria": {
+            "cumulative_pnl": {"value_usd": net_pnl, "pass": net_pnl >= 0},
+            "kill_switch": {
+                "halted_now": halted,
+                "day_pnl_pct": ks["day_pnl_pct"],
+                "daily_halt_at_pct": _halt_threshold_pct(ks["daily_loss_pct"]),
+                "drawdown_from_peak_pct": ks["drawdown_from_peak_pct"],
+                "drawdown_halt_at_pct": _halt_threshold_pct(ks["max_dd_pct"]),
+                "note": "current latch only; trip history lives in Telegram",
+            },
+            "trade_through_rate_pct": tt_pct,
+        },
+        "on_track": net_pnl >= 0 and not halted,
+    }
+
+
+def _halt_threshold_pct(fraction: float | None) -> float | None:
+    return None if fraction is None else -round(fraction * 100, 2)

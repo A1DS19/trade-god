@@ -34,3 +34,9 @@ def fills():
 def state():
     """Engine state: equity, open book, kill-switch latch, universe."""
     return queries.engine_state()
+
+
+@router.get("/gate")
+def gate():
+    """Progress against the 4-week go-live gate (ends 2026-08-13)."""
+    return queries.gate_progress()
