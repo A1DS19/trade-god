@@ -7,6 +7,7 @@ Engine access is via the models module attribute (see tests/api/conftest.py).
 from __future__ import annotations
 
 import statistics
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -122,3 +123,69 @@ def fill_stats() -> dict:
         "admitted": sum(1 for r in resolved if r.admitted),
         "by_outcome": by_outcome,
     }
+
+
+_STATE_KEYS = ("paper_book", "killswitch", "universe")
+
+
+def engine_state(now: datetime | None = None) -> dict:
+    now = now or datetime.now(timezone.utc)
+    raw: dict[str, dict | None] = {}
+    updated: dict[str, str] = {}
+    warnings: list[str] = []
+    with Session(models.engine) as session:
+        for key in _STATE_KEYS:
+            row = session.get(models.IntradayState, key)
+            if row is None:
+                raw[key] = None
+                continue
+            updated[key] = row.updated
+            try:
+                raw[key] = dict(row.value)
+            except (TypeError, ValueError):
+                raw[key] = None
+                warnings.append(f"state row '{key}' unreadable")
+
+    book = raw["paper_book"] or {}
+    ks = raw["killswitch"] or {}
+    uni = raw["universe"] or {}
+    equity = book.get("equity")
+
+    out = {
+        "equity": equity,
+        "slot_usd": book.get("slot_usd"),
+        "positions": book.get("positions", {}),
+        "pending": book.get("pending", {}),
+        "killswitch": {
+            "halted": ks.get("halted"),
+            "day": ks.get("day"),
+            "day_anchor": ks.get("day_anchor"),
+            "peak": ks.get("peak"),
+            "daily_loss_pct": ks.get("daily_loss_pct"),
+            "max_dd_pct": ks.get("max_dd_pct"),
+            "day_pnl_pct": _pct_change(equity, ks.get("day_anchor")),
+            "drawdown_from_peak_pct": _pct_change(equity, ks.get("peak")),
+        },
+        "universe": {
+            "symbols": uni.get("symbols", []),
+            "refreshed_ms": uni.get("refreshed_ms"),
+            "age_days": _age_days(uni.get("refreshed_ms"), now),
+        },
+        "updated": updated,
+    }
+    if warnings:
+        out["warning"] = "; ".join(warnings)
+    return out
+
+
+def _pct_change(value: float | None, base: float | None) -> float | None:
+    if value is None or not base:
+        return None
+    return round((value / base - 1) * 100, 4)
+
+
+def _age_days(refreshed_ms: int | None, now: datetime) -> float | None:
+    if refreshed_ms is None:
+        return None
+    then = datetime.fromtimestamp(refreshed_ms / 1000, tz=timezone.utc)
+    return round((now - then).total_seconds() / 86400, 1)

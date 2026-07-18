@@ -28,3 +28,9 @@ def stats(since: str | None = Query(default=None)):
 def fills():
     """Cumulative limit-outcome telemetry — the measurement that decides go-live."""
     return queries.fill_stats()
+
+
+@router.get("/state")
+def state():
+    """Engine state: equity, open book, kill-switch latch, universe."""
+    return queries.engine_state()
