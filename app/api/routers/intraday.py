@@ -22,3 +22,9 @@ def trades(
 def stats(since: str | None = Query(default=None)):
     """Aggregate performance over closed trades (field names mirror /legacy/swing/stats)."""
     return queries.trade_stats(since=since)
+
+
+@router.get("/fills")
+def fills():
+    """Cumulative limit-outcome telemetry — the measurement that decides go-live."""
+    return queries.fill_stats()

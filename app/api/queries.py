@@ -99,3 +99,26 @@ def trade_stats(since: str | None = None) -> dict:
                                     default=None)},
         "by_symbol": by_symbol,
     }
+
+
+OUTCOMES = ("trade_through", "touch_only", "miss", "no_data")
+
+
+def fill_stats() -> dict:
+    with Session(models.engine) as session:
+        rows = session.query(models.IntradayLimit).all()
+
+    resolved = [r for r in rows if r.outcome is not None]
+    by_outcome = {}
+    for name in OUTCOMES:
+        count = sum(1 for r in resolved if r.outcome == name)
+        by_outcome[name] = {
+            "count": count,
+            "pct": round(count / len(resolved) * 100, 2) if resolved else 0.0,
+        }
+    return {
+        "total_placed": len(rows),
+        "pending": len(rows) - len(resolved),
+        "admitted": sum(1 for r in resolved if r.admitted),
+        "by_outcome": by_outcome,
+    }
