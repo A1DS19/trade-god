@@ -16,3 +16,9 @@ def trades(
 ):
     """Intraday paper trades, newest first."""
     return queries.list_trades(limit=limit, symbol=symbol, status=status, since=since)
+
+
+@router.get("/stats")
+def stats(since: str | None = Query(default=None)):
+    """Aggregate performance over closed trades (field names mirror /legacy/swing/stats)."""
+    return queries.trade_stats(since=since)
