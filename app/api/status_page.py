@@ -71,7 +71,8 @@ def build_page() -> str:
         f'<li>{_tick(not c["kill_switch"]["halted_now"])} kill-switch clear '
         f'(today {_fmt(c["kill_switch"]["day_pnl_pct"], suffix="%")} vs {_fmt(c["kill_switch"]["daily_halt_at_pct"], suffix="%")}, '
         f'peak {_fmt(c["kill_switch"]["drawdown_from_peak_pct"], suffix="%")} vs {_fmt(c["kill_switch"]["drawdown_halt_at_pct"], suffix="%")}; '
-        f'{html.escape(c["kill_switch"]["note"])})</li>'
+        f'{html.escape(c["kill_switch"]["note"])}) '
+        "<small>realized basis — the halt evaluates marked equity</small></li>"
         f'<li>trade-through rate: {_fmt(c["trade_through_rate_pct"], suffix="%")}</li>'
         "</ul>"
     )

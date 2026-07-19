@@ -144,6 +144,12 @@ closed at the firewall; tunnel in with `ssh -L 8000:localhost:8000 <lightsail-ho
 - `GET /intraday/trades|stats|fills|state|gate` — JSON telemetry
 - `GET /legacy/dca/*`, `/legacy/swing/*` — retired-bot history (old root paths removed)
 
+Proximity figures (`day_pnl_pct`, `drawdown_from_peak_pct`) are computed from realized
+equity; the kill-switch itself evaluates the per-cycle mark (realized + unrealized), which
+is not persisted — treat the displayed distance-to-halt as optimistic when positions are
+open. `fills.pending` is structurally 0 in production (in-flight limits live in engine
+state, not telemetry rows) — the real pending book is `/intraday/state.pending`.
+
 The gate endpoint reports the CURRENT kill-switch latch only — past trips leave no DB
 trace, so "zero trips" is still verified from Telegram ⛔ history.
 

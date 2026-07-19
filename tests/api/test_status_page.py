@@ -51,6 +51,7 @@ def test_page_renders_seeded_data(client, seed):
     assert "WLDUSDT" in body           # open position + trade row
     assert "<svg" in body              # sparkline (3-point curve)
     assert "HALTED" not in body
+    assert "realized basis" in body
 
 
 def test_halted_badge(client, seed):
