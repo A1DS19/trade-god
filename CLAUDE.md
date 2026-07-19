@@ -130,8 +130,9 @@ Tracking tables for DCA daily cap and universe cache.
 
 ---
 
-## FastAPI Endpoints (port 8000)
-`GET /health` `/portfolio` `/pnl` `/trades` `/stats` `/docs`
+## FastAPI Endpoints (port 8000, tunnel-only)
+`GET /` (HTML status page) `/health` `/intraday/{trades,stats,fills,state,gate}`
+`/legacy/dca/{portfolio,pnl,trades,stats}` `/legacy/swing/{trades,stats}` `/docs`
 
 ## Telegram
 - DCA bot: `/status` `/pnl` `/trades` `/balance` `/help` commands + buy/sell/daily summary alerts

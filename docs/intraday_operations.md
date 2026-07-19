@@ -136,8 +136,16 @@ FROM intraday_trades GROUP BY status;
 SELECT key, updated, value FROM intraday_state;
 ```
 
-The FastAPI service (port 8000) is unchanged and serves only legacy-table history; there
-are deliberately no intraday REST endpoints in Phase 3.
+**API** — since 2026-07-18 the FastAPI service also serves the intraday telemetry
+(design: `docs/superpowers/specs/2026-07-18-intraday-api-design.md`). Port 8000 stays
+closed at the firewall; tunnel in with `ssh -L 8000:localhost:8000 <lightsail-host>`, then:
+
+- `http://localhost:8000/` — HTML status page (equity, gate progress, sparkline, open book)
+- `GET /intraday/trades|stats|fills|state|gate` — JSON telemetry
+- `GET /legacy/dca/*`, `/legacy/swing/*` — retired-bot history (old root paths removed)
+
+The gate endpoint reports the CURRENT kill-switch latch only — past trips leave no DB
+trace, so "zero trips" is still verified from Telegram ⛔ history.
 
 ## Go-live gate (manual only)
 
