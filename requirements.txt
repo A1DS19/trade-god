@@ -10,3 +10,4 @@ matplotlib==3.10.1
 pandas==3.0.3
 pytest==8.3.5
 hypothesis==6.155.2
+httpx==0.28.1
