@@ -12,6 +12,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.db import models
+from app.intraday.config import PAPER_EQUITY
 
 
 def list_trades(limit: int = 50, symbol: str | None = None,
@@ -233,3 +234,18 @@ def gate_progress(today: date | None = None) -> dict:
 
 def _halt_threshold_pct(fraction: float | None) -> float | None:
     return None if fraction is None else -round(fraction * 100, 2)
+
+
+def realized_equity_curve() -> list[float]:
+    """Equity after each closed trade (realized only — blind to open-position drift)."""
+    with Session(models.engine) as session:
+        closed = (
+            session.query(models.IntradayTrade)
+            .filter(models.IntradayTrade.status == "closed")
+            .order_by(models.IntradayTrade.exit_time.asc())
+            .all()
+        )
+    points = [PAPER_EQUITY]
+    for t in closed:
+        points.append(round(points[-1] + (t.pnl_usd or 0.0), 4))
+    return points
