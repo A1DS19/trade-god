@@ -155,13 +155,34 @@ trace, so "zero trips" is still verified from Telegram ⛔ history.
 
 ## Go-live gate (manual only)
 
-The 4-week telemetry window ends **2026-08-13**. Go-live requires ALL of:
+**Month-1 gate — resolved 2026-08-15: PASSED 3/3, go-live deferred.** The 4-week window
+(2026-07-16 → 2026-08-13) closed at +$3.37 window PnL (191 trades; cumulative realized
+PnL never ended a day negative), zero kill-switch trips and zero crashes across 2,843
+cycles, and a 97.8% trade-through rate (219/224 limits) vs the backtest's assumed 100% —
+so the 2b maker-fill concern did not materialize. But the per-trade edge is statistically
+indistinguishable from zero (t = 0.44 since inception, ≈0.89 window-bounded) and the PnL
+is concentrated: the top-5 trades made +$5.02 while the other 192 netted −$3.31
+(ex-ALLOUSDT the month is negative). Operator decision: keep the paper engine running and
+re-test against the extended gate below.
 
-1. ≥4 weeks of positive cumulative paper PnL,
-2. zero kill-switch trips,
-3. fill telemetry consistent with the 2b maker-fill assumptions
-   (trade-through rate not materially worse than backtest).
+### Extended gate — pre-registered 2026-08-15, window ends 2026-10-15
 
-Then — and only by a human — `EXECUTION_MODE=live`, which today raises
-`NotImplementedError` on purpose: live execution is a separate, future implementation
-phase, not a config flip.
+Committed before the data arrives, same discipline as the 2b OOS seal. Go-live requires
+ALL of the following, measured on all closed trades from inception through 2026-10-15 UTC
+(~1,000 trades expected at the current ~6.6/day):
+
+1. **Statistical significance** — t ≥ 2 on per-trade net PnL (or, equivalently,
+   bootstrap P(mean > 0) ≥ 95%) over the full sample;
+2. **Not carried by moonshots** — cumulative net PnL excluding the 5 best trades ≥ $0;
+3. **Zero kill-switch trips** over the extended window (verified from Telegram ⛔
+   history — the gate endpoint only shows the current latch);
+4. **Fill telemetry still consistent** — cumulative trade-through rate ≥ 90%.
+
+**A miss on any criterion retires the strategy** (as with 2b) — no second extension, no
+re-tuning of the frozen params. On a pass — and only by a human — live execution becomes
+its own implementation phase: `EXECUTION_MODE=live` still raises `NotImplementedError`
+on purpose; it is not a config flip.
+
+End-of-window analysis chores (free data, no param changes): the 22 trade-through fills
+rejected because all K=10 slots were full (what would a larger K have bought?), and any
+drift in the weekly trade-through rate.
