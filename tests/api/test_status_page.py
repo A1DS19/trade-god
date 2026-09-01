@@ -52,6 +52,8 @@ def test_page_renders_seeded_data(client, seed):
     assert "<svg" in body              # sparkline (3-point curve)
     assert "HALTED" not in body
     assert "realized basis" in body
+    assert "of 91" in body and "ends 2026-10-15" in body   # extended gate window
+    assert "ex-top-5" in body
 
 
 def test_halted_badge(client, seed):

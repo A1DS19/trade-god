@@ -150,8 +150,13 @@ is not persisted — treat the displayed distance-to-halt as optimistic when pos
 open. `fills.pending` is structurally 0 in production (in-flight limits live in engine
 state, not telemetry rows) — the real pending book is `/intraday/state.pending`.
 
-The gate endpoint reports the CURRENT kill-switch latch only — past trips leave no DB
-trace, so "zero trips" is still verified from Telegram ⛔ history.
+`/intraday/gate` (and the page's gate block) tracks the **extended gate** below: criteria
+1, 2 and 4 are computed from the DB, bounded to trades closed / limits resolved through
+2026-10-15 UTC, so the figures stop drifting once the window closes. Significance is the
+plain t-statistic (the bootstrap alternative is not implemented — the endpoint stays
+deterministic). The kill-switch criterion reports the CURRENT latch only — past trips
+leave no DB trace, so "zero trips" is still verified from Telegram ⛔ history.
+`all_criteria_pass` is the AND of the four as of today, not a trajectory.
 
 ## Go-live gate (manual only)
 
@@ -177,6 +182,8 @@ ALL of the following, measured on all closed trades from inception through 2026-
 3. **Zero kill-switch trips** over the extended window (verified from Telegram ⛔
    history — the gate endpoint only shows the current latch);
 4. **Fill telemetry still consistent** — cumulative trade-through rate ≥ 90%.
+
+Tracked live by `/intraday/gate` and the status page (see Monitoring → API above).
 
 **A miss on any criterion retires the strategy** (as with 2b) — no second extension, no
 re-tuning of the frozen params. On a pass — and only by a human — live execution becomes

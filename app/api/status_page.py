@@ -64,16 +64,21 @@ def build_page() -> str:
 
     w = gate["window"]
     c = gate["criteria"]
+    sig, ex5, ksc, tt = (c["significance"], c["ex_top5_pnl"], c["kill_switch"],
+                         c["trade_through_rate"])
     gate_html = (
-        f'<h2>Go-live gate <small>day {w["days_elapsed"]} of 28 · ends {w["end"]}</small></h2>'
+        f'<h2>Go-live gate (extended) <small>day {w["days_elapsed"]} of {w["days_total"]} · ends {w["end"]}</small></h2>'
         "<ul>"
-        f'<li>{_tick(c["cumulative_pnl"]["pass"])} cumulative PnL ${_fmt(c["cumulative_pnl"]["value_usd"])}</li>'
-        f'<li>{_tick(not c["kill_switch"]["halted_now"])} kill-switch clear '
-        f'(today {_fmt(c["kill_switch"]["day_pnl_pct"], suffix="%")} vs {_fmt(c["kill_switch"]["daily_halt_at_pct"], suffix="%")}, '
-        f'peak {_fmt(c["kill_switch"]["drawdown_from_peak_pct"], suffix="%")} vs {_fmt(c["kill_switch"]["drawdown_halt_at_pct"], suffix="%")}; '
-        f'{html.escape(c["kill_switch"]["note"])}) '
+        f'<li>{_tick(sig["pass"])} t-stat {_fmt(sig["t_stat"])} ≥ {queries.T_STAT_MIN:g} '
+        f'<small>(n={sig["trades"]}, mean ${_fmt(sig["mean_pnl_usd"], 3)}, sd ${_fmt(sig["sd_pnl_usd"], 3)})</small></li>'
+        f'<li>{_tick(ex5["pass"])} ex-top-5 PnL ${_fmt(ex5["value_usd"])} ≥ $0 '
+        f'<small>(top-5 ${_fmt(ex5["top5_usd"])})</small></li>'
+        f'<li>{_tick(ksc["pass"])} kill-switch clear '
+        f'(today {_fmt(ksc["day_pnl_pct"], suffix="%")} vs {_fmt(ksc["daily_halt_at_pct"], suffix="%")}, '
+        f'peak {_fmt(ksc["drawdown_from_peak_pct"], suffix="%")} vs {_fmt(ksc["drawdown_halt_at_pct"], suffix="%")}; '
+        f'{html.escape(ksc["note"])}) '
         "<small>realized basis — the halt evaluates marked equity</small></li>"
-        f'<li>trade-through rate: {_fmt(c["trade_through_rate_pct"], suffix="%")}</li>'
+        f'<li>{_tick(tt["pass"])} trade-through {_fmt(tt["value_pct"], suffix="%")} ≥ {queries.TRADE_THROUGH_MIN_PCT:g}%</li>'
         "</ul>"
     )
 

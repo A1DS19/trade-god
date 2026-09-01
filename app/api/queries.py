@@ -7,7 +7,7 @@ Engine access is via the models module attribute (see tests/api/conftest.py).
 from __future__ import annotations
 
 import statistics
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -192,44 +192,90 @@ def _age_days(refreshed_ms: int | None, now: datetime) -> float | None:
     return round((now - then).total_seconds() / 86400, 1)
 
 
-# 4-week telemetry window — docs/intraday_operations.md "Go-live gate (manual only)".
+# Extended go-live gate — docs/intraday_operations.md "Extended gate — pre-registered
+# 2026-08-15". Measured on everything closed/resolved from inception through GATE_END (UTC).
 GATE_START = date(2026, 7, 16)
-GATE_END = date(2026, 8, 13)
+GATE_END = date(2026, 10, 15)
+T_STAT_MIN = 2.0
+TRADE_THROUGH_MIN_PCT = 90.0
+TOP_N_EXCLUDED = 5
 
 
 def gate_progress(today: date | None = None) -> dict:
     today = today or datetime.now(timezone.utc).date()
-    stats = trade_stats()
+    # exit_time/resolved_at are UTC isoformat() strings, so string order is time order.
+    cutoff = (GATE_END + timedelta(days=1)).isoformat()
+    with Session(models.engine) as session:
+        pnls = [
+            t.pnl_usd or 0.0
+            for t in session.query(models.IntradayTrade).filter(
+                models.IntradayTrade.status == "closed",
+                models.IntradayTrade.exit_time < cutoff)
+        ]
+        outcomes = [
+            r.outcome
+            for r in session.query(models.IntradayLimit).filter(
+                models.IntradayLimit.outcome.isnot(None),
+                models.IntradayLimit.resolved_at < cutoff)
+        ]
     ks = engine_state()["killswitch"]
-    fills = fill_stats()
-
-    net_pnl = stats["net_pnl_usd"] if stats["trades"] else 0.0
-    resolved = fills["total_placed"] - fills["pending"]
-    tt_pct = fills["by_outcome"]["trade_through"]["pct"] if resolved else None
     halted = bool(ks["halted"])
     window_days = (GATE_END - GATE_START).days
 
+    criteria = {
+        "significance": _significance(pnls),
+        "ex_top5_pnl": _ex_top_n_pnl(pnls),
+        "kill_switch": {
+            "halted_now": halted,
+            "day_pnl_pct": ks["day_pnl_pct"],
+            "daily_halt_at_pct": _halt_threshold_pct(ks["daily_loss_pct"]),
+            "drawdown_from_peak_pct": ks["drawdown_from_peak_pct"],
+            "drawdown_halt_at_pct": _halt_threshold_pct(ks["max_dd_pct"]),
+            "note": "current latch only; trip history lives in Telegram",
+            "pass": not halted,
+        },
+        "trade_through_rate": _trade_through_rate(outcomes),
+    }
     return {
         "window": {
             "start": GATE_START.isoformat(),
             "end": GATE_END.isoformat(),
+            "days_total": window_days,
             "days_elapsed": min(max((today - GATE_START).days, 0), window_days),
             "days_remaining": max((GATE_END - today).days, 0),
         },
-        "criteria": {
-            "cumulative_pnl": {"value_usd": net_pnl, "pass": net_pnl >= 0},
-            "kill_switch": {
-                "halted_now": halted,
-                "day_pnl_pct": ks["day_pnl_pct"],
-                "daily_halt_at_pct": _halt_threshold_pct(ks["daily_loss_pct"]),
-                "drawdown_from_peak_pct": ks["drawdown_from_peak_pct"],
-                "drawdown_halt_at_pct": _halt_threshold_pct(ks["max_dd_pct"]),
-                "note": "current latch only; trip history lives in Telegram",
-            },
-            "trade_through_rate_pct": tt_pct,
-        },
-        "on_track": net_pnl >= 0 and not halted,
+        "criteria": criteria,
+        "all_criteria_pass": all(c["pass"] for c in criteria.values()),
     }
+
+
+def _significance(pnls: list[float]) -> dict:
+    """One-sample t on per-trade net PnL; None until there are 2+ trades with variance."""
+    n = len(pnls)
+    mean = statistics.mean(pnls) if n else None
+    sd = statistics.stdev(pnls) if n >= 2 else None
+    t = round(mean / (sd / n ** 0.5), 3) if sd else None
+    return {
+        "trades": n,
+        "mean_pnl_usd": None if mean is None else round(mean, 4),
+        "sd_pnl_usd": None if sd is None else round(sd, 4),
+        "t_stat": t,
+        "pass": t is not None and t >= T_STAT_MIN,
+    }
+
+
+def _ex_top_n_pnl(pnls: list[float]) -> dict:
+    """Net PnL with the TOP_N_EXCLUDED best trades removed — the moonshot check."""
+    top = sorted(pnls, reverse=True)[:TOP_N_EXCLUDED]
+    value = round(sum(pnls) - sum(top), 4)
+    return {"value_usd": value, "top5_usd": round(sum(top), 4), "pass": value >= 0}
+
+
+def _trade_through_rate(outcomes: list[str]) -> dict:
+    if not outcomes:
+        return {"value_pct": None, "pass": False}
+    pct = round(outcomes.count("trade_through") / len(outcomes) * 100, 2)
+    return {"value_pct": pct, "pass": pct >= TRADE_THROUGH_MIN_PCT}
 
 
 def _halt_threshold_pct(fraction: float | None) -> float | None:

@@ -38,5 +38,5 @@ def state():
 
 @router.get("/gate")
 def gate():
-    """Progress against the 4-week go-live gate (ends 2026-08-13)."""
+    """Progress against the extended go-live gate (ends 2026-10-15)."""
     return queries.gate_progress()
