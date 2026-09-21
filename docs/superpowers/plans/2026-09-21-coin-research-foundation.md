@@ -26,7 +26,9 @@
 | Task 2 — rewrite the repo's self-description | **DONE** (2026-09-21) — delivered from the stack + EvidenceFinder decisions; the code block under the task is a superseded record of what was planned |
 | Task 3 — Electron + React scaffold | **DISCARDED** — see the salvage note on the task |
 | Task 4 — SQLite schema | **DISCARDED** — the seven-table shape survives as Drizzle |
-| Tasks 5 & 6 — frozen scoring core | **NEXT**, and they run first, before any framework scaffolding |
+| Tasks 5 & 6 — frozen scoring core | **DONE** (2026-09-21) — 24 vitest tests green, typecheck and Biome clean; both worked examples pinned (team → 7.25, ARB narrative → 26.5) |
+
+**Plan 1 is complete.** Next is build-order step 3, the schema, which needs its own plan.
 
 ## Global Constraints
 
@@ -959,7 +961,7 @@ constraints, not conventions."
 
 ---
 
-### Task 5: Scoring core — ranges, product gate, narrative
+### Task 5: Scoring core — ranges, product gate, narrative — DONE 2026-09-21
 
 > **These two tasks are next, and they run BEFORE any framework scaffolding.** Not inside `apps/api` as a Hono app, not after a database exists — in a bare `typescript` + `vitest` package at `apps/api/`, with no Hono, no Drizzle, no Postgres and no React anywhere near it. The frozen formulas are the only code in this project that cannot be wrong: every later number, every ledger row and the whole question of whether these scores predict anything reads through them. Nothing should block them, and nothing about a route handler or a migration can teach us anything about whether `narrativeTotal()` is right. `apps/api/src/scoring/` imports nothing from the rest of the app and never will; the scaffolding grows around it afterwards.
 >
@@ -1178,7 +1180,9 @@ framework's own ARB example scores Communication 4.5/5."
 
 ---
 
-### Task 6: Scoring core — team weighting, accrual, discovery premium
+### Task 6: Scoring core — team weighting, accrual, discovery premium — DONE 2026-09-21
+
+> **Done 2026-09-21** with one addition to the planned implementation, recorded because it touches a frozen formula's inputs: `annualHolderFlow` now asserts `captureShare` and `accrualPct` are in `[0, 1]` and that the two dollar figures are non-negative. The formula itself is unchanged. The framework calls capture share a "fraction" and token accrual a "percentage" in consecutive sentences (`framework/00-how-we-think.md:20-22`) while the arithmetic only yields dollars if both are fractions, so a `50` typed where `0.5` belongs was a silent 100x error inside an immutable report.
 
 The two formulas with real subtlety: the founder 5× weighting, and the multiplication chain whose zeros must be attributable.
 

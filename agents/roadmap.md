@@ -30,12 +30,12 @@ one's floor.
       `app.swing.backtest_replay`) and nothing tested it, so the suite stayed green over a dead
       module. Suite after the move: **111 passed**, and `tests/` now holds only `tests/research/`
       and `conftest.py`.
-- [ ] **2. Frozen scoring core.** `apps/api/src/scoring/{ranges,product,narrative,team,accrual}.ts`
+- [x] **2. Frozen scoring core.** — DONE 2026-09-21. `apps/api/src/scoring/{ranges,product,narrative,team,accrual}.ts`
       — pure functions, no imports from the rest of the app, reject out-of-range instead of
       clamping, fractional narrative sub-scores allowed. Built in a bare `typescript` + `vitest`
       package before any Hono, Drizzle or Postgres exists (Plan 1, Tasks 5 and 6). Tested first and
       hardest; this is a money path. The framework's two worked examples are the acceptance test:
-      team → 7.25, ARB narrative → 26.5.
+      team → 7.25, ARB narrative → 26.5. **Shipped:** 24 vitest tests green, `tsc --noEmit` and Biome clean; commits `fe01add` (scaffold), `cb4b6cd` (product + narrative), `b85be59` (team + accrual).
       - [x] **Prerequisite, done 2026-09-21:** the seven framework lessons are vendored into
             `framework/` with a provenance README. A frozen formula with no checked-in provenance
             is a formula that stops being auditable the first time someone cleans out Downloads.
