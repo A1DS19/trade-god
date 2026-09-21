@@ -1,0 +1,14 @@
+packages:
+  - "apps/*"
+
+# Pinned deliberately, against this repo's standing "always latest" rule.
+# TypeScript 7.x is the fresh Go-native compiler major and vitest 5.x is days old,
+# while hc<AppType> (Hono's RPC client) and Drizzle's $inferSelect are two of the
+# heaviest type-level workloads in the ecosystem. The sibling repo's decisions log
+# records that unpinned TypeScript across workspaces is what produces Hono's
+# "Type instantiation is excessively deep" across an RPC boundary.
+# Revisit the week after report #1 commits.
+catalog:
+  typescript: 5.9.3
+  vitest: 4.1.11
+  "@types/node": 26.6.2

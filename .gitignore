@@ -229,3 +229,6 @@ node_modules/
 .output/
 *.tsbuildinfo
 .tanstack/
+
+# pnpm store / workspace installs
+.pnpm-store/
