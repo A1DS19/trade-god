@@ -38,6 +38,31 @@ _2026-09-21_
   an unrelated `medi-pal-db-1` (postgres:17.2), hence **5433**.
 - Seeded the `agents/` paper trail: `CONTEXT.md`, `decisions.md`, `roadmap.md`, and this file.
 
+- **Built the frozen scoring core** (Plan 1 Tasks 5–6) in a bare `typescript` + `vitest` package at
+  `apps/api/`, before any Hono/Drizzle/Postgres exists. `scoring/{ranges,product,narrative,team,accrual}.ts`.
+  **31 vitest tests**, `tsc --noEmit` and Biome clean. Commits `fe01add` `cb4b6cd` `b85be59`
+  `6e5abef` `69311f9`. Plan 1 is complete.
+- **Vendored the framework** into `framework/` with a provenance README — the seven lessons existed
+  only in `~/Downloads` until now, which made every frozen formula one `rm -rf` from being
+  unauditable.
+- **Audited the scoring core against the vendored lessons**, and the audit paid for itself:
+  - The worked example this repo cited as the framework's own — *ARB narrative, Communication 4.5/5,
+    total 26.5* — **is in no lesson and nowhere in the original download.** It was invented by the
+    implementation plan and then quoted by the spec, CLAUDE.md, a test name and `decisions.md` as
+    source. It was the only evidence anywhere for fractional sub-scores. Ruled: **sub-scores are
+    integers.** (With decimals, 404 one-decimal triples summing to exactly 16.0 added in binary to
+    15.999999999999998 and failed a gate the lesson says to pass.)
+  - `PURE_PREMIUM` was firing on any net flow ≤ 0; the lesson reserves it for *zero* flow. Split out
+    `ISSUANCE_NEGATIVE`, and `discoveryPremium` now takes the whole `AccrualResult` so it cannot be
+    called without the gross that distinguishes them.
+  - Two runtime hazards fixed: a JSON `"false"` elected a sole founder and returned 7.14; a null
+    market cap returned `multiple: 0`, the most bullish verdict the framework can produce.
+  - Ruled out of scope: the reserve/collateral branch. The lesson says the branches ADD but gives no
+    arithmetic for valuing a float, so the accrual figure is captioned cash-flow-only for A.1.
+  - Biome, scoped as the plan implied, reformatted 7 JSON files under `research/` and `legacy/` —
+    including `oos_verdicts.json`, the record that ended the trading era. Reverted; Biome is now
+    scoped to `apps/**` plus the root configs.
+
 ## State
 - Branch `main`; last commit is `f273421` (the Electron-era spec + Plan 1). **Everything this
   session produced — the archive moves and the whole doc pass — is in the working tree / index and
