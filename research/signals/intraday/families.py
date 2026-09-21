@@ -42,7 +42,7 @@ def breakout_buckets(data: dict) -> pd.DataFrame:
 
 
 def mr_vwap_z(data: dict) -> pd.DataFrame:
-    from app.intraday.strategy import zscore
+    from research.signals.intraday.strategy_core import zscore
     close = _close(data)
     v = sdata.to_panel(data["klines_15m"], "volume")
     qv = sdata.to_panel(data["klines_15m"], "quote_volume")

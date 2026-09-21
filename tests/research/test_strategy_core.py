@@ -1,12 +1,12 @@
-"""The re-homed strategy core: z math identical to research, constants pinned,
-research modules re-export from app (import direction: research -> app)."""
+"""The strategy core, now owned by research/: z math identical to the family
+implementation, constants pinned, and the re-exports still the same objects."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from app.intraday import strategy
+from research.signals.intraday import strategy_core as strategy
 
 BAR_MS = 900_000
 

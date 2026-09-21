@@ -1,193 +1,137 @@
 # trade-god
 
-![CI](https://github.com/A1DS19/trade-god/actions/workflows/ci.yml/badge.svg)
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![Node](https://img.shields.io/badge/Node-26-339933?logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)
+![Hono](https://img.shields.io/badge/Hono-4-E36002?logo=hono&logoColor=white)
+![TanStack Start](https://img.shields.io/badge/TanStack%20Start-1.168-EF4444)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
-![Binance](https://img.shields.io/badge/Binance-USDT--M%20market%20data-F0B90B?logo=binance&logoColor=black)
-![Deploy](https://img.shields.io/badge/Deployed-AWS%20Lightsail-FF9900?logo=amazonaws&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)
 
-A research-first intraday trading system on Binance USDT-M futures — currently running
-**paper-only**, by design.
+TypeScript **5.9.3** and Vitest **4.1.11** are deliberate catalog pins, not drift — latest are
+TypeScript 7.0.2 (a brand-new Go-native major) and Vitest 5.0.1 (days old); the Hono RPC and
+Drizzle `$inferSelect` type workloads get a known-good compiler until the first report commits.
+Everything else tracks latest.
 
-The live component is a mean-reversion paper engine (`app/intraday/`) whose strategy
-survived a pre-registered research pipeline but **failed its out-of-sample cost gates** —
-so instead of trading it, the engine shadow-trades it with full fill telemetry to answer
-the one question no backtest can: *do maker limits actually fill the way the backtest
-assumed?* Live execution is gated behind four weeks of positive paper PnL and a manual
-operator decision.
+> The repo name is historical. What lives here now is **CoinPicks** — a personal crypto
+> research platform. The trading system it used to be is archived under [`legacy/`](legacy/).
 
-## The intraday engine
+## What this is
 
-- **Strategy:** `mr_vwap` — long-only mean reversion on deep oversold vs 24h VWAP
-  (z < −3.0 on 15m bars). Parameters are frozen from pre-registered research
-  (H=32 bars, K=10 slots) — no live tuning.
-- **Execution:** virtual maker limits on $100 paper equity. A limit only "fills" on
-  strict trade-through (bar low below the limit) — every placement is logged as
-  `trade_through` / `touch_only` / `miss` fill telemetry.
-- **Keyless:** unsigned market-data endpoints only. No Binance API keys on the box.
-- **Cycle:** every 15 minutes, aligned to candle close. Universe: weekly top-30 USDT
-  perps by 30-day median quote volume.
-- **Risk:** kill-switches halt trading at 5% daily paper loss or 20% drawdown; halts
-  persist across restarts and require an explicit operator resume.
-- **Telegram:** per-fill and per-exit alerts, daily equity summary, weekly fill-telemetry
-  report.
+A single-user research tool for analysing crypto tokens against the **CoinPicks** fundamental
+framework, and then finding out whether that framework actually works.
 
-Full docs: [operations guide](docs/intraday_operations.md) ·
-[design spec](docs/superpowers/specs/2026-07-15-intraday-engine-design.md)
+The loop is:
 
-## Research warehouse (dev machine only)
+1. Research a token and **type every score yourself**. The rubric formulas are frozen and
+   implemented exactly as published — nothing is tuned, nothing is clamped.
+2. Attach a citation to each claim. A citation counts only once its quote has been
+   **mechanically found at its URL** — not "a link was provided".
+3. **Commit** the report. A committed report is immutable: enforced by a database trigger, not by
+   a convention or a UI that hides the edit button.
+4. Committed reports accumulate into a **ledger**, later joined against 30/90/180/365-day forward
+   returns computed from a local parquet warehouse of Binance market data.
 
-`research/` maintains a point-in-time parquet warehouse (klines, funding, basis, OI,
-long/short, universe snapshots for the top-100 USDT perps) used for signal research and
-backtests. It never ships to prod. The strategy code is shared: research imports
-`app/intraday/strategy.py`, and a replay-parity test pins the live engine to the batch
-backtester bar-for-bar.
+The ledger is the point. Everything else is scaffolding to make it honest. It may well report
+that none of these scores predict anything — that is a result worth having, and the reason every
+report is point-in-time and unrewritable.
 
-## Stack
+An LLM is used in exactly one place: as an **EvidenceFinder** that proposes candidate
+`{url, quote}` pairs, every one of which is run through the deterministic verifier before it is
+even shown. It never proposes a number.
 
-- **Python 3.12** — engine loop + API
-- **FastAPI + Uvicorn** — REST API (port 8000, legacy trade history)
-- **PostgreSQL 16** — paper trades, fill telemetry, engine state (+ legacy history)
-- **Alembic** — migrations (run automatically via the `migrate` service)
-- **Docker Compose** — four services: `db`, `migrate`, `intraday`, `api`
-- **Telegram Bot API** — alerts and summaries
+## History — why this repo is named after a trading bot
 
-No API keys, no external AI — fully self-contained.
+From 2026-03 to 2026-09 this was an automated trading system on Binance, in four generations: a
+DCA spot bot, a rule-based swing futures agent (v1), a retuned swing v2, and finally a
+mean-reversion intraday engine — each replacing the last after the previous one failed honest
+evaluation. The final one failed too: its pre-registered out-of-sample run
+(`research/signals/intraday/output/2b/oos_results.csv`) measured
+**−15.19% return, profit factor 0.986, Sharpe −0.29 over 2,791 trades** — −25.2% under stress —
+against a training-set profit factor of 1.021. A 66-day paper run *did* look positive, but it was
+~1.8 months drawn from a ~6%-monthly-volatility distribution, checked at three sequential gates,
+with essentially the whole gain sitting in ~10 of 312 trades. Separately, AWS closed the account
+holding the server, which destroyed the paper telemetry. The closure is the occasion for the
+pivot, not the cause of it: four systems in a row had measured negative.
 
----
+What survived is the part that was always the real asset — the point-in-time market-data
+warehouse and the discipline of pre-registering a test before running it. Both carry directly
+into the ledger.
 
-## Step 1 — Telegram Bot
+## What's in `legacy/`
 
-1. Open Telegram → **@BotFather** → `/newbot` → copy the token
-2. Start a chat with your new bot
-3. Get your Chat ID:
-   ```
-   https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates
-   ```
-   Send a message to the bot first, then copy the `"id"` from `"chat"` in the response
-4. Paste both into `.env`
+Every retired system, moved unchanged, kept for provenance:
 
-## Step 2 — Environment variables
+| Path | What |
+|---|---|
+| `legacy/app/intraday/` | the mean-reversion paper engine (retired 2026-09-21) |
+| `legacy/app/swing/`, `legacy/app/bot/` | swing futures agent + DCA spot bot (retired 2026-07-16) |
+| `legacy/app/{api,db}/`, `legacy/alembic/` | FastAPI monitoring, SQLAlchemy models, six migrations |
+| `legacy/docker-compose.yml`, `legacy/Dockerfile` | the old four-service deployment |
+| `legacy/tests/` | their test suites — not collected by pytest |
+| `legacy/research/v2_eval/` | a strategy evaluator that had been broken since 2026-07-16 |
+| `legacy/docs/` | the swing-era operating docs |
 
-Create a `.env` file in the project root:
+None of it is imported, tested, or deployed. The one module that survived the archive is the
+intraday strategy core, which moved to `research/signals/intraday/strategy_core.py` and kept its
+test — because `v2_eval` is what happens to an untested module when the thing it imports goes away.
+
+The research trail for all of it is under [`docs/superpowers/`](docs/superpowers/).
+
+## Running it
+
+Requirements: Node 26, pnpm 10, Docker, and Python 3.14 for the warehouse.
+
+```bash
+docker compose up -d db     # postgres:16-alpine, 127.0.0.1:5433, volume coinpicks_data
+pnpm install
+pnpm dev                    # API on :8787, web on :5173 (proxies /api)
+```
+
+Port **5433**, not 5432 — 5432 on this machine is held by an unrelated container,
+`medi-pal-db-1` (postgres:17.2).
 
 ```env
-TELEGRAM_BOT_TOKEN=your_token
-TELEGRAM_CHAT_ID=your_chat_id
-DATABASE_URL=postgresql://tradegod:tradegod@db:5432/tradegod
+DATABASE_URL=postgresql://coinpicks:coinpicks@localhost:5433/coinpicks
 ```
 
-No Binance keys are required — the paper engine only reads public market data.
+Migrations are generated by Drizzle, committed as plain `.sql` under `apps/api/drizzle/`, and
+applied by the API at boot before it takes the port. Drizzle is the only thing that writes DDL.
 
-## Step 3 — Deploy on AWS Lightsail (recommended)
+The app binds to loopback only, with no authentication. That is deliberate: one user, one writer,
+no `user_id` in any table, and no egress surface for a verifier whose whole job is to fetch
+arbitrary third-party URLs.
 
-**Instance:** 2GB RAM, Ubuntu 24.04
+### Tests
 
 ```bash
-# Install Docker
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker ubuntu && newgrp docker
-
-# Add swap (safety net)
-sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile
-sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-
-# Clone and run
-git clone https://github.com/your-username/trade-god.git && cd trade-god
-# copy your .env file here
-docker compose up -d --build
-docker compose logs -f intraday
+pnpm test                   # Vitest — scoring and commit-gate paths first
+pnpm check                  # Biome
+python -m pytest -q         # the Python research suite
 ```
 
-On startup, Docker Compose will:
-1. Start PostgreSQL and wait for it to be healthy
-2. Run `alembic upgrade head` (the `migrate` service)
-3. Start `intraday` and `api` only after migrations succeed
+The commit gate's end-to-end test runs against real PostgreSQL or it does not run at all. An
+in-memory store has no transactions, no CHECK constraints and no triggers, so passing against one
+would prove nothing about the two properties that matter: atomicity and immutability.
 
-**Firewall (Lightsail → Networking tab):**
+### Research warehouse
 
-| Port | Restrict to |
-|---|---|
-| 22 | Your IP only |
-| 8000 | Your IP only |
-
-Postgres (5432) is bound to loopback in `docker-compose.yml` — access it via an SSH
-tunnel, never a firewall rule.
-
-Monitoring, kill-switch resume, and telemetry SQL:
-[docs/intraday_operations.md](docs/intraday_operations.md).
-
----
-
-## API
-
-The API runs on port 8000 (interactive docs at `http://<your-ip>:8000/docs`) and serves
-**historical data from the retired strategies** (`positions`/`trades`); intraday paper
-telemetry is read via SQL for now.
-
-| Endpoint | Description |
-|---|---|
-| `GET /health` | Health check |
-| `GET /portfolio` | Open positions with cost basis (legacy DCA) |
-| `GET /pnl` | Realized P&L today and all-time (legacy DCA) |
-| `GET /trades?limit=20&coin=BTC&side=SELL` | Trade history (legacy DCA) |
-| `GET /stats` | Win rate, avg P&L, best/worst trade (legacy DCA) |
-
----
-
-## Testing
+`research/` maintains a gitignored point-in-time parquet warehouse (klines, funding, basis, open
+interest, long/short ratio, universe snapshots for the top-100 USDT perpetuals). It is dev-machine
+only and feeds the ledger's forward returns.
 
 ```bash
-python -m pytest              # full suite (fast, fully green)
+python -m research.backfill --top 100    # resumable
+python -m research.check                 # gap / staleness report
 ```
 
-Money-paths first: strategy core parity with research, PaperBook goldens, the
-live↔backtest replay-parity test, engine cycle/halt semantics, kill-switch edges.
-Full guide: [docs/testing.md](docs/testing.md).
+## Status
 
----
+Early. The archive is done and the frozen scoring core is next; the honest estimate is 9–10
+working days to the first committed report, with the on-chain liquidity layer excluded from that.
+Detailed context for contributors (and for Claude) lives in [CLAUDE.md](CLAUDE.md); decisions and
+their reversal costs are in [`agents/`](agents/).
 
-## Project structure
+## Not a trading system
 
-```
-app/
-  intraday/          — the paper engine
-    main.py          — entrypoint: state restore, resume flag, 15m-aligned loop
-    engine.py        — the cycle: data → z → paper book → risk → persist → Telegram
-    strategy.py      — frozen mr_vwap core (shared with research backtests)
-    paper.py         — PaperBook: virtual limits, fills, horizon exits, funding
-    risk.py          — kill-switches + consecutive-error tracker
-    data.py          — closed-bar kline/funding fetchers
-    universe.py      — weekly top-30 resolve
-    notifier.py      — Telegram messages
-    config.py        — frozen params + env flags
-  api/main.py        — FastAPI routes (legacy history)
-  db/models.py       — SQLAlchemy models + intraday persistence helpers
-  config.py          — shared env vars
-research/            — parquet warehouse + backtest harness (dev only, see CLAUDE.md)
-legacy/              — retired DCA bot + swing agent (code, tests, docs)
-alembic/             — migrations (001–006)
-intraday_main.py     — engine entrypoint
-api_main.py          — API entrypoint
-tests/               — pytest suite (see docs/testing.md)
-```
-
----
-
-## History
-
-Two earlier strategies (a DCA spot bot and a rule-based swing futures agent) ran live
-from 2026-03 to 2026-07. After an honest walk-forward evaluation showed no durable edge,
-both were retired on 2026-07-16 — code and docs preserved under [`legacy/`](legacy/),
-research trail under [`docs/superpowers/`](docs/superpowers/). Their trade history
-remains in the database and API.
-
----
-
-## ⚠️ Risk Warning
-
-The engine currently places **no real orders** — it is a paper-trading telemetry system.
-If a future phase enables live execution, the same rules apply as ever: past performance
-doesn't guarantee future results; never risk more than you can afford to lose.
+This repo places no orders and holds no exchange API keys. Nothing in it is financial advice, and
+the framework it implements is explicitly on trial rather than endorsed.

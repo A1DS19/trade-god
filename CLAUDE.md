@@ -1,62 +1,216 @@
 # Trade-God — Project Context for Claude
 
+> The repo name is historical. What lives in it now is **CoinPicks**, a personal crypto
+> research platform. The automated trading system is archived under `legacy/` and is not
+> imported, collected by tests, or deployed anywhere.
+
 ## What this is
-Dual-strategy automated trading system on Binance:
-1. **DCA Bot** — Dollar-Cost Averaging on Binance Spot (`app/bot/`)
-2. **Swing Agent** — Rule-based futures trading on Binance USDT-M (`app/swing/`)
 
-**Tech:** Python 3.12, FastAPI, PostgreSQL 16, Docker Compose, Alembic, AWS Lightsail 2GB RAM
+A personal research platform implementing the **CoinPicks** fundamental framework. The owner
+researches a token, scores it against **frozen** rubric formulas, attaches citations whose quotes
+are **mechanically verified** to appear at their source URL, and commits an immutable
+point-in-time report.
 
----
+Committed reports accumulate into a **ledger**, later joined against forward returns computed from
+the existing Python parquet warehouse, to answer whether any of these scores predict anything.
+The answer may be no. That is a result worth having.
 
-## Directory Structure
-```
-app/
-├── bot/          # DCA spot bot (trader.py, exchange.py, indicators.py, universe.py, notifier.py, commands.py)
-├── swing/        # Swing futures agent (main.py, agent.py, snapshot.py, indicators.py, exchange.py, notifier.py, config.py, shadow.py, rebalance.py, grid_search.py, wf_grid_search.py, backtest_replay/)
-├── db/           # SQLAlchemy models (models.py)
-├── api/          # FastAPI routes (main.py)
-└── config.py     # Shared DCA config + Telegram credentials
+## Why the trading era ended (2026-09-21)
 
-alembic/versions/ # 5 migrations (001–005)
-docker-compose.yml
-main.py           # DCA entrypoint
-swing_main.py     # Swing entrypoint
-api_main.py       # API entrypoint
-```
+`research/signals/intraday/output/2b/oos_results.csv` measured the surviving strategy at
+**−15.19% return, profit factor 0.986, Sharpe −0.29 over 2,791 trades** (−25.2% under stress).
+Training-set PF was 1.021. The 66-day paper run that looked positive was ~1.8 months drawn from a
+~6%-monthly-volatility distribution, checked at three sequential gates, with the entire gain
+concentrated in ~10 of 312 trades. Separately, AWS closed the account holding the Lightsail box,
+destroying the paper telemetry. The closure is the occasion for the pivot, not its cause.
+
+State this once when it is relevant. Do not re-litigate it and do not dramatise it.
 
 ---
 
-## Docker Services
-| Service | Description | Port |
-|---------|-------------|------|
-| db | PostgreSQL 16 | 5432 (internal) |
-| migrate | Alembic upgrade head (run-once) | — |
-| intraday | Intraday paper engine — keyless | — |
-| api | FastAPI monitoring | 8000 |
+## THE FROZEN FORMULAS — the rule that outranks every other rule here
 
-**Key commands:**
-```bash
-docker compose up -d --build
-docker compose logs -f intraday
-docker compose logs --timestamps intraday > logs.txt 2>&1
-```
+The CoinPicks formulas are **normative**. Implement them exactly. Never adjust a weight, a
+threshold, or a rounding rule because an alternative looks better calibrated. A modified formula
+tests a *different* framework and makes every previously committed report non-comparable — which
+makes the ledger's eventual verdict meaningless. Raise discrepancies with the owner; do not patch
+them.
+
+- They live in `apps/api/src/scoring/{ranges,product,narrative,team,accrual}.ts` — pure functions,
+  no imports from the rest of the app.
+- **ONE copy**, enforced by the module resolver: `apps/api/package.json` declares
+  `exports "." -> "./src/app.ts"`, so `apps/web` *cannot* import `narrativeTotal()`.
+- They are evaluated at **exactly one moment**: inside `POST /reports/:id/commit`, in the same
+  transaction that writes `report_scores` and flips `reports.status`. Every downstream consumer
+  reads the stored number, never recomputes it.
+- Out-of-range values are **REJECTED, never clamped**.
+- Narrative sub-scores may be **fractional** (the framework's own worked example scores
+  Communication 4.5/5). Never constrain them to integers.
+- `report_scores.scoring_version` is written by the commit route from a constant in
+  `scoring/ranges.ts`. The ledger's fatal failure mode is silently comparing rows scored under two
+  framework versions.
+
+**Vendored:** the framework's seven source lessons live in `framework/` (`00-how-we-think` … `06-one-page-report-template`), copied in on 2026-09-21 from the
+Skool transcription. They are evidence, not code — never edit them. If an implementation
+disagrees with a lesson, the implementation is wrong.
 
 ---
 
-## Intraday Engine (`app/intraday/`)
+## Directory structure
 
-Phase 3 replacement for the DCA bot and swing agent: `mr_vwap` maker-limit mean-reversion,
-paper mode only (`EXECUTION_MODE=paper`; `live` raises `NotImplementedError`), no API keys
-required. Strategy params are **frozen** (pre-registered from 2b research — H=32 bars, K=10
-slots, Z_ENTRY=−3.0; do not tune without a new research phase), 900s cycle aligned to 15m
-candle close, $100 paper equity. Every placed virtual limit resolves to `trade_through` /
-`touch_only` / `miss` and is logged as fill telemetry. Kill-switches (5% daily paper loss or
-20% drawdown) halt trading and persist in `intraday_state`; resume requires an operator
-restart with `INTRADAY_RESUME=1`. Universe: weekly top-30 by 30-day median quote volume.
-Telemetry lives in `intraday_trades` / `intraday_limits` / `intraday_state`. Full design:
-`docs/superpowers/specs/2026-07-15-intraday-engine-design.md`. Ops runbook (message
-reference, monitoring SQL, resume procedure): `docs/intraday_operations.md`.
+```
+apps/
+├── api/              # Hono + Drizzle (Node). Owns all DDL, scoring, the commit gate.
+│   ├── src/scoring/  # the frozen formulas — pure, no app imports
+│   ├── src/db/       # schema.ts (every column declared here)
+│   ├── src/chain/    # viem layer — Phase A.2, same Node process, no sidecar
+│   ├── drizzle/      # generated .sql + meta/_journal.json, both COMMITTED
+│   └── scripts/      # rescore.ts — the only re-derivation path
+└── web/              # TanStack Start + React 19
+framework/            # vendored CoinPicks source lessons — evidence, never edit
+research/             # Python parquet warehouse + signal research (dev machine only)
+agents/               # paper trail: handoff.md, CONTEXT.md, decisions.md, roadmap.md
+docs/superpowers/     # specs/ and plans/ — the only thing left under docs/
+tests/research/       # the surviving Python suite
+legacy/               # every retired system. Not imported, not collected, not deployed.
+docker-compose.yml    # the single postgres:16-alpine service
+.env.example
+.github/workflows/ci.yml
+```
+
+`apps/` and `pnpm-workspace.yaml` are the build ahead. On disk **today**: `legacy/`,
+`research/`, `tests/research/`, `agents/`, `docs/superpowers/`, and — already written for the new
+stack — `docker-compose.yml`, `.env.example` and `.github/workflows/ci.yml`. There is no `app/`
+package any more — do not go looking in it.
+
+---
+
+## Stack
+
+pnpm workspace, `packages: ["apps/*"]`. Runtime **Node v26.8.1, not Bun** — verified that Node
+executes a `.ts` file directly with no flag and no loader. (`~/projects/profe` needs Bun only
+because one of its workspace packages publishes raw `.ts` with no build step; nothing here does.)
+
+| Where | Packages |
+|---|---|
+| `apps/api` | hono 4.13.8 · @hono/zod-validator 0.9.1 · drizzle-orm 0.45.3 · drizzle-kit 0.31.11 (dev) · pg 8.23.0 via `drizzle-orm/node-postgres` · zod 4.6.5 · openai 7.20.0 · viem 2.56.8 (Phase A.2) |
+| `apps/web` | @tanstack/react-start 1.168.57 · @tanstack/react-router 1.170.38 · react/react-dom 19.3.0 · vite 8.3.0 · tailwindcss + @tailwindcss/vite 4.3.3 |
+| shared | @biomejs/biome 2.5.14 · pnpm 10.33.0 |
+
+**Two deliberate deviations from "always latest", pinned in `pnpm-workspace.yaml` catalog:**
+`typescript 5.9.3` (latest is 7.0.2, the Go-native compiler, a fresh major) and `vitest 4.1.11`
+(latest is 5.0.1, days old). Reason: `hc<AppType>` plus Drizzle's `$inferSelect` are two of the
+heaviest type-level workloads in the ecosystem, and the sibling repo's decisions log records that
+unpinned TypeScript across workspaces is what produces Hono's *"Type instantiation is excessively
+deep"* across an RPC boundary. Revisit the week after report #1 commits. State this as a
+deliberate pin wherever versions are listed.
+
+**Not in this project:** no shadcn or any component library, no Better Auth, no Redis, no S3, no
+BullMQ, no git-hook gate, no jscpd, no fallow. Those belong to a deployed product with customers.
+
+---
+
+## Postgres
+
+**ONE** docker compose service, `postgres:16-alpine`, bound `127.0.0.1:5433:5432` — **not 5432**,
+which is already held by an unrelated container (`medi-pal-db-1`, postgres:17.2) on this machine.
+A **fresh** named volume `coinpicks_data` — never reuse `trade-god_postgres_data`, which still
+holds the dead trading database and an `alembic_version` row at revision 006.
+
+```
+DATABASE_URL=postgresql://coinpicks:coinpicks@localhost:5433/coinpicks
+```
+
+**Drizzle is the ONLY DDL author.** `apps/api/src/db/schema.ts` declares every column;
+`drizzle-kit generate` writes plain `.sql` under `apps/api/drizzle/` plus `meta/_journal.json`,
+both committed; the API applies them at boot from `server.ts` **before the port is taken**.
+Alembic is no longer this repo's migration tool — two DDL authors against one database is exactly
+the silent drift this repo's standing lesson is about.
+
+**Five schema rules that are not negotiable:**
+
+1. **`pgEnum`, never `text().$type<>()`** — for `reports.status` ∈ {draft, committed} and
+   `citations.status` ∈ {unverified, verified, near_miss, failed, unverifiable_js, waived}.
+   `$type<T>()` is a TypeScript fiction, not a database constraint.
+2. **A `BEFORE UPDATE OR DELETE` trigger** on `reports`, `report_scores`, `report_team` and
+   `citations`, raising when the parent report's status = `'committed'`. Drizzle's DSL cannot
+   express a trigger: it needs `drizzle-kit generate --custom` and a hand-written `.sql` that
+   `schema.ts` never re-emits. This is the one piece of SQL that makes "a committed report is
+   never edited" true against a stray `psql`, a GUI client, or an agent with shell access.
+   **Write it on day 2 or it never gets written.**
+3. **`report_scores.scoring_version`**, written by the commit route from the `scoring/ranges.ts`
+   constant.
+4. **`reports.version` integer NOT NULL with compare-and-swap writes** —
+   `UPDATE ... WHERE id=$1 AND version=$2`, 409 on zero rows. Two browser tabs on one draft would
+   otherwise be silent last-write-wins, a hole Electron's single-instance lock used to cover for
+   free.
+5. **`timestamptz` for every timestamp, `jsonb` for `coins.address_sources` and
+   `chain_facts.payload`.** The archived `app/db/models.py` stored every timestamp as
+   `String(50)`. The ledger join is a date join. Do not inherit that habit.
+
+Seven tables, no `user_id` in any of them: `coins`, `reports`, `report_scores`, `report_team`,
+`citations`, `chain_facts`, `forward_returns`.
+
+---
+
+## The LLM is an EvidenceFinder, not a drafter
+
+The model proposes candidate `{url, quote, why}` for a claim. Every candidate runs through the
+deterministic citation verifier **before it is displayed**. It never proposes a number. Every
+`*_draft` / `*_draft_reason` column pair is **deleted** from `report_scores`. **The human types
+every score.**
+
+The old containment guarantee ("the LLM writes only to `*_draft` columns, enforced by schema") is
+gone, and its replacement is explicit: the `citations` table has **no column for the model's "why"
+prose**, so the model's reasoning has nowhere to persist; and a test asserts that **no
+LLM-reachable code path writes to `report_scores`**.
+
+`citations` gains `origin` ∈ {human, model}, `finder_provider`, `finder_model`, and a nullable
+`selected_at` — a row with `selected_at IS NULL` is an unselected candidate, the commit gate counts
+only selected ones, and that also makes "did the finder actually help?" answerable later for free.
+
+The provider seam is lifted near-verbatim from `/home/dev/projects/profe/apps/api/src/providers.ts`
+(275 lines, zero imports) and `model.ts` (313 lines), and lands here as
+`apps/api/src/evidence/{providers.ts,model.ts}` — never `apps/api/src/providers.ts`: a table of
+providers over one
+OpenAI-compatible client, strict `json_schema`, answers re-parsed through the caller's own zod
+schema, 90s timeout, and `origin: "model" | "fixture"` so a keyless run can never be mistaken for a
+model draft. One funded DashScope international key serves 172 models across Qwen, Kimi, DeepSeek
+and GLM (verified HTTP 200 against `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`).
+
+**`DEFAULT_PROVIDER` — the in-code constant in `evidence/providers.ts`, overridden per run by the
+`COINPICKS_MODEL_PROVIDER` environment variable — is deliberately unpinned until the bench runs.**
+The sibling repo's recorded blind bench put
+qwen3.8-flash last on 5/5 ballots (overall 2.0 vs deepseek-v4-flash 4.6 and kimi-k3 4.4), both Qwen
+tiers slowest. The default gets decided by running one real coin section through **kimi-k3,
+deepseek-v4.1-flash and qwen3.8-max** and recording the result. Never pin a default on price or on
+vibes.
+
+**The Claude Code CLI drafter is dropped.** Its subscription auth from a spawned process *was*
+verified to work — that open item is **answered, not mooted** — but a bare spawn inherits the
+operator's global `CLAUDE.md`, skills and MCP config into the drafter's context (~27k
+cache-creation tokens on a trivial prompt) and runs whatever model the operator's settings name.
+For a ledger testing whether a score predicts returns, a drafter that changes when an unrelated
+config file is edited is an uncontrolled variable.
+
+---
+
+## Python's role
+
+`research/` is unchanged and stays. **`research/forward_returns.py` does not exist yet** — it is
+build-order step 6 (the ledger), and nothing in the tree imports psycopg today (psycopg 3.2.13 *is* importable on
+this machine's system Python 3.14.7, which is why the plan is viable). When written it will select
+committed reports, compute 30/90/180/365-day returns from the parquet warehouse, and
+`INSERT ... ON CONFLICT (report_id, horizon_days) DO UPDATE`. Horizons are **frozen at
+30/90/180/365** as of 2026-09-21 — retrofitting horizons onto existing commits is fine, comparing
+across changed horizons is not.
+
+Python owns no table's shape, enforced by a **GRANT rather than a convention**: a `research` role
+with `SELECT` on `coins`/`reports`/`report_scores`/`report_team`/`citations` and
+`INSERT, UPDATE` on `forward_returns`. Nothing else.
+
+**Python never recomputes a score.** Auditing a committed number reads the stored row;
+re-derivation runs the authoritative TypeScript via `node apps/api/scripts/rescore.ts`.
 
 ---
 
@@ -64,8 +218,9 @@ reference, monitoring SQL, resume procedure): `docs/intraday_operations.md`.
 
 Point-in-time market data for signal research/backtests — parquet per dataset per symbol under
 gitignored `research/warehouse/` (~360MB, 6M+ rows, top-100 USDT perps since listing).
-**Never ships to prod**: excluded via `.dockerignore`; deps in `requirements-research.txt`
-(pandas/pyarrow/duckdb) are never installed on the Lightsail box.
+**Never ships anywhere** — there is no deployment target any more; deps in
+`requirements-research.txt` (pandas/pyarrow/duckdb) are dev-machine only. This warehouse is what
+the ledger's forward returns are computed from, which is why it survived the pivot.
 
 Datasets: `klines_1h/4h/1d`, `funding` (full history), `premium_index_1h` (basis),
 `oi_1h` + `long_short_1h` (Binance serves trailing 30d only — refresh ≥ monthly or history is lost),
@@ -79,105 +234,121 @@ python -m research.backfill --top 100          # resumable (per symbol×dataset 
 python -m research.backfill --symbols DOGEUSDT --datasets funding
 python -m research.check                       # gap/staleness report
 python -m research.intraday_universe --top 30 --save   # print + snapshot intraday top-30
-# refresh klines_1d first so the 30d medians are current, then intraday klines (dev machine only):
-python -m research.backfill --symbols "$(python -m research.intraday_universe --top 30 --save)" --datasets klines_5m,klines_15m
 ```
 
-**Rules:** run backfills from the DEV machine only — never the prod IP (2026-06-05 -1003 ban).
-All endpoints are unsigned (no API keys). Weekly refresh cron (also stitches the 30d OI/L-S window):
+**Rules:** run backfills from the DEV machine only — never a hosted IP (2026-06-05 -1003 ban).
+All endpoints are unsigned (no API keys).
+
+**No refresh cron is installed** — `crontab -l` on this machine says *"no crontab for dev"*, so the
+trailing-30d OI / long-short window is only stitched when a backfill is run by hand. The
+**recommended** entry, if one is ever installed (it is not today), is:
 `0 6 * * 1 cd /home/dev/projects/trade-god && python -m research.backfill --top 100 >> /tmp/research-backfill.log 2>&1`
 
 **Known data quirks:** Binance funding timestamps carry ms jitter (gap checker tolerates 1.5×);
 ICPUSDT premium index has a genuine 77-day hole (2022-07-12 → 2022-09-27); OI/L-S endpoints are
 END-anchored (`startTime`-only returns newest rows — fetchers paginate with explicit windows).
 
----
-
-## Credentials (`.env`)
-- `BINANCE_API_KEY` / `BINANCE_SECRET_KEY` — Spot (DCA bot)
-- `BINANCE_API_KEY_FUTURES` / `BINANCE_SECRET_KEY_FUTURES` — Futures (swing agent)
-- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`
-- `DATABASE_URL` — `postgresql://tradegod:tradegod@db:5432/tradegod`
+**Signal code:** `research/signals/` keeps the finished studies (carry, xs_momentum, basis_mr,
+intraday). The one module the intraday study still needs is
+`research/signals/intraday/strategy_core.py` — moved out of the archived `app/intraday/strategy.py`
+and kept under test at `tests/research/test_strategy_core.py`.
+`research/signals/intraday/{mr_vwap_strategy.py,families.py}` import it from there.
 
 ---
 
-## Swing Agent (`app/swing/`)
+## The archive map (`legacy/`)
 
-Retired 2026-07-16 to `legacy/` (code + tests: `legacy/app/swing/`, `legacy/tests/swing/`,
-`legacy/tests/backtest/`, `legacy/tests/property/`, `legacy/tests/integration/`, `legacy/swing_main.py`).
-`swing_trades` table kept as history (see Database Schema); superseded by `app/intraday/` above.
+Moved 2026-09-21, unchanged: dead code kept for provenance. Nothing in the live tree imports it and
+pytest does not collect it.
 
-## DCA Bot (`app/bot/`)
+| Was | Now |
+|---|---|
+| `app/{intraday,api,db,config.py,__init__.py}` | `legacy/app/` |
+| `app/intraday/strategy.py` | `research/signals/intraday/strategy_core.py` (kept alive) |
+| `tests/intraday/test_strategy_core.py` | `tests/research/test_strategy_core.py` (repointed) |
+| `alembic/`, `alembic.ini`, `api_main.py`, `intraday_main.py`, `docker-compose.yml`, `Dockerfile` | `legacy/` |
+| `tests/{intraday,api}/` | `legacy/tests/` |
+| `research/v2_eval/` | `legacy/research/v2_eval/` |
+| DCA bot + swing agent (retired 2026-07-16) | `legacy/app/{bot,swing}/`, `legacy/tests/`, `legacy/docs/` |
+| `docs/intraday_operations.md`, `docs/testing.md` | `legacy/docs/` — `docs/` now holds only `superpowers/` |
+| `swing-logs.txt`, `bot.log`, 24 tracked `charts_out/` PNGs | deleted |
 
-Retired 2026-07-16 to `legacy/` (code + tests: `legacy/app/bot/`, `legacy/tests/bot/`, `legacy/main.py`).
-`positions`/`trades` tables kept as history; DCA spot holdings on Binance are left held, managed manually.
-
----
-
-## Database Schema
-
-### `positions` (DCA open positions)
-coin (PK), avg_buy, qty, last_buy, peak_price, partial_taken
-
-### `trades` (DCA audit log)
-id, coin, side, price, qty, cost_usd, avg_buy, realized_pnl_usd, realized_pnl_pct, exit_reason (VARCHAR 30), timestamp
-
-### `swing_trades`
-id, coin, direction, entry_price, exit_price, qty, leverage, notional_usdt, entry_time, exit_time, realized_pnl_usd, realized_pnl_pct, exit_reason (VARCHAR 100), entry_sl_pct, entry_tp_pct, agent_confidence, agent_reasoning (**VARCHAR 500 — truncate to 499 chars**), status
-
-### `daily_spend` / `coin_list`
-Tracking tables for DCA daily cap and universe cache.
+`research/v2_eval/` was **already broken** when archived: `run.py:53-64` imports
+`app.swing.backtest_replay`, archived on 2026-07-16. Nothing tested it, so the suite stayed green
+over a dead module for two months — which is why the surviving strategy module kept its test when
+it moved. `alembic/versions/` held **six** migrations (001–006); earlier docs said five.
 
 ---
 
-## FastAPI Endpoints (port 8000, tunnel-only)
-`GET /` (HTML status page) `/health` `/intraday/{trades,stats,fills,state,gate}`
-`/legacy/dca/{portfolio,pnl,trades,stats}` `/legacy/swing/{trades,stats}` `/docs`
+## How to run
 
-## Telegram
-- DCA bot: `/status` `/pnl` `/trades` `/balance` `/help` commands + buy/sell/daily summary alerts
-- Swing: open/close alerts with confidence + reasoning
-- **IMPORTANT:** Always `html.escape()` agent reasoning before sending (parse_mode=HTML)
+```bash
+docker compose up -d db     # postgres:16-alpine on 127.0.0.1:5433, volume coinpicks_data
+pnpm dev                    # api on :8787, web on :5173 proxying /api
+pnpm test                   # Vitest
+pnpm check                  # Biome
+python -m pytest -q         # the Python research suite (111 tests)
+```
+
+**Deployment: loopback only, one user, no auth.** This is *re-decided, not inherited* — the old
+reason ("so drafting can use the Claude Code subscription") died with the CLI drafter. The
+surviving reasons are the ledger's integrity, a single writer, no `user_id` in any of the seven
+tables, and no egress surface for a verifier that fetches arbitrary third-party URLs.
 
 ---
 
-## Known Issues & Fixes
+## Build order
 
-### Fixed (2026-06-13): silent exchange-side fills + safety-net override + algo cancel + forming-candle indicators
-- `app/swing/reconcile.py` diffs DB open rows vs exchange positions each cycle; backfills closes
-  from `futures_account_trades` (exit = closing-fill VWAP bounded by row qty, PnL = summed
-  realizedPnl), alerts, and feeds the loss cooldown. Empty fills retry 3 cycles before a
-  price-estimated fallback; userTrades window clamped to <7d (-1127). Repaired silent algo-SL
-  closes DOGE id=71 (2026-06-11) and BSV id=72 (2026-06-12) on first deploy.
-- Client safety net now uses per-trade `entry_sl_pct`/`entry_tp_pct` via `_net_thresholds`
-  (fallback: DEFAULT_*) — the flat 3%/8% net no longer preempts wider ATR stops.
-- `cancel_open_orders` also DELETEs `/fapi/v1/algoOpenOrders` (placement was fixed 2026-06-05;
-  cancellation wasn't) and never raises. `scripts/cleanup_orphan_algo_orders.py` audits orphans.
-- Indicators drop the still-forming last kline (4h + 1d), RSI warms up on the full 200-bar
-  series, daily fetch deepened to 601 for a converged EMA200. `snap["price"]` = last closed close.
+1. archive (**done**) · 2. frozen scoring core · 3. schema + migrations + the trigger · 4. minimal
+editor · 5. citation verifier · 6. commit gate + ledger view · 7. bench the three models on one
+real coin · 8. wire the EvidenceFinder.
 
-### Fixed (2026-06-05): Binance -4120 SL/TP error — for real this time
-Binance migrated USDT-M conditional orders to the **Algo service on 2025-12-09**.
-`STOP_MARKET`/`TAKE_PROFIT_MARKET` on `POST /fapi/v1/order` now reject with `-4120`.
-The 2026-04-02 "fix" (`quantity=qty, reduceOnly=True`) never worked — the 37-day HOLD
-dry spell hid it until BSV (May 23). Every live trade since ran with **no exchange-side
-stop** (only the hourly client-side net protected them).
-**Real fix:** `app/swing/exchange.py:_place_conditional()` routes to `POST /fapi/v1/algoOrder`
-with `algoType=CONDITIONAL`, `triggerPrice` (not `stopPrice`), `closePosition="true"`,
-`workingType=MARK_PRICE`. python-binance 1.0.19 has no wrapper, so it calls the same
-internal `_request_futures_api('post', 'algoOrder', True, data=...)` that `futures_create_order`
-uses. Watch logs for `SL placed`/`TP placed` to confirm. Pinned by `tests/swing/test_exchange_sltp.py`.
-
-### Gotcha: agent_reasoning VARCHAR(500)
-Must truncate to 499 chars before DB insert.
-
-### Gotcha: Telegram HTML mode
-Escape all dynamic text with `html.escape()` before sending.
+**Phase A.2** = the viem chain layer (pools / safety / issuance / holders / accrual, Multicall3,
+the >5%-from-TVL-weighted-median poison-pair drop) in `apps/api/src/chain/`, same Node process, no
+sidecar. Honest sizing: **9–10 working days to report #1**, chain layer excluded.
 
 ---
 
 ## Testing
-- Run: `python -m pytest` (fast; fully green — no excepted failures). Config in `pyproject.toml`.
-- Layout: `tests/{intraday,research}/` + `tests/conftest.py` (env stub set at import time — **don't re-add env/`sys.path` boilerplate in test files**). Legacy bot/swing tests live in `legacy/tests/` and are not collected.
-- Markers: `property`, `integration`, `testnet` (skipped unless `RUN_TESTNET=1`), `slow`.
-- Philosophy: money-paths first; the strategy lives ONCE in `app/intraday/strategy.py` (research imports it), and `tests/intraday/test_paper_book.py::test_replay_parity_with_batch_builder` pins the live PaperBook to the batch builder bar-for-bar.
+
+Money-paths first — here that means the **scoring and gating paths**, not I/O breadth.
+
+- The commit gate's e2e gets **real Postgres or it does not run.** Memory stores have no
+  transactions, no CHECK constraints and no triggers, so a green e2e against them proves nothing
+  about atomicity or immutability.
+- Python: `python -m pytest -q`, config in `pyproject.toml`. `tests/conftest.py` holds the testnet
+  skip hook — it skips anything marked `@pytest.mark.testnet` unless `RUN_TESTNET=1`. That hook is
+  live infrastructure; don't duplicate it per test file.
+- `pyproject.toml` declares **exactly one marker: `testnet`.** `property`, `integration` and `slow`
+  left with the suites that used them and now live under `legacy/` — do not cite them as available.
+- `tests/` now contains only `tests/research/` and `conftest.py`, so `pytest` and
+  `pytest tests/research` are the same command.
+- 111 tests pass after the archive (was 182, of which 108 were `tests/research`).
+
+---
+
+## Known issues & fixes
+
+Every entry that used to live here described the DCA bot, the swing agent or the intraday paper
+engine — all archived, gotchas moved with them to `legacy/` and `legacy/docs/`. The live gotchas
+are stated in place above: port **5433** (5432 is taken by `medi-pal-db-1`), the **fresh**
+`coinpicks_data` volume, the Drizzle-only DDL rule, and the Binance data quirks in the warehouse
+section.
+
+---
+
+## Session convention
+
+`agents/handoff.md` is read first at session start. When a session ends with "let's continue
+tomorrow" (or similar), overwrite it: what was done, current state, next session's plan. Record
+hard decisions in `agents/decisions.md` and completed milestones in `agents/roadmap.md` **as they
+happen**, not at the end. `agents/CONTEXT.md` holds the canonical vocabulary — use its words.
+
+## Git
+
+- Commits land on `main` directly. Personal repo; the owner has said branch ceremony is
+  unnecessary here.
+- **Never add AI attribution** — no `Co-Authored-By: Claude …` trailers, no generated-with footers.
+  The owner is the sole author.
+- Concise commit messages focused on *why*.
+- Run the touched suite before calling anything done.

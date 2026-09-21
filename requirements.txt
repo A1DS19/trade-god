@@ -1,13 +1,31 @@
-python-binance==1.0.19
-requests==2.31.0
-python-dotenv==1.0.1
-sqlalchemy==2.0.40
-psycopg[binary]==3.2.13
-alembic==1.14.0
-fastapi==0.115.6
-uvicorn[standard]==0.32.1
-matplotlib==3.10.1
+# Python's entire remaining role in this repo: the research/ warehouse today,
+# plus the forward-return join (build-order step 6, the ledger) that will score committed reports
+# against what happened next.
+# Everything the retired trading stack needed (python-dotenv, sqlalchemy,
+# alembic, fastapi, uvicorn, matplotlib, requests, hypothesis, httpx) went to
+# legacy/ with it. Every line below is justified by an actual import today, with
+# one deliberate exception called out where it appears (psycopg, build-order step 6).
+
+# research/siglib, research/signals, research/store — the warehouse is parquet
+# and every study is a DataFrame.
 pandas==3.0.3
-pytest==8.3.5
-hypothesis==6.155.2
-httpx==0.28.1
+# Imported directly (`import numpy as np`) in siglib/ and every signal module,
+# so it is declared rather than leaned on as a pandas transitive.
+numpy==2.4.4
+# research/backfill.py imports binance.client for unsigned market-data
+# endpoints; tests/research/test_backfill.py monkeypatches it by name.
+python-binance==1.0.19
+# BUILD-ORDER STEP 6, NOT YET IMPORTED BY ANYTHING: research/forward_returns.py does not
+# exist yet. When it lands it will write the forward_returns table as the
+# GRANT-limited `research` role. Pinned ahead of the module so the version is
+# settled (and so CI's dependency smoke-import keeps covering it); drop this
+# line if the join is abandoned rather than letting it rot as a false claim.
+psycopg[binary]==3.2.13
+# The suite itself.
+pytest==9.0.2
+
+# NOTE: pyarrow is NOT here — it belongs to requirements-research.txt, which is
+# the file that owns the warehouse's dev-only deps. It is still REQUIRED to run
+# the tests: tests/research/conftest.py importorskips it, so an install without
+# it turns all 111 tests into 1 skipped and still exits 0. CI installs both
+# files for exactly that reason.

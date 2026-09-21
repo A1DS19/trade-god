@@ -2,9 +2,31 @@
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "--import-mode=importlib"
+# NOTE: this setting REPLACES pytest's defaults rather than extending them, so
+# the stock patterns are repeated here verbatim before the two this repo adds.
+# Dropping them would re-enable recursion into build/, dist/, venv/ and every
+# dot-directory.
+#   legacy/            — frozen archive of the retired trading system; its
+#                        tests still import app.bot / app.swing / app.intraday,
+#                        which no longer resolve.
+#   research/warehouse — gitignored parquet data, not code.
+norecursedirs = [
+    "*.egg",
+    ".*",
+    "_darcs",
+    "build",
+    "CVS",
+    "dist",
+    "node_modules",
+    "venv",
+    "{arch}",
+    "legacy",
+    "research/warehouse",
+]
 markers = [
-    "slow: long-running tests",
-    "testnet: hits Binance testnet — network + creds, opt-in (run with -m testnet)",
-    "property: Hypothesis property-based tests",
-    "integration: cross-component / exchange-boundary tests",
+    # The only marker the suite still references: tests/conftest.py skips
+    # anything carrying it unless RUN_TESTNET=1. No test wears it today, but
+    # the opt-in hook is live code, so the marker stays declared.
+    # The retired suites took slow/property/integration to legacy/ with them.
+    "testnet: hits Binance testnet — network + creds, opt-in (run with RUN_TESTNET=1)",
 ]

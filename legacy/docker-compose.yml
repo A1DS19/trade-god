@@ -1,0 +1,64 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: postgres -c shared_buffers=16MB -c max_connections=20 -c work_mem=2MB
+    environment:
+      POSTGRES_USER: tradegod
+      POSTGRES_PASSWORD: tradegod
+      POSTGRES_DB: tradegod
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"  # loopback only — remote access via SSH tunnel
+    mem_limit: 80m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tradegod -d tradegod"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: .
+    restart: "no"
+    env_file: .env
+    command: alembic upgrade head
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 100m
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    command: python api_main.py
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 150m
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  intraday:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    command: python intraday_main.py
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 250m
+
+volumes:
+  postgres_data:

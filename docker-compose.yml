@@ -1,64 +1,60 @@
+# The only infrastructure CoinPicks runs. One Postgres, on loopback.
+#
+#   docker compose up -d db     # then `pnpm dev` (api on 8787, web on 5173)
+#
+# There is no api, web or migrate service on purpose: the API runs from the
+# workspace under pnpm, and Drizzle applies apps/api/drizzle/*.sql at boot,
+# before the port is taken. Alembic is no longer this repo's migration tool —
+# two DDL authors against one database is exactly the silent drift this
+# project's standing lesson is about.
+name: coinpicks
+
 services:
   db:
     image: postgres:16-alpine
+    container_name: coinpicks-db
     restart: unless-stopped
-    command: postgres -c shared_buffers=16MB -c max_connections=20 -c work_mem=2MB
+
+    # 5433, NOT 5432: an unrelated container (medi-pal-db-1, postgres:17.2)
+    # already holds 5432 on this machine. Bound to 127.0.0.1 because this is a
+    # single-user ledger with no auth — nothing here should answer off the box.
+    ports:
+      - "127.0.0.1:5433:5432"
+
     environment:
-      POSTGRES_USER: tradegod
-      POSTGRES_PASSWORD: tradegod
-      POSTGRES_DB: tradegod
+      POSTGRES_USER: coinpicks
+      POSTGRES_PASSWORD: coinpicks
+      POSTGRES_DB: coinpicks
+      # Checksums make silent page corruption loud. This database is an
+      # append-only record of point-in-time reports; a bad row that reads back
+      # clean would poison the forward-return join years later.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"  # loopback only — remote access via SSH tunnel
-    mem_limit: 80m
+      # A FRESH volume. Never trade-god_postgres_data: that one still holds the
+      # dead trading database and an alembic_version row at revision 006.
+      - coinpicks_data:/var/lib/postgresql/data
+
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tradegod -d tradegod"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U coinpicks -d coinpicks"]
+      interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 5
+      start_period: 10s
 
-  migrate:
-    build: .
-    restart: "no"
-    env_file: .env
-    command: alembic upgrade head
-    depends_on:
-      db:
-        condition: service_healthy
-    mem_limit: 100m
-
-  api:
-    build: .
-    restart: unless-stopped
-    env_file: .env
-    command: python api_main.py
-    depends_on:
-      db:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-    mem_limit: 150m
-    ports:
-      - "8000:8000"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
-  intraday:
-    build: .
-    restart: unless-stopped
-    env_file: .env
-    command: python intraday_main.py
-    depends_on:
-      db:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-    mem_limit: 250m
+    # Laptop-sized. One writer, seven small tables, no concurrency to speak of.
+    cpus: 1.0
+    mem_limit: 512m
+    shm_size: 128mb
+    command:
+      - postgres
+      - -c
+      - max_connections=30
+      - -c
+      - shared_buffers=128MB
 
 volumes:
-  postgres_data:
+  coinpicks_data:
+    # Pinned so the volume is literally `coinpicks_data` rather than being
+    # prefixed with the project name.
+    name: coinpicks_data

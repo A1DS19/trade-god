@@ -1,5 +1,9 @@
-# Research-only dependencies (dev machine). NEVER installed in the Docker image —
-# the live bot stays stdlib + python-binance. See docs/superpowers/specs/2026-06-12-*.md
+# Research-only dependencies. DEV MACHINE ONLY — this repo has no deployment
+# target any more: the Docker image and the trading bot it ran were retired to
+# legacy/. Nothing installs these on a server because there is no server.
+# Still REQUIRED in CI: tests/research/conftest.py calls
+# pytest.importorskip("pyarrow"), so a run without it skips the whole research
+# suite and exits 0 on code that never executed.
 pandas==3.0.3
 pyarrow==24.0.0
 duckdb==1.5.3

@@ -4,11 +4,29 @@
 
 **Goal:** Leave the repo describing what it actually is, and build the deterministic scoring core that every later plan depends on.
 
-**Architecture:** Archive the retired Python trading stack to `legacy/`, relocate the one research-owned module out of it, rewrite the repo's self-description, then scaffold an Electron + React desktop app whose `main/` process owns a SQLite database and a pure-function scoring core implementing the frozen CoinPicks formulas.
+**Architecture:** Archive the retired Python trading stack to `legacy/`, relocate the one research-owned module out of it, rewrite the repo's self-description, then build a pnpm workspace in which `apps/api` (Hono + Drizzle + Postgres) owns every frozen formula, every write and every outbound request, and `apps/web` (TanStack Start) is a form that posts the operator's inputs and reads back the server's verdict.
 
-**Tech Stack:** Electron 34, electron-vite 5, React 19, TypeScript 5.7, Tailwind v4, better-sqlite3 11, Vitest 3, Biome 2.4, pnpm 10.
+**Tech Stack:** pnpm 10.33.0 workspace, `packages: ["apps/*"]`. Runtime is Node v26.8.1 — **not Bun**; Node executes a `.ts` file directly here with no flag and no loader, and this repo has no workspace package that publishes raw `.ts`.
 
-**Spec:** `docs/superpowers/specs/2026-09-21-coin-research-platform-design.md`
+- `apps/api` — hono 4.13.8, @hono/zod-validator 0.9.1, drizzle-orm 0.45.3, drizzle-kit 0.31.11 (dev), pg 8.23.0 via `drizzle-orm/node-postgres`, zod 4.6.5, openai 7.20.0, viem 2.56.8 (Phase A.2)
+- `apps/web` — @tanstack/react-start 1.168.57, @tanstack/react-router 1.170.38, react/react-dom 19.3.0, vite 8.3.0, tailwindcss + @tailwindcss/vite 4.3.3
+- shared — @biomejs/biome 2.5.14
+- **Catalog pins in `pnpm-workspace.yaml` are a deliberate deviation from "always latest", and must be stated as such wherever these versions are listed:** typescript 5.9.3 (latest is 7.0.2, the Go-native compiler, a fresh major) and vitest 4.1.11 (latest is 5.0.1, days old). `hc<AppType>` plus Drizzle's `$inferSelect` are two of the heaviest type-level workloads in the ecosystem, and the sibling repo's decisions log records that unpinned TypeScript across workspaces is what produces Hono's "Type instantiation is excessively deep" across an RPC boundary. Revisit the week after report #1 commits.
+- Deliberately absent: shadcn, any component library, Better Auth, Redis, S3, BullMQ, a git-hook gate, jscpd, fallow. Those belong to a deployed product with customers.
+- Postgres: ONE docker compose service, `postgres:16-alpine`, bound `127.0.0.1:5433:5432` — not 5432, which an unrelated container (`medi-pal-db-1`, postgres:17.2) already holds on this machine — on a fresh named volume `coinpicks_data`, never the old `trade-god_postgres_data`. `DATABASE_URL=postgresql://coinpicks:coinpicks@localhost:5433/coinpicks`. Drizzle is the only DDL author; Alembic stops being this repo's migration tool.
+- Deployment: loopback only, one user, no auth. Daily run is `docker compose up -d db`, then `pnpm dev` (api on 8787, web on 5173 proxying `/api`).
+
+**Spec:** `docs/superpowers/specs/2026-09-21-coin-research-platform-design.md` — superseded in part by the 2026-09-21 stack decision above and by the EvidenceFinder decision (the LLM proposes `{url, quote, why}` candidates for the deterministic verifier and never proposes a number; every `*_draft` column is gone; the human types every score).
+
+## Plan 1 status, 2026-09-21
+
+| Task | Status |
+|---|---|
+| Task 1 — archive the retired trading stack | **DONE** (2026-09-21) |
+| Task 2 — rewrite the repo's self-description | **DONE** (2026-09-21) — delivered from the stack + EvidenceFinder decisions; the code block under the task is a superseded record of what was planned |
+| Task 3 — Electron + React scaffold | **DISCARDED** — see the salvage note on the task |
+| Task 4 — SQLite schema | **DISCARDED** — the seven-table shape survives as Drizzle |
+| Tasks 5 & 6 — frozen scoring core | **NEXT**, and they run first, before any framework scaffolding |
 
 ## Global Constraints
 
@@ -18,11 +36,18 @@
 - Commits never carry AI attribution — no `Co-Authored-By` trailers, no generated-with footers.
 - Commits land on `main` directly (this is a personal repo; the user has said branches are unnecessary here).
 - `research/` and `tests/research/` must keep passing throughout. Run `python -m pytest tests/research -q` after any move that touches them.
-- All network and disk access lives in `desktop/src/main/`. The renderer never calls `fetch` and never holds a key.
+- **All network access, all database writes, and every frozen formula live server-side, in `apps/api`.** `apps/web` is a form: it posts the operator's inputs and renders the server's verdict. It never scores, never fetches a third-party URL, and never holds a key. `apps/api/package.json` declares `exports "." -> "./src/app.ts"`, so `apps/web` cannot import `narrativeTotal()` even by accident — the module resolver, not a convention, enforces the one-copy rule.
 
 ---
 
-### Task 1: Archive the retired Python trading stack
+### Task 1: Archive the retired Python trading stack — DONE 2026-09-21
+
+> **DONE, 2026-09-21.** Executed in the working tree. Two corrections to the record below:
+>
+> 1. **A step that was not planned happened, and mattered.** `tests/intraday/test_strategy_core.py` was not archived with the rest of `tests/intraday/` — it moved to `tests/research/test_strategy_core.py` and was repointed at `research.signals.intraday.strategy_core`, so the one surviving module keeps its coverage instead of losing it to `legacy/`.
+> 2. **The final suite is 111 passed** (it was 182 before the move, of which 108 were already `tests/research`), not "the same count as Step 1".
+>
+> Also executed and not in the step list below: 24 tracked `charts_out/` PNGs were deleted alongside `swing-logs.txt` and `bot.log`. `research/v2_eval/` was archived as planned — worth recording that it had *already* been broken since 2026-07-16 (`run.py` lines 53-64 import `app.swing.backtest_replay`), nothing tested it, and the suite stayed green over a dead module for two months.
 
 The intraday engine, its API, its Postgres models, and its Docker stack are all retired. `research/` must survive, which means the one module it imports has to move with it.
 
@@ -31,11 +56,11 @@ The intraday engine, its API, its Postgres models, and its Docker stack are all 
 - Move: `app/intraday/strategy.py` → `research/signals/intraday/strategy_core.py`
 - Move: `app/api/`, `app/db/`, `app/config.py` → `legacy/app/`
 - Move: `alembic/`, `alembic.ini`, `docker-compose.yml`, `Dockerfile`, `api_main.py`, `intraday_main.py` → `legacy/`
-- Move: `tests/intraday/`, `tests/api/` → `legacy/tests/`
+- Move: `tests/intraday/`, `tests/api/` → `legacy/tests/` — **except** `tests/intraday/test_strategy_core.py` → `tests/research/test_strategy_core.py`, repointed at `research.signals.intraday.strategy_core`
 - Move: `research/v2_eval/` → `legacy/research/v2_eval/` (already broken — imports `app.swing.backtest_replay`, archived 2026-07-16)
 - Modify: `research/signals/intraday/mr_vwap_strategy.py:18`
 - Modify: `research/signals/intraday/families.py:45`
-- Delete: `swing-logs.txt`, `bot.log`
+- Delete: `swing-logs.txt`, `bot.log`, and the 24 tracked `charts_out/` PNGs
 
 **Interfaces:**
 - Consumes: nothing.
@@ -99,7 +124,13 @@ research/ owned the only live consumer of strategy.py, so it moves there."
 
 ---
 
-### Task 2: Rewrite the repo's self-description
+### Task 2: Rewrite the repo's self-description — DONE 2026-09-21
+
+> **DONE, 2026-09-21 — but NOT from the code block below, which is a SUPERSEDED record of what was planned.** `CLAUDE.md`, `README.md`, `agents/CONTEXT.md`, `agents/decisions.md` and `agents/roadmap.md` are all written, and all of them describe the pnpm-workspace stack. The delivered text took its facts from the header block and Global Constraints of **this plan**, plus the spec at `docs/superpowers/specs/2026-09-21-coin-research-platform-design.md` as amended by the stack and EvidenceFinder decisions.
+>
+> Why the block below is not what was written: its `CLAUDE.md` describes the Electron desktop app, `desktop/src/main/`, SQLite and a drafter writing to `*_draft` columns — every one of which the same-day stack decision replaced. Its `agents/decisions.md` entry "Electron, not Tauri; TypeScript, not Python" is likewise stale in its first half and still correct in its second.
+>
+> The text is left in place on purpose, struck through as a record of what was planned rather than deleted — the framework sections, the directory table and the Research Warehouse section are all still reusable prose.
 
 `CLAUDE.md` currently tells every session that a live intraday paper engine is the system. It isn't. This task replaces it and seeds the `agents/` paper trail per the `new-project` skill's doc formats.
 
@@ -116,6 +147,8 @@ research/ owned the only live consumer of strategy.py, so it moves there."
 - [ ] **Step 1: Rewrite `CLAUDE.md`**
 
 Replace the entire file with:
+
+> **SUPERSEDED record — this is not the `CLAUDE.md` that was written.** The delivered file describes the pnpm workspace (`apps/api` + `apps/web`, Postgres 16 + Drizzle on 5433, an EvidenceFinder that proposes candidates). Everything below that says `desktop/src/main/`, SQLite or `*_draft` is dead text kept for its reusable prose.
 
 ```markdown
 # Trade-God — Project Context for Claude
@@ -216,6 +249,8 @@ with: what was done, current state, and the next session's plan. Record hard dec
 ```
 
 - [ ] **Step 2: Create `agents/CONTEXT.md`**
+
+> **SUPERSEDED record — this is not the `agents/CONTEXT.md` that was written.** The delivered vocabulary retires "drafter"; the EvidenceFinder proposes **candidates**, and the `**Draft**` entry below names `*_draft` columns that no longer exist.
 
 ```markdown
 # CONTEXT — canonical vocabulary
@@ -364,7 +399,11 @@ agents/ paper trail with the vocabulary and the decisions behind the pivot."
 
 ---
 
-### Task 3: Scaffold the Electron + React application
+### Task 3: Scaffold the Electron + React application — DISCARDED 2026-09-21
+
+> **DISCARDED, 2026-09-21.** There is no Electron app. The scaffold is a pnpm workspace with `apps/api` (Hono) and `apps/web` (TanStack Start), and nothing below builds it. **Salvaged from this task:** the Tailwind v4 setup (`@tailwindcss/vite`, the single `@import "tailwindcss"` line, no `tailwind.config.js`) carries over to `apps/web` unchanged; the strict `tsconfig` pair — one for the Node side, one for the browser side, both with `strict`, `noUncheckedIndexedAccess` and `verbatimModuleSyntax` — carries over as `apps/api/tsconfig.json` and `apps/web/tsconfig.json`; the Vitest config carries over as-is; and the script names (`dev`, `build`, `test`, `typecheck`, `check`) stay the same in every workspace package, so muscle memory survives the stack change. Everything Electron-specific — `electron-vite`, the `main`/`preload`/`renderer` split, `contextIsolation`, the IPC surface — is gone.
+>
+> Body left in place beneath this notice.
 
 **Files:**
 - Create: `desktop/package.json`
@@ -659,7 +698,15 @@ surface is empty but real so IPC has a correct home in Plan 3."
 
 ---
 
-### Task 4: SQLite schema
+### Task 4: SQLite schema — DISCARDED 2026-09-21
+
+> **DISCARDED, 2026-09-21.** The database is Postgres 16 and Drizzle is its only DDL author: `apps/api/src/db/schema.ts` declares every column, `drizzle-kit generate` writes plain `.sql` under `apps/api/drizzle/` plus `meta/_journal.json` (both committed), and the API applies them at boot from `server.ts` before the port is taken. **Salvaged from this task:** the seven-table SQL below is the surviving artifact — `coins`, `reports`, `report_scores`, `report_team`, `citations`, `chain_facts`, `forward_returns` carry over as the *shape* of the Drizzle schema, minus every `*_draft` / `*_draft_reason` column pair, which are deleted outright now that the LLM is an EvidenceFinder and the human types every score.
+>
+> Five things change in the translation, none of them negotiable: (1) `pgEnum`, never `text().$type<>()`, for `reports.status` and `citations.status` — `$type<T>()` is a TypeScript fiction, not a database constraint; (2) a `BEFORE UPDATE OR DELETE` trigger on `reports`, `report_scores`, `report_team` and `citations` that raises when the parent report is `committed` — Drizzle's DSL cannot express it, so it needs `drizzle-kit generate --custom` and a hand-written `.sql` that `schema.ts` never re-emits, and it is what makes "a committed report is never edited" true against a stray `psql`, a GUI client or an agent with shell access; (3) `report_scores.scoring_version`, written by the commit route from a constant in `scoring/ranges.ts`, because the ledger's fatal failure is silently comparing rows scored under two framework versions; (4) `reports.version` integer NOT NULL with compare-and-swap writes (`UPDATE ... WHERE id=$1 AND version=$2`, 409 on zero rows) — two browser tabs on one draft would otherwise be silent last-write-wins, a hole Electron's single-instance lock used to cover for free; (5) `timestamptz` for every timestamp and `jsonb` for `coins.address_sources` and `chain_facts.payload`, because the archived `app/db/models.py` stored every timestamp as `String(50)` and the ledger join is a date join.
+>
+> `citations` also gains `origin` in `{human, model}`, `finder_provider`, `finder_model`, and a nullable `selected_at` — a row with `selected_at IS NULL` is an unselected candidate, and the commit gate counts only selected ones.
+>
+> Body left in place beneath this notice.
 
 **Files:**
 - Create: `desktop/src/main/db/schema.sql`
@@ -748,6 +795,7 @@ Expected: FAIL — cannot resolve `./index`.
 Write `desktop/src/main/db/schema.sql`:
 
 ```sql
+-- DISCARDED 2026-09-21 — DO NOT RUN. SQLite is gone (Postgres 16 + Drizzle), and every *_draft / *_draft_reason column below is deleted in the current design.
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS coins (
@@ -913,13 +961,17 @@ constraints, not conventions."
 
 ### Task 5: Scoring core — ranges, product gate, narrative
 
+> **These two tasks are next, and they run BEFORE any framework scaffolding.** Not inside `apps/api` as a Hono app, not after a database exists — in a bare `typescript` + `vitest` package at `apps/api/`, with no Hono, no Drizzle, no Postgres and no React anywhere near it. The frozen formulas are the only code in this project that cannot be wrong: every later number, every ledger row and the whole question of whether these scores predict anything reads through them. Nothing should block them, and nothing about a route handler or a migration can teach us anything about whether `narrativeTotal()` is right. `apps/api/src/scoring/` imports nothing from the rest of the app and never will; the scaffolding grows around it afterwards.
+>
+> The formulas are evaluated at exactly one moment in the finished system: inside `POST /reports/:id/commit`, in the same transaction that writes `report_scores` and flips `reports.status`. Every downstream consumer — the ledger view, the API, Python's `forward_returns.py` — reads the stored number and never recomputes it. Re-derivation, when it is genuinely needed, runs the authoritative TypeScript via `node apps/api/scripts/rescore.ts`.
+
 The first two frozen formulas. Ranges reject rather than clamp.
 
 **Files:**
-- Create: `desktop/src/main/scoring/ranges.ts`
-- Create: `desktop/src/main/scoring/product.ts`
-- Create: `desktop/src/main/scoring/narrative.ts`
-- Test: `desktop/src/main/scoring/product.test.ts`, `desktop/src/main/scoring/narrative.test.ts`
+- Create: `apps/api/src/scoring/ranges.ts`
+- Create: `apps/api/src/scoring/product.ts`
+- Create: `apps/api/src/scoring/narrative.ts`
+- Test: `apps/api/src/scoring/product.test.ts`, `apps/api/src/scoring/narrative.test.ts`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -933,7 +985,7 @@ The first two frozen formulas. Ranges reject rather than clamp.
 
 - [ ] **Step 1: Write the failing tests**
 
-Write `desktop/src/main/scoring/product.test.ts`:
+Write `apps/api/src/scoring/product.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -974,7 +1026,7 @@ describe('productGate', () => {
 })
 ```
 
-Write `desktop/src/main/scoring/narrative.test.ts`:
+Write `apps/api/src/scoring/narrative.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1020,12 +1072,12 @@ describe('narrativeTotal', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd desktop && pnpm vitest run src/main/scoring`
+Run: `cd apps/api && pnpm vitest run src/scoring`
 Expected: FAIL — cannot resolve `./product`, `./narrative`, `./ranges`.
 
 - [ ] **Step 3: Implement**
 
-Write `desktop/src/main/scoring/ranges.ts`:
+Write `apps/api/src/scoring/ranges.ts`:
 
 ```ts
 export class ScoreRangeError extends Error {
@@ -1048,7 +1100,7 @@ export function assertRange(field: string, value: number, min: number, max: numb
 }
 ```
 
-Write `desktop/src/main/scoring/product.ts`:
+Write `apps/api/src/scoring/product.ts`:
 
 ```ts
 import { assertRange } from './ranges'
@@ -1077,7 +1129,7 @@ export function productGate(input: ProductGateInput): ProductGateResult {
 }
 ```
 
-Write `desktop/src/main/scoring/narrative.ts`:
+Write `apps/api/src/scoring/narrative.ts`:
 
 ```ts
 import { assertRange } from './ranges'
@@ -1111,13 +1163,13 @@ export function narrativeTotal(input: NarrativeInput): number {
 
 - [ ] **Step 4: Run the tests**
 
-Run: `cd desktop && pnpm vitest run src/main/scoring`
+Run: `cd apps/api && pnpm vitest run src/scoring`
 Expected: PASS, 10 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add desktop/src/main/scoring
+git add apps/api/src/scoring
 git commit -m "feat: product gate and narrative scoring, frozen formulas
 
 Ranges reject rather than clamp. Narrative sub-scores are fractional — the
@@ -1131,9 +1183,9 @@ framework's own ARB example scores Communication 4.5/5."
 The two formulas with real subtlety: the founder 5× weighting, and the multiplication chain whose zeros must be attributable.
 
 **Files:**
-- Create: `desktop/src/main/scoring/team.ts`
-- Create: `desktop/src/main/scoring/accrual.ts`
-- Test: `desktop/src/main/scoring/team.test.ts`, `desktop/src/main/scoring/accrual.test.ts`
+- Create: `apps/api/src/scoring/team.ts`
+- Create: `apps/api/src/scoring/accrual.ts`
+- Test: `apps/api/src/scoring/team.test.ts`, `apps/api/src/scoring/accrual.test.ts`
 
 **Interfaces:**
 - Consumes: `assertRange`, `ScoreRangeError` from `./ranges` (Task 5).
@@ -1149,7 +1201,7 @@ The two formulas with real subtlety: the founder 5× weighting, and the multipli
 
 - [ ] **Step 1: Write the failing tests**
 
-Write `desktop/src/main/scoring/team.test.ts`:
+Write `apps/api/src/scoring/team.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1229,7 +1281,7 @@ describe('teamWeightedScore', () => {
 })
 ```
 
-Write `desktop/src/main/scoring/accrual.test.ts`:
+Write `apps/api/src/scoring/accrual.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1294,12 +1346,12 @@ describe('discoveryPremium', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd desktop && pnpm vitest run src/main/scoring/team.test.ts src/main/scoring/accrual.test.ts`
+Run: `cd apps/api && pnpm vitest run src/scoring/team.test.ts src/scoring/accrual.test.ts`
 Expected: FAIL — cannot resolve `./team`, `./accrual`.
 
 - [ ] **Step 3: Implement**
 
-Write `desktop/src/main/scoring/team.ts`:
+Write `apps/api/src/scoring/team.ts`:
 
 ```ts
 import { assertRange } from './ranges'
@@ -1342,7 +1394,7 @@ export function teamWeightedScore(members: TeamMember[]): number {
 }
 ```
 
-Write `desktop/src/main/scoring/accrual.ts`:
+Write `apps/api/src/scoring/accrual.ts`:
 
 ```ts
 export interface AccrualInput {
@@ -1389,18 +1441,19 @@ export function discoveryPremium(marketCapUsd: number, netAnnualFlowUsd: number)
 
 - [ ] **Step 4: Run the full suite**
 
-Run: `cd desktop && pnpm test`
-Expected: PASS — all scoring and db tests green.
+Run: `cd apps/api && pnpm test`
+Expected: PASS — all scoring tests green. (There are no db tests: Tasks 5-6 run in a bare
+typescript + vitest package, and Task 4's SQLite schema is DISCARDED.)
 
-- [ ] **Step 5: Typecheck and lint**
+- [ ] **Step 5: Typecheck and check**
 
-Run: `cd desktop && pnpm typecheck && pnpm check`
+Run: `cd apps/api && pnpm typecheck && pnpm check`
 Expected: both clean.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add desktop/src/main/scoring
+git add apps/api/src/scoring
 git commit -m "feat: team weighting and value-accrual scoring, frozen formulas
 
 Founder counts as five scores. The accrual chain names which multiplicand was
@@ -1412,9 +1465,8 @@ zero instead of returning a bare zero, per the framework's multiplication rule."
 ## Done when
 
 - `python -m pytest -q` passes and collects only `tests/research`.
-- `cd desktop && pnpm test && pnpm typecheck && pnpm check` all pass.
-- `pnpm dev` opens a window.
-- `CLAUDE.md` describes a research platform, and `agents/` holds the vocabulary, decisions, and roadmap.
+- `cd apps/api && pnpm test && pnpm typecheck && pnpm check` all pass against the bare scoring package.
+- Both `apps/api/src/scoring/` modules import nothing from the rest of the app, and `apps/web` cannot reach them.
 - Both framework worked examples are pinned by tests: team → 7.25, ARB narrative → 26.5.
 
-**Next:** Plan 2 — Evidence (citation verifier, vendor adapters, viem chain layer).
+**Next, in the settled build order** (1 archive [DONE] · 2 frozen scoring core = Tasks 5 & 6 above): **3** schema + migrations + the immutability trigger → **4** the minimal editor → **5** the citation verifier → **6** the commit gate + ledger view → **7** bench three models on one real coin → **8** wire the EvidenceFinder. The **viem chain layer is Phase A.2**, after report #1 — it is not pulled forward, and the editor is not skipped.

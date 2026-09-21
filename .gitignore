@@ -14,8 +14,10 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored: a bare `lib/` matches that name at ANY depth and would silently
+# swallow apps/api/src/lib/ and apps/web/src/lib/.
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -138,8 +140,6 @@ celerybeat.pid
 
 # Environments
 .env
-# Bot runtime files (contain private state/credentials)
-bot_state.json
 .envrc
 .venv
 env/
@@ -219,3 +219,13 @@ outputs/
 
 # research warehouse data (parquet) — local only
 research/warehouse/
+
+# Playwright MCP session scratch
+.playwright-mcp/
+
+# JavaScript / pnpm workspace (apps/api, apps/web).
+# .env, dist/ and build/ are already covered by the Python template above.
+node_modules/
+.output/
+*.tsbuildinfo
+.tanstack/

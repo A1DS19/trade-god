@@ -15,7 +15,7 @@ from __future__ import annotations
 import pandas as pd
 
 from research import config
-from app.intraday.strategy import Z_ENTRY, Z_RECOVER, build_weights  # noqa: F401
+from research.signals.intraday.strategy_core import Z_ENTRY, Z_RECOVER, build_weights  # noqa: F401
 
 PIT_TOP_N = 30
 PIT_WINDOW_DAYS = 30
