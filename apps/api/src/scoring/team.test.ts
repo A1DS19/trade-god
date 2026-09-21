@@ -15,6 +15,10 @@ describe('memberScore', () => {
     expect(memberScore(member('a', false, 5, 3, 2))).toBe(10)
   })
 
+  it('rejects a fractional rung', () => {
+    expect(() => memberScore(member('a', false, 4.5, 0, 0))).toThrow(ScoreRangeError)
+  })
+
   it('rejects H above 5, M above 3, L above 2', () => {
     expect(() => memberScore(member('a', false, 6, 0, 0))).toThrow(ScoreRangeError)
     expect(() => memberScore(member('a', false, 0, 4, 0))).toThrow(ScoreRangeError)

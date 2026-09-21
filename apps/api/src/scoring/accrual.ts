@@ -51,22 +51,45 @@ export function annualHolderFlow(input: AccrualInput): AccrualResult {
   }
 }
 
-export type PremiumResult = { kind: 'MULTIPLE'; multiple: number } | { kind: 'PURE_PREMIUM' }
+export type PremiumResult =
+  | { kind: 'MULTIPLE'; multiple: number }
+  /** Nothing is forced to holders at all: gross flow is zero. The lesson's "never ownable". */
+  | { kind: 'PURE_PREMIUM' }
+  /** A real mechanism exists and issuance eats it. Distinct from having no mechanism. */
+  | { kind: 'ISSUANCE_NEGATIVE'; grossAnnualFlowUsd: number; netAnnualFlowUsd: number }
 
 /**
- * The framework: a token with zero forced flow at any price is "100% premium,
- * pure narrative, tradable but never ownable."
+ * The frozen formula is unchanged: market cap / net annual flow.
+ *
+ * What the verdict TAXONOMY distinguishes, and an earlier version did not: the lesson reserves
+ * "100% premium, pure narrative, tradable but never ownable" for a token with ZERO forced flow
+ * (00-how-we-think.md §5). A token that earns $10M and issues $50M — the lesson's own flagship
+ * example in §1 — has a real mechanism that insiders are eating, which is a different finding
+ * from having no mechanism at all. It takes the whole AccrualResult rather than a bare net figure
+ * precisely so it cannot be called without the gross that tells the two apart.
  */
-export function discoveryPremium(marketCapUsd: number, netAnnualFlowUsd: number): PremiumResult {
+export function discoveryPremium(marketCapUsd: number, flow: AccrualResult): PremiumResult {
   assertNonNegative('marketCapUsd', marketCapUsd)
-  if (!Number.isFinite(netAnnualFlowUsd)) {
-    throw new ScoreRangeError(
-      'netAnnualFlowUsd',
-      netAnnualFlowUsd,
-      Number.NEGATIVE_INFINITY,
-      Number.POSITIVE_INFINITY,
-    )
+  for (const field of ['grossAnnualFlowUsd', 'netAnnualFlowUsd'] as const) {
+    if (!Number.isFinite(flow[field])) {
+      throw new ScoreRangeError(
+        field,
+        flow[field],
+        Number.NEGATIVE_INFINITY,
+        Number.POSITIVE_INFINITY,
+      )
+    }
   }
-  if (netAnnualFlowUsd <= 0) return { kind: 'PURE_PREMIUM' }
-  return { kind: 'MULTIPLE', multiple: marketCapUsd / netAnnualFlowUsd }
+
+  if (flow.netAnnualFlowUsd > 0) {
+    return { kind: 'MULTIPLE', multiple: marketCapUsd / flow.netAnnualFlowUsd }
+  }
+  if (flow.grossAnnualFlowUsd > 0) {
+    return {
+      kind: 'ISSUANCE_NEGATIVE',
+      grossAnnualFlowUsd: flow.grossAnnualFlowUsd,
+      netAnnualFlowUsd: flow.netAnnualFlowUsd,
+    }
+  }
+  return { kind: 'PURE_PREMIUM' }
 }

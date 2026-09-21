@@ -32,7 +32,7 @@ one's floor.
       and `conftest.py`.
 - [x] **2. Frozen scoring core.** — DONE 2026-09-21. `apps/api/src/scoring/{ranges,product,narrative,team,accrual}.ts`
       — pure functions, no imports from the rest of the app, reject out-of-range instead of
-      clamping, fractional narrative sub-scores allowed. Built in a bare `typescript` + `vitest`
+      clamping, integer sub-scores. Built in a bare `typescript` + `vitest`
       package before any Hono, Drizzle or Postgres exists (Plan 1, Tasks 5 and 6). Tested first and
       hardest; this is a money path. The framework's two worked examples are the acceptance test:
       team → 7.25, ARB narrative → 26.5. **Shipped:** 24 vitest tests green, `tsc --noEmit` and Biome clean; commits `fe01add` (scaffold), `cb4b6cd` (product + narrative), `b85be59` (team + accrual).

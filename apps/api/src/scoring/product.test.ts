@@ -24,6 +24,15 @@ describe('productGate', () => {
     expect(() => productGate({ ease: -1, hairFire: 5, exclusivity: 5 })).toThrow(ScoreRangeError)
   })
 
+  // Ruled 2026-09-21: the lesson's bands are integer-contiguous, and three one-decimal
+  // sub-scores summing to exactly 16.0 could add in binary to 15.999999999999998 and fail a
+  // gate the lesson says to pass — 404 such triples exist, all failing one way.
+  it('rejects a fractional sub-score', () => {
+    expect(() => productGate({ ease: 8.2, hairFire: 7.6, exclusivity: 0.2 })).toThrow(
+      ScoreRangeError,
+    )
+  })
+
   it('names the offending field in the error', () => {
     try {
       productGate({ ease: 5, hairFire: 99, exclusivity: 5 })

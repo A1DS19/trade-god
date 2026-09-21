@@ -1,4 +1,4 @@
-import { assertRange } from './ranges'
+import { assertIntegerRange } from './ranges'
 
 export interface TeamMember {
   name: string
@@ -10,9 +10,9 @@ export interface TeamMember {
 
 /** H (0–5) + M (0–3) + L (0–2), max 10. Frozen. */
 export function memberScore(member: TeamMember): number {
-  assertRange('h', member.h, 0, 5)
-  assertRange('m', member.m, 0, 3)
-  assertRange('l', member.l, 0, 2)
+  assertIntegerRange('h', member.h, 0, 5)
+  assertIntegerRange('m', member.m, 0, 3)
+  assertIntegerRange('l', member.l, 0, 2)
   return member.h + member.m + member.l
 }
 

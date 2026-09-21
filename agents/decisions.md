@@ -9,6 +9,30 @@ morning, against an Electron design that the afternoon replaced.
 
 ---
 
+## 2026-09-21 — Rubric sub-scores are integers, and one cited worked example was never real
+
+A post-build audit of `apps/api/src/scoring/` against the vendored lessons found that the example
+this repo cited as the framework's own — ARB narrative, Communication 4.5/5, total 26.5 — appears
+in **none** of the seven lessons, and nowhere in the original download. It was written by the
+implementation plan and then quoted by the spec, by CLAUDE.md, by a test name and by this file as
+though it were source. It was the only evidence anywhere for fractional sub-scores.
+
+That mattered arithmetically, not just bibliographically. With decimals allowed, three one-decimal
+sub-scores summing to exactly 16.0 can add in binary to 15.999999999999998 — 404 such triples
+exist, every one of them failing a gate the lesson says to pass, and 35.8% of one-decimal narrative
+combinations miss their decimal total. **Ruling: rubric sub-score inputs are whole numbers.** The
+lessons state their scales as integer-contiguous bands and the gate partitions into "16+" / "0–15",
+which only covers integers. Derived values — the team weighted score is a mean — are unaffected.
+
+The wider lesson is the one this repo keeps re-learning: a confident, citable-looking number that
+nobody checked. It survived a design spec, a 1420-line plan, a code review and four commits. The
+framework lessons are now vendored under `framework/` precisely so the next such claim can be
+grepped in one second.
+
+Supersedes the fractional-sub-score clause of the frozen-formulas entry below.
+
+---
+
 ## 2026-09-21 — Forward-return horizons frozen at 30 / 90 / 180 / 365 days
 
 `research/forward_returns.py` will compute exactly four horizons, and that set does not change.
@@ -245,9 +269,10 @@ CoinPicks formulas are implemented exactly as published, never tuned. The purpos
 to *test* the framework; a modified formula tests something else, and the ledger's verdict would be
 about a method nobody uses. Discrepancies get raised with the user, not patched.
 
-Concretely: ranges are rejected, never clamped. Narrative sub-scores may be fractional — the
+Concretely: ranges are rejected, never clamped. ~~Narrative sub-scores may be fractional — the
 framework's own worked example scores Communication 4.5/5 — so they are never constrained to
-integers. Every `report_scores` row carries the `scoring_version` it was computed under, because
+integers.~~ **[Superseded 2026-09-21 — that example is not in any lesson; sub-scores are
+integers. See the entry above.]** Every `report_scores` row carries the `scoring_version` it was computed under, because
 the failure this rule exists to prevent is not "someone changes a weight", it is "someone changes a
 weight and nobody can tell which rows came before".
 

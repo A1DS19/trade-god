@@ -1,4 +1,4 @@
-import { assertRange } from './ranges'
+import { assertIntegerRange } from './ranges'
 
 /**
  * Frozen sub-score maxima. Note hairFire is 0–6 HERE (inside Narrative) but
@@ -20,7 +20,7 @@ export type NarrativeInput = Record<keyof typeof NARRATIVE_MAX, number>
 export function narrativeTotal(input: NarrativeInput): number {
   let total = 0
   for (const field of Object.keys(NARRATIVE_MAX) as (keyof typeof NARRATIVE_MAX)[]) {
-    assertRange(field, input[field], 0, NARRATIVE_MAX[field])
+    assertIntegerRange(field, input[field], 0, NARRATIVE_MAX[field])
     total += input[field]
   }
   return total

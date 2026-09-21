@@ -238,14 +238,16 @@ net_annual_flow   = gross_annual_flow - annual_issuance_usd
 The framework states "these steps multiply — one zero anywhere zeroes the product." The
 implementation therefore **reports which multiplicand was zero** rather than returning a bare 0.
 
-`discovery_premium = market_cap / net_annual_flow`, returning a distinct `PURE_PREMIUM` verdict
-when `net_annual_flow <= 0` — the framework's "100% premium, pure narrative, tradable but never
-ownable."
+`discovery_premium = market_cap / net_annual_flow`. The verdict it carries is three-way, not two:
+`MULTIPLE` when net flow is positive; `ISSUANCE_NEGATIVE` when a real mechanism exists and issuance
+eats it (gross > 0, net <= 0); and `PURE_PREMIUM` only when gross is zero — the framework reserves
+"100% premium, pure narrative, tradable but never ownable" for a token with *zero forced flow*, and
+a token earning $10M while issuing $50M is a different finding from one with no mechanism at all.
 
-**This module is blocked.** The units of `capture_share` and `accrual_pct` are unstated in the
-frozen text — fraction (`0.05`) or percent (`5`) is a 100× difference in `gross_annual_flow`. See
-the blocking question under *Findings raised, not changed*; it is answered before `accrual.ts` is
-written, not during.
+Two rulings govern this module, both dated 2026-09-21 and both recorded under *Findings raised, not
+changed*: `capture_share` and `accrual_pct` are fractions in `[0, 1]` and the domain is enforced;
+and the reserve/collateral branch is out of scope for A.1, so this figure is captioned as
+**cash-flow accrual**, never as total holder value.
 
 ## 3. Architecture
 
@@ -315,8 +317,9 @@ inside `POST /reports/:id/commit`, in the same transaction that writes `report_s
 `reports.status`. Every downstream consumer — the UI, the ledger, Python — reads the stored number.
 
 Two rules that belong to the formulas themselves: ranges are **rejected, never clamped**; and
-narrative sub-scores may be **fractional** — the framework's own worked example scores Communication
-4.5/5, so they are never constrained to integers.
+rubric sub-scores are **whole numbers** (ruled 2026-09-21). The decimal example this document
+previously cited — ARB, Communication 4.5/5 — appears in none of the seven vendored lessons; it
+originated in the implementation plan. See "Findings raised, not changed".
 
 **2. Drizzle alone authors DDL.** `apps/api/src/db/schema.ts` declares every column; `drizzle-kit
 generate` writes plain `.sql` under `apps/api/drizzle/` plus `meta/_journal.json`; both are
@@ -664,20 +667,52 @@ wrong or under-specified. **Nothing was changed.** They are recorded here for th
 because a silently corrected formula tests a different framework and the ledger's answer would then
 be about something nobody uses.
 
-### BLOCKING — must be answered before §2.5's accrual module is written
+### RULED 2026-09-21 — was blocking, now answered
 
 **`capture_share` and `accrual_pct` have unstated units.** `gross = segment_revenue_usd ×
 capture_share × accrual_pct` is off by 100× depending on whether `accrual_pct` is a fraction
 (`0.05`) or a percentage (`5`). The naming cuts both ways inside one expression — *share* reads as a
-fraction, *pct* reads as a percent — and the frozen text does not say which, so the choice is the
-user's and not the implementer's.
+fraction, *pct* reads as a percent — and `framework/00-how-we-think.md:20-22` uses both words in
+consecutive sentences: *"what **fraction** of that segment"* for capture, *"what **percentage** is
+forced through the token"* for accrual.
 
-Unlike the three findings below, this one **blocks code**: build-order step 2 cannot finish
-`apps/api/src/scoring/accrual.ts` without it, because the range check has to reject one of the two
-scales, every stored `gross_annual_flow`, `net_annual_flow` and `discovery_premium` inherits the
-choice, and a wrong guess is silent — it produces plausible numbers that are off by two orders of
-magnitude, which the ledger would then be measuring. Picking one quietly is exactly the drift the
-frozen-formula rule exists to prevent.
+**Ruling: both are fractions in `[0, 1]`, and the domain is enforced.** The arithmetic settles it —
+the chain only yields dollars if both are fractions — and both are parts of a stated whole, so
+neither can exceed 1. `annualHolderFlow` rejects anything outside `[0, 1]` rather than dividing by
+100, because a `50` typed where `0.5` belongs is a silent two-orders-of-magnitude error inside a
+report that is immutable once committed. The formula itself is untouched.
+
+The TypeScript field keeps the name `accrualPct` despite meaning a fraction, to stay aligned with
+the frozen table's `accrual_pct`. Renaming it for ergonomics would put the code's vocabulary out of
+step with the framework's, which is a worse trade than a name that needs a comment — and the guard
+already makes the misreading impossible rather than merely discouraged.
+
+### RULED 2026-09-21 — `PURE_PREMIUM` was over-applied
+
+`discovery_premium = market_cap ÷ net_annual_flow` is frozen and unchanged. The **verdict taxonomy**
+around it was wrong: it returned `PURE_PREMIUM` for any `net ≤ 0`, but §5 of the lesson reserves
+*"100% premium, pure narrative, tradable but never ownable"* for a token with **zero forced flow**.
+A token earning $10M while issuing $50M — the lesson's own flagship example in §1 — has a real
+mechanism that insiders are eating, which is a different finding from having no mechanism at all.
+
+`PURE_PREMIUM` now requires `gross = 0`; a positive gross with a negative net returns
+`ISSUANCE_NEGATIVE` carrying both figures. `discoveryPremium` takes the whole `AccrualResult`
+rather than a bare net figure, so it cannot be called without the gross that tells the two apart.
+
+### RULED 2026-09-21 — the reserve/collateral branch is out of scope for Phase A.1
+
+`framework/00-how-we-think.md:57-61` describes a second value branch — *"the token must be bought
+and held or locked for the system to function at all (gas floats, bonded collateral, required
+staking). Value it by the size of the float"* — and states that **the branches ADD**. The frozen
+formula table models only the cash-flow branch.
+
+The consequence is real: a gas-float token with no fee share computes `gross = 0`, and therefore
+reads as `PURE_PREMIUM`, for a coin the lesson explicitly places *inside* the set that passes the
+accrual test. **Ruling: ship A.1 with the cash-flow branch only, and say so in the report** — the
+accrual figure is captioned as cash-flow accrual, not as total holder value. Adding a term to a
+frozen formula is a larger move than a bug fix, and the lesson gives no arithmetic for valuing a
+float, so the term would have to be invented. Revisit when a researched coin is actually
+reserve-branch.
 
 ### Recorded for a ruling — not blocking
 

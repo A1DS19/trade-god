@@ -44,8 +44,9 @@ them.
   transaction that writes `report_scores` and flips `reports.status`. Every downstream consumer
   reads the stored number, never recomputes it.
 - Out-of-range values are **REJECTED, never clamped**.
-- Narrative sub-scores may be **fractional** (the framework's own worked example scores
-  Communication 4.5/5). Never constrain them to integers.
+- Rubric sub-scores are **whole numbers**. The lessons state their scales as integer-contiguous
+  bands, and the product gate partitions into "16+" / "0–15" — a partition that only covers
+  integers. Derived values (the team weighted score, a mean) are not integers.
 - `report_scores.scoring_version` is written by the commit route from a constant in
   `scoring/ranges.ts`. The ledger's fatal failure mode is silently comparing rows scored under two
   framework versions.

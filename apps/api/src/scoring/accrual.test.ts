@@ -87,25 +87,48 @@ describe('annualHolderFlow', () => {
 })
 
 describe('discoveryPremium', () => {
-  it('returns the multiple when net flow is positive', () => {
-    const r = discoveryPremium(50_000_000, 10_000_000)
-    expect(r).toEqual({ kind: 'MULTIPLE', multiple: 5 })
+  const flow = (grossAnnualFlowUsd: number, netAnnualFlowUsd: number) => ({
+    grossAnnualFlowUsd,
+    netAnnualFlowUsd,
+    zeroFactor: null,
   })
 
-  it('returns PURE_PREMIUM when nothing is forced to holders', () => {
-    expect(discoveryPremium(50_000_000, 0).kind).toBe('PURE_PREMIUM')
-    expect(discoveryPremium(50_000_000, -1).kind).toBe('PURE_PREMIUM')
+  it('returns the multiple when net flow is positive', () => {
+    expect(discoveryPremium(50_000_000, flow(14_000_000, 10_000_000))).toEqual({
+      kind: 'MULTIPLE',
+      multiple: 5,
+    })
+  })
+
+  it('returns PURE_PREMIUM only when nothing is forced to holders at all', () => {
+    expect(discoveryPremium(50_000_000, flow(0, 0)).kind).toBe('PURE_PREMIUM')
+    expect(discoveryPremium(50_000_000, flow(0, -1)).kind).toBe('PURE_PREMIUM')
+  })
+
+  // The lesson reserves "never ownable" for ZERO forced flow. A token earning $10M while issuing
+  // $50M — its own flagship example — has a real mechanism that insiders are eating, and calling
+  // that the same thing as a governance token with no mechanism loses the finding.
+  it('distinguishes a mechanism eaten by issuance from no mechanism at all', () => {
+    const r = discoveryPremium(50_000_000, flow(10_000_000, -40_000_000))
+    expect(r.kind).toBe('ISSUANCE_NEGATIVE')
+    expect(r).toMatchObject({ grossAnnualFlowUsd: 10_000_000, netAnnualFlowUsd: -40_000_000 })
   })
 })
 
 describe('discoveryPremium — malformed input', () => {
+  const ok = { grossAnnualFlowUsd: 14_000_000, netAnnualFlowUsd: 10_000_000, zeroFactor: null }
+
   it('rejects a missing market cap instead of returning a premium of 0', () => {
-    expect(() => discoveryPremium(null as unknown as number, 10_000_000)).toThrow(ScoreRangeError)
-    expect(() => discoveryPremium(Number.NaN, 10_000_000)).toThrow(ScoreRangeError)
+    expect(() => discoveryPremium(null as unknown as number, ok)).toThrow(ScoreRangeError)
+    expect(() => discoveryPremium(Number.NaN, ok)).toThrow(ScoreRangeError)
   })
 
-  it('rejects a non-finite net flow rather than guessing a verdict', () => {
-    expect(() => discoveryPremium(50_000_000, Number.NaN)).toThrow(ScoreRangeError)
-    expect(() => discoveryPremium(50_000_000, null as unknown as number)).toThrow(ScoreRangeError)
+  it('rejects a non-finite flow rather than guessing a verdict', () => {
+    expect(() => discoveryPremium(50_000_000, { ...ok, netAnnualFlowUsd: Number.NaN })).toThrow(
+      ScoreRangeError,
+    )
+    expect(() =>
+      discoveryPremium(50_000_000, { ...ok, grossAnnualFlowUsd: null as unknown as number }),
+    ).toThrow(ScoreRangeError)
   })
 })

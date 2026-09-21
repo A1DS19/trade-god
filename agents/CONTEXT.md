@@ -57,7 +57,7 @@ map prevents the web app from importing a second evaluation path.
 
 **Product gate** — `ease + hairFire + exclusivity >= 16`. A failure closes the report.
 
-**Narrative score** — the /31 total across six sub-scores. Sub-scores may be **fractional** (the
+**Narrative score** — the /31 total across six sub-scores. Sub-scores are **whole numbers** (the
 framework's own worked example scores Communication 4.5/5) — never round or constrain them to
 integers.
 

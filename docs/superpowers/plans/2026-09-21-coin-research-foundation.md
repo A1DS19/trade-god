@@ -34,7 +34,7 @@
 
 - **Framework formulas are frozen.** Every weight, range, and threshold comes from the spec's "Normative formulas (frozen)" section and is reproduced exactly. Never adjust one because it looks better calibrated — raise it with the user instead.
 - **Ranges are rejected, never clamped.** An out-of-range score throws; it is not silently coerced.
-- Narrative sub-scores may be **fractional** (the framework's own worked example scores Communication 4.5/5). Do not constrain them to integers.
+- Rubric sub-scores are **whole numbers** (ruled 2026-09-21). The decimal example this constraint used to cite — ARB, Communication 4.5/5 — appears in no lesson. Derived values such as the team weighted score are not integers.
 - Commits never carry AI attribution — no `Co-Authored-By` trailers, no generated-with footers.
 - Commits land on `main` directly (this is a personal repo; the user has said branches are unnecessary here).
 - `research/` and `tests/research/` must keep passing throughout. Run `python -m pytest tests/research -q` after any move that touches them.
@@ -962,6 +962,8 @@ constraints, not conventions."
 ---
 
 ### Task 5: Scoring core — ranges, product gate, narrative — DONE 2026-09-21
+
+> **Amended 2026-09-21** after the post-build audit: sub-scores are integers, not fractional. The shipped commit message below still says "Narrative sub-scores are fractional" — it was written before the ruling and is left as the record.
 
 > **These two tasks are next, and they run BEFORE any framework scaffolding.** Not inside `apps/api` as a Hono app, not after a database exists — in a bare `typescript` + `vitest` package at `apps/api/`, with no Hono, no Drizzle, no Postgres and no React anywhere near it. The frozen formulas are the only code in this project that cannot be wrong: every later number, every ledger row and the whole question of whether these scores predict anything reads through them. Nothing should block them, and nothing about a route handler or a migration can teach us anything about whether `narrativeTotal()` is right. `apps/api/src/scoring/` imports nothing from the rest of the app and never will; the scaffolding grows around it afterwards.
 >

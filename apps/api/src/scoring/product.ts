@@ -1,4 +1,4 @@
-import { assertRange } from './ranges'
+import { assertIntegerRange } from './ranges'
 
 /** Framework: 16+ moves on, 0–15 drops the project. Frozen. */
 export const PRODUCT_GATE_THRESHOLD = 16
@@ -15,9 +15,9 @@ export interface ProductGateResult {
 }
 
 export function productGate(input: ProductGateInput): ProductGateResult {
-  assertRange('ease', input.ease, 0, 10)
-  assertRange('hairFire', input.hairFire, 0, 10)
-  assertRange('exclusivity', input.exclusivity, 0, 10)
+  assertIntegerRange('ease', input.ease, 0, 10)
+  assertIntegerRange('hairFire', input.hairFire, 0, 10)
+  assertIntegerRange('exclusivity', input.exclusivity, 0, 10)
 
   const total = input.ease + input.hairFire + input.exclusivity
   return { total, passed: total >= PRODUCT_GATE_THRESHOLD }

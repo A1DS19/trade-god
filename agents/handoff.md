@@ -85,7 +85,7 @@ _2026-09-21_
    written: a bare `typescript` + `vitest` package at `apps/api/`, no Hono, no Drizzle, no Postgres
    and no React near it. Start with `ranges.ts` and its `SCORING_VERSION` constant, because every
    other file depends on both. Reject out of range, never clamp. Narrative sub-scores may be
-   fractional. The two framework worked examples are the acceptance test: team → 7.25, ARB
+   whole numbers. The one genuine framework worked example is the acceptance test: team → 7.25 (the ARB
    narrative → 26.5.
 4. **Step 3 — schema, migrations, and the trigger**, and write the trigger in the *same* sitting.
    `drizzle-kit generate --custom`, hand-written `BEFORE UPDATE OR DELETE` on `reports`,
