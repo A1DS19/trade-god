@@ -10,7 +10,11 @@ describe('narrativeTotal', () => {
     expect(NARRATIVE_TOTAL_MAX).toBe(31)
   })
 
-  it('reproduces the framework ARB worked example: 3+6+6+4.5+4+3 = 26.5', () => {
+  // UNSOURCED. This example is NOT in framework/ — grep the seven lessons for ARB, 26.5 or 4.5
+  // and they are absent; it originates in the implementation plan. It is kept only as an
+  // arithmetic check, and it is the sole basis anywhere in this repo for fractional sub-scores.
+  // Pending the owner's ruling on score granularity, after which this test may have to go.
+  it('sums a fractional set correctly: 3+6+6+4.5+4+3 = 26.5 (example not sourced to a lesson)', () => {
     expect(
       narrativeTotal({
         maturity: 3,

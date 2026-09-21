@@ -97,3 +97,15 @@ describe('discoveryPremium', () => {
     expect(discoveryPremium(50_000_000, -1).kind).toBe('PURE_PREMIUM')
   })
 })
+
+describe('discoveryPremium — malformed input', () => {
+  it('rejects a missing market cap instead of returning a premium of 0', () => {
+    expect(() => discoveryPremium(null as unknown as number, 10_000_000)).toThrow(ScoreRangeError)
+    expect(() => discoveryPremium(Number.NaN, 10_000_000)).toThrow(ScoreRangeError)
+  })
+
+  it('rejects a non-finite net flow rather than guessing a verdict', () => {
+    expect(() => discoveryPremium(50_000_000, Number.NaN)).toThrow(ScoreRangeError)
+    expect(() => discoveryPremium(50_000_000, null as unknown as number)).toThrow(ScoreRangeError)
+  })
+})

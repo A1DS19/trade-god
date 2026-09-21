@@ -1,4 +1,4 @@
-import { assertNonNegative, assertRange } from './ranges'
+import { assertNonNegative, assertRange, ScoreRangeError } from './ranges'
 
 export interface AccrualInput {
   segmentRevenueUsd: number
@@ -26,8 +26,12 @@ export interface AccrualResult {
  * `00-how-we-think.md` calls capture share a "fraction" and token accrual a "percentage"
  * in consecutive sentences, but the multiplication only produces dollars if both are
  * fractions. A 50 typed where 0.5 belongs is a silent 100x error inside a report that is
- * immutable once committed, so it is rejected rather than quietly divided — the same
- * treatment the framework prescribes for a Quality value typed on the wrong scale.
+ * immutable once committed, so it is rejected rather than quietly divided.
+ *
+ * NOTE ON PROVENANCE: the framework's own AI prompt says to DIVIDE a mis-scaled Quality value
+ * by 10. Rejecting instead is this repo's deliberate departure (spec: "reject it; do not silently
+ * divide"), not something the lessons prescribe. Recorded here so the next reader does not cite
+ * the framework for a rule the framework does not contain.
  */
 export function annualHolderFlow(input: AccrualInput): AccrualResult {
   assertNonNegative('segmentRevenueUsd', input.segmentRevenueUsd)
@@ -54,6 +58,15 @@ export type PremiumResult = { kind: 'MULTIPLE'; multiple: number } | { kind: 'PU
  * pure narrative, tradable but never ownable."
  */
 export function discoveryPremium(marketCapUsd: number, netAnnualFlowUsd: number): PremiumResult {
+  assertNonNegative('marketCapUsd', marketCapUsd)
+  if (!Number.isFinite(netAnnualFlowUsd)) {
+    throw new ScoreRangeError(
+      'netAnnualFlowUsd',
+      netAnnualFlowUsd,
+      Number.NEGATIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    )
+  }
   if (netAnnualFlowUsd <= 0) return { kind: 'PURE_PREMIUM' }
   return { kind: 'MULTIPLE', multiple: marketCapUsd / netAnnualFlowUsd }
 }

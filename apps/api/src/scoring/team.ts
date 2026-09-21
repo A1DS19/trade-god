@@ -25,7 +25,9 @@ export function teamWeightedScore(members: TeamMember[]): number {
     throw new Error(`team must have 3 to 5 people, got ${members.length}`)
   }
 
-  const founders = members.filter((x) => x.isFounder)
+  // `=== true` and not truthiness: a JSON body carrying the STRING "false" would otherwise
+  // elect that member sole founder and return a plausible score instead of the error below.
+  const founders = members.filter((x) => x.isFounder === true)
   if (founders.length !== 1) {
     throw new Error(`team must have exactly one founder, got ${founders.length}`)
   }

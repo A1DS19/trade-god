@@ -73,3 +73,14 @@ describe('teamWeightedScore', () => {
     ).toThrow(/3 to 5/i)
   })
 })
+
+describe('teamWeightedScore — malformed input', () => {
+  it('does not elect a founder from a truthy non-boolean', () => {
+    const bad = [
+      { name: 'a', isFounder: 'false' as unknown as boolean, h: 5, m: 3, l: 2 },
+      member('b', false, 0, 0, 0),
+      member('c', false, 0, 0, 0),
+    ]
+    expect(() => teamWeightedScore(bad)).toThrow(/exactly one founder/i)
+  })
+})
