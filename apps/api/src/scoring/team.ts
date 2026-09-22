@@ -1,4 +1,4 @@
-import { assertIntegerRange } from './ranges'
+import { assertIntegerRange } from './ranges.ts'
 
 export interface TeamMember {
   name: string

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { NARRATIVE_TOTAL_MAX, narrativeTotal } from './narrative'
-import { ScoreRangeError } from './ranges'
+import { NARRATIVE_TOTAL_MAX, narrativeTotal } from './narrative.ts'
+import { ScoreRangeError } from './ranges.ts'
 
 const FULL = { maturity: 7, smartMoney: 6, hairFire: 6, communication: 5, lineage: 4, mutation: 3 }
 

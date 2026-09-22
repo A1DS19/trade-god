@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { annualHolderFlow, discoveryPremium } from './accrual'
-import { ScoreRangeError } from './ranges'
+import { annualHolderFlow, discoveryPremium } from './accrual.ts'
+import { ScoreRangeError } from './ranges.ts'
 
 describe('annualHolderFlow', () => {
   it('multiplies the chain then subtracts issuance', () => {

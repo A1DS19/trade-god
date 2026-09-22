@@ -1,12 +1,16 @@
 export class ScoreRangeError extends Error {
-  constructor(
-    readonly field: string,
-    readonly value: number,
-    readonly min: number,
-    readonly max: number,
-  ) {
+  readonly field: string
+  readonly value: number
+  readonly min: number
+  readonly max: number
+
+  constructor(field: string, value: number, min: number, max: number) {
     super(`${field} must be between ${min} and ${max}, got ${value}`)
     this.name = 'ScoreRangeError'
+    this.field = field
+    this.value = value
+    this.min = min
+    this.max = max
   }
 }
 

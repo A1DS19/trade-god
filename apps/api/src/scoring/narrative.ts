@@ -1,4 +1,4 @@
-import { assertIntegerRange } from './ranges'
+import { assertIntegerRange } from './ranges.ts'
 
 /**
  * Frozen sub-score maxima. Note hairFire is 0–6 HERE (inside Narrative) but

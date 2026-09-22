@@ -1,4 +1,4 @@
-import { assertNonNegative, assertRange, ScoreRangeError } from './ranges'
+import { assertNonNegative, assertRange, ScoreRangeError } from './ranges.ts'
 
 export interface AccrualInput {
   segmentRevenueUsd: number

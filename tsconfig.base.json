@@ -1,8 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,

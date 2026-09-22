@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ScoreRangeError } from './ranges'
-import { memberScore, type TeamMember, teamWeightedScore } from './team'
+import { ScoreRangeError } from './ranges.ts'
+import { memberScore, type TeamMember, teamWeightedScore } from './team.ts'
 
 const member = (name: string, isFounder: boolean, h: number, m: number, l: number): TeamMember => ({
   name,

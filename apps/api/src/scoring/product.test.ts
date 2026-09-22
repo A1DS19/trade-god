@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { PRODUCT_GATE_THRESHOLD, productGate } from './product'
-import { ScoreRangeError } from './ranges'
+import { PRODUCT_GATE_THRESHOLD, productGate } from './product.ts'
+import { ScoreRangeError } from './ranges.ts'
 
 describe('productGate', () => {
   it('sums the three sub-scores', () => {

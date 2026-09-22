@@ -1,4 +1,4 @@
-import { assertIntegerRange } from './ranges'
+import { assertIntegerRange } from './ranges.ts'
 
 /** Framework: 16+ moves on, 0–15 drops the project. Frozen. */
 export const PRODUCT_GATE_THRESHOLD = 16
