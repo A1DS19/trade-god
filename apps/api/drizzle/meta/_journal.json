@@ -15,6 +15,13 @@
       "when": 1790044621659,
       "tag": "0001_immutability_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790044979944,
+      "tag": "0002_role_grants",
+      "breakpoints": true
     }
   ]
 }
