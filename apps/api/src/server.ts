@@ -8,11 +8,12 @@ import {
   assertNotSuperuser,
 } from './db/integrity.ts'
 
-// 8789, not 8787. The sibling project's API container (my-teacher-api-1) holds 8787 permanently
-// on this machine, and a server that fails with EADDRINUSE while something ELSE answers /health
-// on the same port is how a boot check gets recorded as green without ever having run. Verified:
-// curl against 8787 returned {"ok":true,"db":true,"inflight":0} — a different application's
-// health shape entirely. Overridable, because the collision is local to this machine.
+// 8789, not 8787. On 2026-09-21 the sibling project's API container (my-teacher-api-1) was bound
+// to 8787 here: this server died with EADDRINUSE while that container answered /health on the same
+// port with {"ok":true,"db":true,"inflight":0} — a different application's shape entirely — which
+// is how a boot check gets recorded as green without ever having run. That container is not always
+// up, so 8787 is not permanently taken; the default moved because a port another project uses at
+// all is a bad default for a health check that is supposed to prove something. Overridable.
 const PORT = Number(process.env.PORT ?? 8789)
 
 /*
