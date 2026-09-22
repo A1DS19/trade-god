@@ -1,139 +1,85 @@
 # Where we left off
-_2026-09-21_
+_2026-09-22_
 
 ## This session
-- **AWS closed the account** hosting the Lightsail box. The intraday paper telemetry DB is gone
-  permanently — no backup, no Telegram trail. Confirmed the host is dark (ICMP + :22 dead).
-- Reassessed instead of rebuilding. `research/signals/intraday/output/2b/oos_results.csv` shows
-  OOS_FULL at **−15.19%, PF 0.986, Sharpe −0.29 over 2,791 trades**. Decision: stop trading, don't
-  redeploy, don't reconstruct the lost telemetry. The closure was the occasion, not the cause.
-- **Pivoted to the CoinPicks research platform** — and then pivoted the *implementation* a second
-  time the same day. Morning: a local Electron + SQLite app (design spec + Plan 1 written and
-  approved). Afternoon: replaced with **pnpm workspace / TanStack Start + Hono + Postgres**, after
-  checking the stack rather than copying the sibling repo's.
-- **Executed the archive** (Plan 1 Task 1). `app/{intraday,api,db,config.py,__init__.py}`,
-  `alembic/` (**six** migrations, 001–006), `alembic.ini`, the two root entrypoints `api_main.py`
-  and `intraday_main.py` (`main.py` and `swing_main.py` were archived back in July),
-  `docker-compose.yml`, `Dockerfile`, `tests/{intraday,api}/` and `research/v2_eval/` → `legacy/`.
-  `app/intraday/strategy.py` → `research/signals/intraday/strategy_core.py` (the one module
-  `research/` needs), with its test → `tests/research/test_strategy_core.py`;
-  `mr_vwap_strategy.py:18` and `families.py:45` repointed. Deleted `swing-logs.txt`, `bot.log`,
-  24 tracked `charts_out/` PNGs. **111 passed** after the move (was 182, of which 108 were
-  `tests/research`).
-  - `research/v2_eval/` was *already* broken: `run.py:53-64` imports `app.swing.backtest_replay`,
-    archived 2026-07-16. Nothing tested it, so the suite stayed green over a dead module for two
-    months. Worth remembering as a shape, not a one-off.
-- **Rewrote the repo's self-description** — Plan 1 Task 2, in its new-stack form rather than the
-  Electron text the plan carries. `CLAUDE.md` and `README.md` are now CoinPicks documents; the
-  approved spec was revised **in place**; `docker-compose.yml`, `.env.example` and
-  `.github/workflows/ci.yml` were written for the new stack; `docs/intraday_operations.md` and
-  `docs/testing.md` moved to `legacy/docs/`.
-- **The LLM's role changed from the Electron-era drafter to the EvidenceFinder.** It proposes
-  `{url, quote, why}` candidates, verified before display; it never proposes a number; every
-  `*_draft` / `*_draft_reason` column is deleted. The Claude Code CLI drafter is dropped — see Open
-  items, the question about it is *answered*, not abandoned.
-- Verified live, today, rather than assumed: npm versions for the whole stack; Node v26.8.1 runs a
-  `.ts` file directly with no flag or loader; the DashScope international key returns HTTP 200
-  across 172 models; psycopg 3.2.13 imports on system Python 3.14.7; port 5432 is already held by
-  an unrelated `medi-pal-db-1` (postgres:17.2), hence **5433**.
-- Seeded the `agents/` paper trail: `CONTEXT.md`, `decisions.md`, `roadmap.md`, and this file.
 
-- **Built the frozen scoring core** (Plan 1 Tasks 5–6) in a bare `typescript` + `vitest` package at
-  `apps/api/`, before any Hono/Drizzle/Postgres exists. `scoring/{ranges,product,narrative,team,accrual}.ts`.
-  **31 vitest tests**, `tsc --noEmit` and Biome clean. Commits `fe01add` `cb4b6cd` `b85be59`
-  `6e5abef` `69311f9`. Plan 1 is complete.
-- **Vendored the framework** into `framework/` with a provenance README — the seven lessons existed
-  only in `~/Downloads` until now, which made every frozen formula one `rm -rf` from being
-  unauditable.
-- **Audited the scoring core against the vendored lessons**, and the audit paid for itself:
-  - The worked example this repo cited as the framework's own — *ARB narrative, Communication 4.5/5,
-    total 26.5* — **is in no lesson and nowhere in the original download.** It was invented by the
-    implementation plan and then quoted by the spec, CLAUDE.md, a test name and `decisions.md` as
-    source. It was the only evidence anywhere for fractional sub-scores. Ruled: **sub-scores are
-    integers.** (With decimals, 404 one-decimal triples summing to exactly 16.0 added in binary to
-    15.999999999999998 and failed a gate the lesson says to pass.)
-  - `PURE_PREMIUM` was firing on any net flow ≤ 0; the lesson reserves it for *zero* flow. Split out
-    `ISSUANCE_NEGATIVE`, and `discoveryPremium` now takes the whole `AccrualResult` so it cannot be
-    called without the gross that distinguishes them.
-  - Two runtime hazards fixed: a JSON `"false"` elected a sole founder and returned 7.14; a null
-    market cap returned `multiple: 0`, the most bullish verdict the framework can produce.
-  - Ruled out of scope: the reserve/collateral branch. The lesson says the branches ADD but gives no
-    arithmetic for valuing a float, so the accrual figure is captioned cash-flow-only for A.1.
-  - Biome, scoped as the plan implied, reformatted 7 JSON files under `research/` and `legacy/` —
-    including `oos_verdicts.json`, the record that ended the trading era. Reverted; Biome is now
-    scoped to `apps/**` plus the root configs.
+Build-order **step 3 finished** and **step 4 is half built**. Eleven commits, `main` green
+throughout except one deliberate red across a task boundary.
+
+- **Plan 2 completed** (Tasks 5–10): the privilege wall, `server.ts`'s migrate-assert-downgrade-serve
+  boot, compare-and-swap, the accrual noise floor, `SCORING_VERSION` with the test that pins the
+  formulas to the DDL, and the amended schema rules. Commits `7f19498` → `96b1eb0`.
+- **Verified the whole stack rebuilds from nothing** — `docker compose down -v`, then up,
+  bootstrap, boot. Every previous green had been on a database built up incrementally by the same
+  session that wrote it. 7 tables, 12/12 `ENABLE ALWAYS`, 28 grants, `coinpicks_app`-only
+  connections.
+- **Plan 3 written, audited, revised** (`c883ed8`): 8 tasks, 79 steps, the minimal editor.
+- **Plan 3 Tasks 1–4 executed**: `c75bd30`, `a7d66aa`, `f36f4f9`, `fbaef42`.
+
+### The owner's rulings this session
+1. **Keep `@tanstack/react-start`.** The first draft of Plan 3 proposed dropping it. Both its
+   reasons were wrong: the Biome objection is one exclude line (`../profe` already does it), and
+   Start turned out to be what closes the worst defect — its `importProtection` stops the build
+   when a value import would ship the ORM to the browser, which plain Vite cannot do at all.
+2. **One required-field list, generated both ways** — `db/gate-fields.ts` generates the
+   `rs_gate_completeness` CHECK *and* the editor's blocker list.
+3. **Explicit Save per section**, one CAS bump per section patch, not per field.
+4. **Sub-noise net flow counts as zero** in the accrual verdict taxonomy.
+5. I drive the browser walks in Tasks 5/7; walks write to the dev database and clean up after.
+
+### What got caught by running things rather than reading them
+- `rs_gate_completeness` was **inert on a draft** (`CASE WHEN product_passed` … and that is only
+  written at commit). A passed row with a NULL sub-score was accepted, because `total = a+b+c` is
+  NULL when any operand is and a CHECK accepts NULL.
+- Postgres **rounds into an integer column and the CHECK passes the rounded value**:
+  `INSERT (ease integer) VALUES (7.5),(8.5),(0.4)` stored `{0,8,9}`. The frozen
+  `assertIntegerRange` must run *before* the database; the CHECK cannot defend the integer ruling
+  alone.
+- `integrity.test.ts` was **passing over a genuinely broken database** — it restored a deleted
+  migration row with an invented hash at `max(created_at)+1`, so the count added up. The guard
+  compares the applied *set* now.
+- The **leak guard was watched failing three ways** before being trusted. The one that matters: a
+  value import inside `createServerFn` leaves the CLIENT bundle with **zero** needles while the
+  server bundle carries 25 — a client-only scan would have said all clear.
+- **`strictPort` caught a real collision**: 5173 is held by the sibling repo's dev server, which
+  answers 200. Vite refused to start rather than drift to 5174 and let a curl at 5173 be answered
+  by someone else. Same shape as the 8787 episode.
 
 ## State
-- Branch `main`; last commit is `f273421` (the Electron-era spec + Plan 1). **Everything this
-  session produced — the archive moves and the whole doc pass — is in the working tree / index and
-  not yet committed.** Commits land on `main` directly here.
-- On disk from the new stack, right now: **`docker-compose.yml`** (one `postgres:16-alpine`
-  service, bound `127.0.0.1:5433:5432`, fresh volume `coinpicks_data`), **`.env.example`**,
-  **`.github/workflows/ci.yml`**. Not on disk yet: `apps/`, `framework/`, `pnpm-workspace.yaml`,
-  `package.json`, `research/forward_returns.py`. Every npm version recorded in `CLAUDE.md` and the
-  plan is still a decision, not an install.
-  - **5433, not 5432**: 5432 is held by an unrelated `medi-pal-db-1` (`postgres:17.2`) on this
-    machine. Verified — state it as fact, never as an assumption.
-  - `typescript 5.9.3` (latest 7.0.2) and `vitest 4.1.11` (latest 5.0.1) are **deliberate catalog
-    pins** against the standing "always latest" rule. Annotate them as such wherever versions get
-    listed.
-  - ci.yml's TypeScript job is gated on `pnpm-workspace.yaml` existing, so today it skips and
-    starts running by itself the moment the workspace lands. The Python job is live and green.
-- `CLAUDE.md` and `README.md` are **rewritten**: both describe CoinPicks, neither describes the
-  intraday paper engine. `docs/` now contains only `superpowers/{plans,specs}/`.
-- The approved spec `docs/superpowers/specs/2026-09-21-coin-research-platform-design.md` was
-  **revised in place**, not superseded: **§3.2** is the `apps/` tree, **§4** is "Data model
-  (PostgreSQL 16)", **§8** is "The EvidenceFinder", and a Revision history at the top records both
-  of the day's pivots. Its **"Normative formulas (frozen)"** section has been verified
-  byte-identical across the rewrite — **never edit it**.
-- `docs/superpowers/plans/2026-09-21-coin-research-foundation.md`: Task 1 **done**; Task 2 **done**
-  (the rewrite happened — only the Electron-era replacement *text* pasted inside that task is
-  superseded); Tasks 3–4 **discarded** (Electron scaffold, SQLite schema) and must not be executed;
-  **Tasks 5–6 are the next work** and are already rewritten against `apps/api/src/scoring/` with
-  vitest — execute those two as written.
-- `research/` untouched and green: **111 passed**. `tests/` holds `tests/research/` and
-  `conftest.py` and nothing else, so `pytest` and `pytest tests/research` are now the same command.
-  `pyproject.toml` declares exactly **one** marker, `testnet`; `slow`/`property`/`integration` went
-  to `legacy/` with the suites that used them.
-- Warehouse is stale since 2026-07-15 (harmless for now). **No refresh cron is installed** —
-  `crontab -l` says "no crontab for dev". The weekly line quoted in `CLAUDE.md` is a *recommended*
-  entry, not an installed one.
+
+- Branch `main`, working tree clean, **not pushed**.
+- `apps/api`: **119 tests / 14 files**. `apps/web`: **13 tests / 2 files**. pytest: **111**.
+  Typecheck silent, Biome clean over 61 files.
+- Postgres up as `coinpicks-db` on 127.0.0.1:5433, four migrations applied, three roles.
+  Dev database holds **0 coins, 0 reports** — nothing from the verification walks survived.
+- `apps/web` exists and builds: client 583,071 bytes over 5 JS files, server 254,242.
+  `pnpm dev` starts both apps; the API is 8789, the web app 5173 (**taken on this machine** —
+  use `--port 5174` while the sibling dev server runs).
+- No servers left running.
 
 ## Next session
-1. **Commit** the archive and the doc pass. Don't start new work on top of an uncommitted rewrite.
-2. **Vendor the framework markdown** into `framework/`. It exists only under
-   `~/Downloads/Altcoin-Trading-System-STANDARD-2026-08-07/Altcoin-Trading-System/Research/framework/`
-   (seven files, `00-how-we-think` … `06-one-page-report-template`). It is one copy command and it
-   is the provenance the frozen formulas are supposed to be checked against. Do it before writing
-   the formulas, not after.
-3. **Build order step 2 — the frozen scoring core**, which is Plan 1 Tasks 5 and 6 executed as
-   written: a bare `typescript` + `vitest` package at `apps/api/`, no Hono, no Drizzle, no Postgres
-   and no React near it. Start with `ranges.ts` and its `SCORING_VERSION` constant, because every
-   other file depends on both. Reject out of range, never clamp. Narrative sub-scores may be
-   whole numbers. The one genuine framework worked example is the acceptance test: team → 7.25 (the ARB
-   narrative → 26.5.
-4. **Step 3 — schema, migrations, and the trigger**, and write the trigger in the *same* sitting.
-   `drizzle-kit generate --custom`, hand-written `BEFORE UPDATE OR DELETE` on `reports`,
-   `report_scores`, `report_team`, `citations`. `schema.ts` will never re-emit it, so it is exactly
-   the kind of thing that gets deferred forever. Bring the container up first
-   (`docker compose up -d db`) and confirm it lands on 5433 against the `coinpicks_data` volume.
-5. When `pnpm-workspace.yaml` lands, name the package scripts `dev`, `build`, `test`, `typecheck`,
-   `check`. Biome's script is **`check`** everywhere in this repo — never `lint`.
+
+1. **Plan 3 Task 5** — the editor shell and the section-save model, 11 steps, at plan line 4103.
+   It replaces the `reports.$reportId.tsx` stub entirely and adds `editor/{fields,common,
+   ProductSection,RiskSection}.tsx`.
+2. Then Task 6 (the blocker list, 4 steps), Task 7 (the four remaining sections, 16 steps), Task 8
+   (docs/CI/decisions, 8 steps).
+3. **Open the editor yourself before Task 8.** I am checking my own work on the browser walks, and
+   the plan has no component render tests by design. Thirty seconds in the real screen will surface
+   what no plan thought to specify — and the spec's own claim is that the editor *is* the product.
 
 ## Open items
-- **`DEFAULT_PROVIDER` is deliberately unpinned.** It is the in-code constant in
-  `apps/api/src/evidence/providers.ts`; `COINPICKS_MODEL_PROVIDER` is its environment override, and
-  it already sits blank on purpose in `.env.example`. The value gets decided at build-order step 7
-  by running one real coin section through `kimi-k3`, `deepseek-v4.1-flash` and `qwen3.8-max` and
-  recording the result. Not on price, not on brand.
-- **Claude Code CLI subscription auth from a spawned process: ANSWERED — it works.** It was dropped
-  anyway, because a bare spawn inherits the operator's global `CLAUDE.md`, skills and MCP config
-  (~27k cache-creation tokens on a trivial prompt) and runs whatever model their settings name.
-  That is an uncontrolled variable inside an experiment about prediction. Don't re-litigate this as
-  if it were a capability question.
-- **Framework vendoring is pending**, not done. See Next session #2.
-- **Warehouse refresh before the ledger's forward-return join.** The OI and long/short datasets are
-  trailing-30-day only; the window from 2026-07-15 onward is already lost and cannot be recovered.
-  Nothing in the scoring core, the schema or the commit gate needs it — the join at build-order
-  step 6 does. (There is no separate "Phase A.3": `roadmap.md` folds the join, the `research` GRANT
-  and `rescore.ts` back into A.1's ledger step, which is what the spec scopes.)
+
+- **The leak guard rides on an unpinned transitive.** `importProtection` comes from
+  `@tanstack/start-plugin-core`, which resolved to **1.171.47** while `@tanstack/react-start` is
+  pinned at 1.168.57. Pinning one does not pin the other; the bundle scan is the backstop, kept
+  deliberately for that reason.
+- **Should the web dev port move to 5174 by default?** The API moved to 8789 for exactly this
+  reason. Undecided; `strictPort` makes the collision loud either way.
+- Five open questions recorded in Plan 2's own text, of which the **liquidity freshness window**
+  is the one that wants a number before report #1 — whatever is chosen redefines what "fresh"
+  meant for anything committed earlier.
+- `.env` still holds the trading era's Binance keys, Telegram token and a Claude API key. Backed
+  up to `.env.trading-era.bak` (gitignored). Worth revoking at the source.
+- Three dead docker volumes: `trade-god_postgres_data`, `trade-god_klines_cache`,
+  `trade-god_swing_data`.
