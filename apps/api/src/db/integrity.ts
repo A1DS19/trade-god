@@ -85,16 +85,29 @@ export async function assertGuardsInstalled(db: Db): Promise<void> {
 export async function assertJournalFullyApplied(db: Db): Promise<number> {
   const journal = JSON.parse(
     readFileSync(resolve(MIGRATIONS_FOLDER, 'meta/_journal.json'), 'utf8'),
-  ) as { entries: unknown[] }
-  const applied = await db.execute<{ n: number }>(
-    sql`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`,
+  ) as { entries: { when: number }[] }
+  const applied = await db.execute<{ created_at: string }>(
+    sql`SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at`,
   )
-  const n = applied.rows[0]?.n ?? 0
+  const n = applied.rows.length
   if (n !== journal.entries.length) {
     throw new Error(
       `${journal.entries.length} migrations are committed but ${n} are applied. Drizzle's ` +
         'migrator compares only the newest applied row and never checks a hash, so an ' +
         'out-of-order file is skipped silently. Refusing to serve.',
+    )
+  }
+  // A count is not a set. drizzle writes the journal entry's `when` into created_at, so the
+  // two are comparable directly, and any journal entry whose stamp is absent means a
+  // committed migration is missing however well the total adds up.
+  const stamps = new Set(applied.rows.map((row) => Number(row.created_at)))
+  const missing = journal.entries.filter((entry) => !stamps.has(entry.when))
+  if (missing.length > 0) {
+    throw new Error(
+      `the migration count matches, but ${String(missing.length)} committed migration(s) are ` +
+        `not applied: ${missing.map((entry) => String(entry.when)).join(', ')}. A row with the ` +
+        'wrong created_at also makes drizzle re-apply the file it stands in for. Refusing ' +
+        'to serve.',
     )
   }
   return n

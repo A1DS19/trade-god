@@ -15,6 +15,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+import { gateCompletenessSql } from './gate-fields.ts'
 
 /*
  * CoinPicks schema. Drizzle is the ONLY DDL author. Seven tables, no user_id anywhere:
@@ -44,9 +45,6 @@ const unitFraction = (c: SQLWrapper) => sql`${c} BETWEEN 0 AND 1`
 
 /** Rejects '' and '   ' wherever the spec requires prose to actually exist. */
 const nonBlank = (c: SQLWrapper) => sql`length(btrim(${c})) > 0`
-
-/** Same, but tolerant of NULL — for use inside the gate-completeness CASE. */
-const present = (c: SQLWrapper) => sql`length(btrim(coalesce(${c}, ''))) > 0`
 
 // ---------------------------------------------------------------------------
 // Enums. Schema rule 1: pgEnum, never text().$type<>().
@@ -566,43 +564,7 @@ export const reportScores = pgTable(
      * product totals. It does NOT cure survivorship bias for the narrative or team scores,
      * because those only exist on a report whose product gate passed.
      */
-    check(
-      'rs_gate_completeness',
-      sql`CASE WHEN ${t.productPassed} THEN
-            ${present(t.overviewSentence)}
-            AND ${present(t.productEaseRationale)}
-            AND ${present(t.productHairFireRationale)}
-            AND ${present(t.productExclusivityRationale)}
-            AND ${t.liquidityTier} IS NOT NULL
-            AND ${present(t.liquidityJustification)}
-            AND ${t.liquidityDepth2pctUsd} IS NOT NULL
-            AND (${t.liquidityTopPoolTvlUsd} IS NOT NULL OR ${t.liquidityNoDexPool})
-            AND ${t.narrativeMaturity} IS NOT NULL
-            AND ${t.narrativeSmartMoney} IS NOT NULL
-            AND ${t.narrativeHairFire} IS NOT NULL
-            AND ${t.narrativeCommunication} IS NOT NULL
-            AND ${t.narrativeLineage} IS NOT NULL
-            AND ${t.narrativeMutation} IS NOT NULL
-            AND ${t.narrativeTotal} IS NOT NULL
-            AND ${present(t.narrativeMaturityRationale)}
-            AND ${present(t.narrativeSmartMoneyRationale)}
-            AND ${present(t.narrativeHairFireRationale)}
-            AND ${present(t.narrativeCommunicationRationale)}
-            AND ${present(t.narrativeLineageRationale)}
-            AND ${present(t.narrativeMutationRationale)}
-            AND ${t.teamWeightedScore} IS NOT NULL
-            AND ${present(t.accrualRationale)}
-            AND ${present(t.riskNotes)}
-            AND ${t.waivedCitationCount} IS NOT NULL
-            AND CASE WHEN ${t.accrualAssessed}
-                  THEN ${t.accrualGrossAnnualFlowUsd} IS NOT NULL
-                       AND ${t.accrualNetAnnualFlowUsd} IS NOT NULL
-                       AND ${t.discoveryMarketCapUsd} IS NOT NULL
-                       AND ${t.discoveryPremiumKind} IS NOT NULL
-                  ELSE ${present(t.accrualAbsentReason)}
-                END
-          ELSE true END`,
-    ),
+    check('rs_gate_completeness', sql.raw(gateCompletenessSql((key) => t[key].name))),
   ],
 )
 

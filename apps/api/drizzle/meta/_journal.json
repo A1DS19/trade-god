@@ -22,6 +22,13 @@
       "when": 1790044979944,
       "tag": "0002_role_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790055564433,
+      "tag": "0003_gate_completeness_generated",
+      "breakpoints": true
     }
   ]
 }
