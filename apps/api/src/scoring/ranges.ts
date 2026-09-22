@@ -49,3 +49,16 @@ export function assertNonNegative(field: string, value: number): void {
     throw new ScoreRangeError(field, value, 0, Number.POSITIVE_INFINITY)
   }
 }
+/**
+ * The framework revision every committed report is scored under. Schema rule 3: the commit
+ * route writes this into report_scores.scoring_version, and every ledger query groups by it.
+ *
+ * FORMAT: a date, not a semver and not a content hash of this directory. A hash would bump on
+ * a refactor that moved code without changing a number, splitting the ledger into two
+ * incomparable populations for nothing.
+ *
+ * BUMP POLICY: change this ONLY when a frozen formula, range, weight or threshold changes —
+ * never for a refactor, a comment or a test. frozen-surface.test.ts fails when one of those
+ * numbers moves, and the fix is to bump this constant deliberately in the same commit.
+ */
+export const SCORING_VERSION = 'coinpicks-2026-09-21'
