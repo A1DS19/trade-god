@@ -59,6 +59,28 @@ export type PremiumResult =
   | { kind: 'ISSUANCE_NEGATIVE'; grossAnnualFlowUsd: number; netAnnualFlowUsd: number }
 
 /**
+ * Below this fraction of gross flow, a positive `net` is float64 debris from
+ * `gross - issuance` rather than money reaching holders.
+ *
+ * Swept: across 960 combinations of round operator inputs where issuance equals gross to the
+ * cent — the framework's flagship "earns as much as it prints" case — 120 leave a non-zero
+ * residue. $100m revenue x 0.07 capture x 0.01 accrual less $70,000 issuance gives
+ * gross = 70000.00000000001 and net = 1.455e-11, which the unguarded branch published as
+ * kind='MULTIPLE' at a payback multiple of 3.4e21, immutably.
+ *
+ * Keyed on gross alone, and that is deliberate: AccrualResult does not carry issuance, and
+ * when |net| is genuinely near zero then gross is approximately issuance anyway, so gross is
+ * the right scale. When issuance dwarfs gross, net is approximately -issuance — nowhere near
+ * zero — and this never fires.
+ *
+ * The FROZEN formula (market_cap / net_annual_flow) is untouched. This is the verdict
+ * taxonomy around it, which is this implementation's own and which the 2026-09-21
+ * PURE_PREMIUM ruling already amended once. Ruled again 2026-09-21. The database reproduces
+ * the same branch in report_scores' rs_premium_kind_matches_flows.
+ */
+export const NET_FLOW_NOISE_FLOOR_RATIO = 1e-9
+
+/**
  * The frozen formula is unchanged: market cap / net annual flow.
  *
  * What the verdict TAXONOMY distinguishes, and an earlier version did not: the lesson reserves
@@ -81,7 +103,10 @@ export function discoveryPremium(marketCapUsd: number, flow: AccrualResult): Pre
     }
   }
 
-  if (flow.netAnnualFlowUsd > 0) {
+  const isNoise =
+    Math.abs(flow.netAnnualFlowUsd) < flow.grossAnnualFlowUsd * NET_FLOW_NOISE_FLOOR_RATIO
+
+  if (flow.netAnnualFlowUsd > 0 && !isNoise) {
     return { kind: 'MULTIPLE', multiple: marketCapUsd / flow.netAnnualFlowUsd }
   }
   if (flow.grossAnnualFlowUsd > 0) {

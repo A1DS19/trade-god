@@ -113,6 +113,34 @@ describe('discoveryPremium', () => {
     expect(r.kind).toBe('ISSUANCE_NEGATIVE')
     expect(r).toMatchObject({ grossAnnualFlowUsd: 10_000_000, netAnnualFlowUsd: -40_000_000 })
   })
+
+  // Swept, not hypothesised: 120 of 960 combinations of round operator inputs where issuance
+  // equals gross to the cent leave a non-zero float residue instead of 0. Without a floor
+  // this exact row commits as MULTIPLE with a payback multiple of 3.4e21.
+  it('does not call float64 debris a positive holder flow', () => {
+    const breakEven = annualHolderFlow({
+      segmentRevenueUsd: 100_000_000,
+      captureShare: 0.07,
+      accrualPct: 0.01,
+      annualIssuanceUsd: 70_000,
+    })
+    expect(breakEven.grossAnnualFlowUsd).toBe(70_000.00000000001)
+    expect(breakEven.netAnnualFlowUsd).toBe(1.4551915228366852e-11)
+
+    const verdict = discoveryPremium(50_000_000_000, breakEven)
+    expect(verdict.kind).toBe('ISSUANCE_NEGATIVE')
+    expect(verdict).toMatchObject({
+      grossAnnualFlowUsd: 70_000.00000000001,
+      netAnnualFlowUsd: 1.4551915228366852e-11,
+    })
+  })
+
+  it('still reports a thin but real flow, far above the floor', () => {
+    // The floor is a ratio, not an absolute: a genuine $1m net against $1m gross is nowhere
+    // near it, and neither is a thin but real margin.
+    expect(discoveryPremium(50_000_000, flow(14_000_000, 10_000_000)).kind).toBe('MULTIPLE')
+    expect(discoveryPremium(1_000_000, flow(1_000_000, 1)).kind).toBe('MULTIPLE')
+  })
 })
 
 describe('discoveryPremium — malformed input', () => {
