@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import { openDb } from './client.ts'
-import { TEST_APP_URL, TEST_OWNER_URL, TEST_RESEARCH_URL, refusal } from './testing.ts'
+import { refusal, TEST_APP_URL, TEST_OWNER_URL, TEST_RESEARCH_URL } from './testing.ts'
 
 /**
  * Decision A, asserted rather than assumed: the request pool must not be able to turn the
