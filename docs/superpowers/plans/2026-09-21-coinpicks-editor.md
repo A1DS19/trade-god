@@ -4,14 +4,14 @@
 
 **Goal:** Let the operator create a draft report for a coin and fill every field the commit gate will require — through a write path where a typo cannot silently empty a column, a blank box cannot become a measured zero, a fractional score cannot be rounded into range by Postgres, a citation cannot name a person who does not exist, and the list of what is still missing is generated from the same array that generates the database's CHECK constraint.
 
-**Architecture:** `apps/api/src/db/gate-fields.ts` holds `GATE_REQUIREMENTS` — one array that generates both `rs_gate_completeness` (through `schema.ts` and a new `0003` migration) and the editor's blocker list (through `reports/blockers.ts`). `apps/api/src/app.ts` exports `createApp(db, migrations)`, a Hono app of thirteen routes; `server.ts` migrates as the owner, asserts the guards, closes that pool, opens the `coinpicks_app` pool and serves it on `PORT` (default 8789). Every number crosses the wire as the string the operator typed and is parsed once, by zod, through the frozen `assertIntegerRange` / `assertNonNegative` / `assertRange`. `apps/web` is a plain Vite 8 SPA on `@tanstack/react-router` with code-based routes; it reaches the API only through `hc<AppType>` and only through `import type`, which a test enforces by reading every source file. One Save button per section, one CAS bump per save.
+**Architecture:** `apps/api/src/db/gate-fields.ts` holds `GATE_REQUIREMENTS` — one array that generates both `rs_gate_completeness` (through `schema.ts` and a new `0003` migration) and the editor's blocker list (through `reports/blockers.ts`). `apps/api/src/app.ts` exports `createApp(db, migrations)`, a Hono app of thirteen routes; `server.ts` migrates as the owner, asserts the guards, closes that pool, opens the `coinpicks_app` pool and serves it on `PORT` (default 8789). Every number crosses the wire as the string the operator typed and is parsed once, by zod, through the frozen `assertIntegerRange` / `assertNonNegative` / `assertRange`. `apps/web` is **TanStack Start 1.168.57** on `@tanstack/react-router` with file-based routes and a committed `routeTree.gen.ts`; one Start server route, `routes/api.$.ts`, forwards `/api` to that Hono API on loopback in dev and in production alike, and it is the only outbound request the web tier makes. The browser reaches the API only through `hc<AppType>` and only through `import type` — enforced at build time by the Start plugin's `importProtection`, and by two tests that read the source tree and **both** built bundles. One Save button per section, one CAS bump per save.
 
 **Tech Stack:** pnpm 10.33.0 workspace, `packages: ["apps/*"]`. Runtime **Node v26.8.1** — it executes `.ts` directly, in **strip-only mode** (see Global Constraints).
 
 - `apps/api` adds: hono 4.13.8, @hono/zod-validator 0.9.1, @hono/node-server 2.1.1, zod 4.6.5. Already there: drizzle-orm 0.45.3, pg 8.23.0, drizzle-kit 0.31.11 (dev), @types/pg 8.23.1.
-- `apps/web` is new: @tanstack/react-router 1.170.38, react 19.3.0, react-dom 19.3.0, hono 4.13.8 (for `hc`); dev: vite 8.3.0, @vitejs/plugin-react 6.1.1, tailwindcss 4.3.3, @tailwindcss/vite 4.3.3, @types/react 19.3.0, @types/react-dom 19.3.0, @types/node (catalog), typescript (catalog), vitest (catalog).
+- `apps/web` is new: @tanstack/react-start 1.168.57, @tanstack/react-router 1.170.38, react 19.3.0, react-dom 19.3.0, hono 4.13.8 (for `hc`), @hono/node-server 2.1.1 (the built app's host); dev: vite 8.3.0, @vitejs/plugin-react 6.1.1, tailwindcss 4.3.3, @tailwindcss/vite 4.3.3, @types/react 19.3.0, @types/react-dom 19.3.0, @types/node (catalog), typescript (catalog), vitest (catalog).
 - **Catalog pins in `pnpm-workspace.yaml` are a deliberate deviation from "always latest"** and must be stated as such wherever these versions are listed: typescript 5.9.3 (latest is 7.0.2, the Go-native compiler, a fresh major) and vitest 4.1.11 (latest is 5.0.1, days old). Revisit the week after report #1 commits.
-- **`@tanstack/react-start` is NOT used, and `routeTree.gen.ts` does not exist.** See decision 1 below; it needs a dated `agents/decisions.md` entry, which Task 8 writes.
+- **`@tanstack/react-start` IS used, and `routeTree.gen.ts` is generated and committed.** An earlier draft of this plan dropped Start for plain Vite with code-based routes; **the owner reversed that on 2026-09-21**. Start is in the approved spec §9 and in `CLAUDE.md`'s stack table, the biome objection is closed by one exclude line (the sibling repo at `../profe` already runs exactly that), and Start's `importProtection` closes defect 5 at build time in a way plain Vite cannot. Task 8 Step 7 records the proposal, the review and the reversal.
 - Postgres: the existing compose service, `postgres:16-alpine` on `127.0.0.1:5433`, container `coinpicks-db`. **Verified live for this plan: PostgreSQL 16.13 on x86_64-pc-linux-musl.**
 - `drizzle-kit push` is **never** run. Only `generate` plus the boot migrator.
 
@@ -29,14 +29,14 @@ Five researchers produced a reconciled editor design; two adversaries then rebui
 | 2 | Postgres rounds a fraction into an integer column and the CHECK passes the rounded value: `INSERT (ease integer) VALUES (7.5),(8.5),(0.4)` stores `8,9,0` and `BETWEEN 0 AND 10` succeeds | Task 2 — `subScore()` runs the frozen `assertIntegerRange` before the UPDATE |
 | 3 | A blank figure box saved with provenance became a MEASURED ZERO: `Number('') === 0`, and `rs_depth_provenance_complete` (a presence biconditional) plus `rs_depth_2pct_nonneg` (`>= 0`) both accept it | Task 2 — `measured()` takes the figure as a string that must match a digit regex; a blank is a named 422 |
 | 4 | `savePatch(patch: Record<string, unknown>)` disabled every wire-level check: `hc` type-checks object literals but an index signature satisfies every optional target property, and zod's default object mode then strips the unknown key silently | Tasks 2 and 3 — six section routes, each with its own `z.strictObject`; no `Record<string, unknown>` anywhere |
-| 5 | A one-word import slip shipped the ORM to the browser with a green build. Measured here: `import type { AppType }` gives a 571.57 kB bundle with no drizzle in it; `import { type AppType, createApp }` plus one value use gives 716.11 kB **with drizzle in it**, `vite build` exit 0, no warning | Task 4 — `boundary.test.ts` reads every file under `apps/web/src` and fails on any `'@coinpicks/api'` line that is not `import type` |
+| 5 | A one-word import slip shipped the ORM to the browser with a green build. Re-measured on a Start build of Task 4's own tree: `import type { AppType }` gives a **583,379-byte** client bundle with no ORM in it; `import { type AppType, createApp }` plus one value use gives **727,230 bytes** with `drizzle:` ×15 and this project's own `report_scores` / `rs_gate` strings in it, `vite build` exit 0, no warning. Put the same value import inside a `createServerFn` body instead and the **client bundle is clean** while `dist/server` carries the ORM | Task 4 — three signals, in this order: `importProtection` (both a `client` and a `server` specifier list) fails the build; `boundary.test.ts` reads every file under `apps/web/src`; `bundle.test.ts` reads `dist/client` **and** `dist/server` |
 | 6 | Inputs seeded local state with `useState(value)` and never re-synced, so after a 409 the editor re-applied pre-conflict values over the winner | Task 5 — each section is keyed on a per-section seed token; a 409 bumps every token, re-reads, and says so |
 | 7 | `snake('liquidityDepth2pctUsd')` yields `liquidity_depth2pct_usd`; the column is `liquidity_depth_2pct_usd`. The UI used the same wrong string to add and to filter, so it looked right | Task 2 — `CITABLE_FIELDS` reads `reportScores.<key>.name` off the drizzle column; `draft-columns.test.ts` asserts the digit case |
 | 8 | A citation could be attached to a team member that was never saved: `TeamEditor` minted a browser-side uuid and `citations.field` is text with no FK | Tasks 3 and 6 — `addCitation` checks `team:<uuid>` against `report_team` inside the transaction; the editor offers evidence only for server rows |
 | 9 | `rs_gate_completeness` is INERT on a draft — it is `CASE WHEN product_passed THEN ... ELSE true END` and `product_passed` is commit-written. Confirmed: `SELECT CASE WHEN NULL::boolean THEN false ELSE true END` returns `t` | Task 1 — one array generates both the CHECK and the blocker list, and a test asserts the committed .sql still matches |
 | 10 | The naive `rs_gate_completeness` did not require the three product sub-scores. Confirmed on 16.13: `CASE WHEN true THEN (15 = NULL::int + 5 + 5) ELSE true END` is NULL and a CHECK accepts NULL, so `rs_product_total_is_sum` never forced them | Task 1 — `PRODUCT_EASE` / `PRODUCT_HAIR_FIRE` / `PRODUCT_EXCLUSIVITY` are conjuncts of the generated constraint |
 | 11 | The design's tsconfig for `apps/web` did not compile: overriding only `moduleResolution` gives `TS5095` and `TS5109`, because the base sets `module: nodenext` | Task 4 — five keys, named, and compiled |
-| 12 | `pnpm check` failed on the file the design ordered committed (`routeTree.gen.ts`), and `pnpm format` then fought the generator | Task 4 — code-based routes; the file does not exist |
+| 12 | `pnpm check` failed on the file the design ordered committed (`routeTree.gen.ts`), and `pnpm format` was said to then fight the generator | Task 4 Step 3 — one line in `biome.json`, because the file is generated. Re-measured: exit 1 without it (`organizeImports` at `routeTree.gen.ts:11`), exit 0 with it over one file fewer, and the file is byte-identical across `biome check --write` and the next `vite build`, so there is no fight |
 | 13 | `assertJournalFullyApplied` compares `count(*)` only, and `integrity.test.ts` "restored" the row it deleted by INSERTing an invented hash at `max(created_at) + 1` — so the guard reported green over a database with a migration genuinely missing, and drizzle would re-apply that file at the next boot. Confirmed against drizzle 0.45.3's `pg-core/dialect.cjs` and the live `__drizzle_migrations` rows | Task 1 Step 9 — the guard compares the applied SET against the journal's `when` values, the restore puts back exactly what it removed, and a new case fabricates the count-matching state and asserts the refusal |
 | 14 | A citation write re-seeded the product gate, so attaching evidence anywhere on the page discarded unsaved product-gate text — finding 6 turned inside out | Tasks 5 and 7 — `runSave` takes `SectionKey \| null` and the citation callbacks pass `null`; Task 7 Step 15 is the probe |
 | 15 | The red per-section refusal cannot render on a 409: re-seeding changes the section's `key`, so `useSection`'s `setError` lands on an instance being replaced | Tasks 5 and 7 — the amber banner carries the refusal's code and message verbatim, and Task 5 Step 10 says so instead of expecting a message that cannot appear |
@@ -50,17 +50,13 @@ pnpm install                             -> 3 workspace projects, no peer warnin
 apps/api  tsc --noEmit                   -> clean, 1.6s
 apps/web  tsc --noEmit                   -> clean, 2.1s
 apps/web  tsc --noEmit --listFiles       -> 15 web files, 15 apps/api files, 83 @types/node files
-biome check                              -> Checked 68 files. No fixes applied. (exit 0)
 apps/api  vitest run                     -> Test Files 14 passed, Tests 119 passed
-apps/web  vitest run                     -> Test Files 1 passed, Tests 5 passed
-apps/web  vite build                     -> dist/assets/index-*.js 571.57 kB; grep for
-                                            pg-protocol / drizzle / node:crypto -> 0 hits
 drizzle-kit generate --name gate_completeness_generated
                                          -> drizzle/0003_gate_completeness_generated.sql
 psql < 0000,0001,0002,0003               -> applied clean to a fresh database on PG 16.13
 node src/server.ts                       -> coinpicks api on http://127.0.0.1:8789
 curl 127.0.0.1:8789/health               -> {"ok":true,"migrations":4,"scoringVersion":"coinpicks-2026-09-21"}
-vite dev + curl localhost:5173/api/health-> the same JSON through the proxy
+vite dev + curl localhost:5173/api/health-> the same JSON
 node (hc against the live server)        -> PATCH productEase:'7'     -> 200
                                             PATCH productEase:'seven' -> 422
                                               {"code":"INVALID","message":"productEase: ease must
@@ -94,21 +90,75 @@ apps/api  vitest run src/db/integrity.test.ts
                                             holding exactly the journal's four `when` values
                                             with no fabricated row
 apps/web  tsc --noEmit                   -> clean
-apps/web  vitest run                     -> Test Files 1 passed, Tests 5 passed
-apps/web  vite build                     -> 571.57 kB; grep for pg-protocol / drizzle /
-                                            node:crypto -> 0
-apps/web  the leak probe, re-measured    -> 716.11 kB WITH drizzle, `vite build` exit 0 and
-                                            silent, boundary.test.ts fails naming
-                                            lib/client.ts:1
-biome check                              -> Checked 68 files. No fixes applied.
 ```
+
+**The `apps/web` build and lint numbers from those two runs are not reproduced here.** They
+measured the SPA shape that the owner has since reversed — a single bundle in `dist/assets`,
+one test file, and a `biome check` over a tree with no generated route tree in it. What replaced
+them is the block below, which is what Task 4 is written against.
 
 Four facts the audits disputed were re-measured rather than taken on trust, and two of the four went against the auditor:
 
-- The Task 4 file count really is **5**, so `toBeGreaterThan(5)` really does fail there. Counted with the scanner's own `readdirSync`/`statSync` walk over the Task-4 file set.
+- The Task 4 file count really is the floor the scan asserts and not one more, so `toBeGreaterThan` really does fail there. Counted with the scanner's own `readdirSync`/`statSync` walk over the Task-4 file set. (It was 5 under the SPA shape; under Start it is **6** — `router.tsx`, `lib/client.ts` and the four files under `src/routes/`, with `routeTree.gen.ts` excluded by name.)
 - `evaluateBlockers` on an all-NULL draft gives **33 / 1 clear / 26 blocking / 6 unknown** with `DISCOVERY_MARKET_CAP` the only clear row, and after one `productEase` it is **2 clear / 25 blocking / 6 unknown**. The trace above said 5 clear; it now says what the function prints.
 - `agents/CONTEXT.md`'s sub-score sentence is at lines **60–62**, not 59–61. One auditor said otherwise; `grep -n` says 60, 61, 62. Chore 1 is unchanged.
 - `.superRefine()` is **not** `@deprecated` in the pinned zod 4.6.5 — checked in the installed `zod/v4/classic/schemas.d.cts`, where it sits undecorated beside `refine`. `z.string().uuid()` is, which is why this plan already uses `z.uuid()`. Task 2 Step 1 now records the check.
+
+**Reversal of 2026-09-21: `@tanstack/react-start` kept.** The owner reversed the drop. A working
+Start setup was then built under this repo's exact constraints — the real `tsconfig.base.json`,
+the real `biome.json`, Node v26.8.1, the pinned catalog — and every claim Task 4 makes was run in
+it. Byte counts are `dist` on disk; the two guards count characters, which is 70 fewer.
+
+```
+pnpm install                             -> clean, no peer warnings
+apps/web  tsc --noEmit                   -> clean, 2.0s, with the generated route tree in-program
+apps/web  vitest run                     -> Test Files 2 passed, Tests 13 passed
+apps/web  vite build                     -> client 296ms, ssr 205ms
+                                            dist/client  5 js files, 583,379 bytes + 7,427 css
+                                            dist/server  254,704 bytes
+biome check, biome.json as it is today   -> EXIT 1, over one file more than below:
+                                            organizeImports as an ERROR at routeTree.gen.ts:11,
+                                            plus 3 noExplicitAny (20, 25, 30) and 1
+                                            noUnusedImports (98) as warnings
+biome check, one exclude line added      -> exit 0, No fixes applied, one file fewer
+                                            (51 vs 52 in the scratch tree; the absolute number
+                                             depends on how many files apps/api has by then --
+                                             the repo is at 35 today. The delta is the fact.)
+routeTree.gen.ts round trip              -> sha256 790aa396aff84af7... identical before
+                                            `biome check --write`, after it, and after the next
+                                            `vite build`. There is no fight to lose.
+curl 127.0.0.1:8789/health               -> {"ok":true,...}
+curl localhost:5173/api/health           -> the same JSON, through routes/api.$.ts. No proxy:
+                                            with a Vite proxy pointed at a dead port the same
+                                            URL returned 502 rather than falling through, so
+                                            the proxy would make the shipped hop dead code.
+pnpm start + curl 127.0.0.1:3000/        -> 200, server-rendered, and /api/health the same JSON
+vite dev with 5173 already held          -> `Error: Port 5173 is already in use`, exit 1.
+                                            Without strictPort it moves to 5174 in silence and
+                                            the first curl reads the SIBLING REPO's HTML --
+                                            5173 is held by it on this machine right now.
+the leak probe, importProtection ON      -> vite build EXITS NON-ZERO, naming the line and
+                                            printing the four-step import trace that reached it
+the leak probe, importProtection OFF     -> vite build exit 0 and SILENT; client 583,379 ->
+                                            727,230 bytes, carrying drizzle: x15, PgTable x1,
+                                            PgColumn x2, report_scores x1, rs_gate x1 -- while
+                                            drizzle-orm, pg-protocol and node:crypto are all 0.
+                                            boundary + bundle: 4 failed, 9 passed
+the same value import, confined to a     -> client 587,978 bytes with ZERO needles: the client
+createServerFn body                         scan PASSES and so does the byte ceiling. dist/server
+                                            carries drizzle: x15, PgTable x6, PgColumn x88,
+                                            report_scores x2, rs_gate x1. Only the source scan and
+                                            the SERVER scan catch it -> 2 failed, 11 passed
+the dropped SPA's bundle command, run    -> "grep: dist/assets/index-*.js: No such file or
+verbatim against a Start build              directory", and the pipeline EXITS 0. A guard
+                                            reporting success having read zero bytes.
+```
+
+One claim from that proof did **not** reproduce and is not in this plan: that `@import 'tailwindcss'`
+is a biome *parse* error needing `"css": { "parser": { "tailwindDirectives": true } }`. Measured
+against this repo's config, `@import "tailwindcss";` with double quotes is clean; the single-quoted
+form is a *formatter* error, because `javascript.formatter.quoteStyle` is JavaScript-only. Task 4
+Step 4 writes double quotes and `biome.json` gains one line, not two.
 
 ---
 
@@ -120,14 +170,14 @@ Four facts the audits disputed were re-measured rather than taken on trust, and 
 - Rubric sub-scores are **whole numbers** (ruled 2026-09-21). Derived values such as the team weighted score are not.
 - **Drizzle alone authors DDL.** `apps/api/src/db/schema.ts` declares every column; `apps/api/drizzle/*.sql` and `meta/_journal.json` are both committed; the API applies them at boot before the port is taken. **Never `drizzle-kit push`.** Never edit an applied migration — Task 1 adds `0003`, it does not touch `0000`.
 - **Node 26 strips types; it does not transform them.** Verified on v26.8.1: `--experimental-transform-types` no longer exists. So no parameter properties, no `enum`, no `namespace`, no decorators, no `import =` anywhere under `apps/`. `erasableSyntaxOnly: true` makes a slip a compile error (`TS1294`). **Every relative import under `apps/api` carries an explicit `.ts`**, and every relative import under `apps/web` carries an explicit `.ts` or `.tsx` — one repo-wide rule beats two, and `allowImportingTsExtensions` is inherited by both.
-- **Biome 2.5.14: single quotes, no semicolons, 100 columns.** `pnpm check` must pass on every file this plan commits. After `drizzle-kit generate`, **two** files come back Biome-unformatted — the new `meta/<n>_snapshot.json` and `meta/_journal.json`, which the generator rewrites without a trailing newline. `pnpm check --write` fixes both, exactly as it already did for `0000`–`0002`; a bare `pnpm check` first reports two errors, not one.
-- **The API listens on `PORT`, default 8789.** Do not carry the claim that 8787 is held by `my-teacher-api-1` into any file: `docker ps` shows only `coinpicks-db` and `medi-pal-db-1`, and `ss -ltn` shows nothing on 8787 or 8789. Task 8 strikes that comment. A fabricated verification note in a repo whose standing lesson is fabricated verification notes should not survive another commit.
+- **Biome 2.5.14: single quotes, no semicolons, 100 columns.** `pnpm check` must pass on every file this plan commits. The one exception is `apps/web/src/routeTree.gen.ts`, which is **generated** by the Start plugin on every dev start and every build: Task 4 Step 3 adds `"!**/routeTree.gen.ts"` to `biome.json`'s `files.includes`, exactly as the sibling repo at `../profe` does, and the file is still committed. Nothing else in this repo is exempt, and nothing hand-written is ever added to that exclusion. After `drizzle-kit generate`, **two** files come back Biome-unformatted — the new `meta/<n>_snapshot.json` and `meta/_journal.json`, which the generator rewrites without a trailing newline. `pnpm check --write` fixes both, exactly as it already did for `0000`–`0002`; a bare `pnpm check` first reports two errors, not one.
+- **The API listens on `PORT`, default 8789.** Already settled at HEAD (`ebb74bc`): the 8787 collision was real and verified on 2026-09-21 — the server died with `EADDRINUSE` while `my-teacher-api-1` answered `/health` on the same port — but that container is not always up, so the comment no longer claims 8787 is permanently taken. The default stays 8789 because a port another project uses at all is a bad default for a check whose job is to prove something ran. **Nothing further to strike; do not re-litigate it.**
 - **The request pool is `coinpicks_app`: NOSUPERUSER, owns nothing, DML on seven tables only.** `server.ts` keeps decision A's order: owner pool, migrate, assert the guards, close, then the app pool, then the port.
 - **Every DB test scopes its queries by ids it created.** `vitest.config.ts` sets `fileParallelism: false` and one `coinpicks_test` database is shared; the triggers refuse TRUNCATE and refuse DELETE on a committed report, so there is no between-tests reset.
 - Commits land on `main` directly (personal repo; the owner has said branches are unnecessary here).
 - Commits never carry AI attribution — no `Co-Authored-By` trailers, no generated-with footers.
 - `research/` and `tests/research/` must stay green: `python -m pytest -q` is **111 passed** and must remain so.
-- After each task: `cd apps/api && pnpm test && pnpm typecheck`, `cd apps/web && pnpm test && pnpm typecheck` once it exists, and from the repo root `pnpm check --write && pnpm check`. All clean before the commit step.
+- After each task: `cd apps/api && pnpm test && pnpm typecheck`, `cd apps/web && pnpm test && pnpm typecheck` once it exists, and from the repo root `pnpm check --write && pnpm check`. All clean before the commit step. `apps/web`'s `test` script runs `vite build` before vitest on purpose — `bundle.test.ts` reads `dist/client` and `dist/server`, and scanning a `dist` left over from an earlier source tree is the same failure as scanning a directory that is not there.
 
 ---
 
@@ -138,7 +188,7 @@ Four facts the audits disputed were re-measured rather than taken on trust, and 
 | 1 | `db/gate-fields.ts` — one required-field array — generating both `rs_gate_completeness` (migration `0003`) and `reports/blockers.ts`, with the test that keeps them together |
 | 2 | The wire's validation layer: `reports/{bounds,citable-fields,draft-columns,patch-schemas}.ts`. Numbers arrive as strings and are parsed once, through the frozen validators |
 | 3 | The API: `reports/store.ts`, `app.ts` (thirteen routes), `server.ts` on Hono, and `routes.test.ts` — twelve cases against real Postgres |
-| 4 | `apps/web`: the tsconfig split that compiles, the Vite SPA, `hc<AppType>`, the coin list, and `boundary.test.ts` |
+| 4 | `apps/web`: the tsconfig split that compiles, TanStack Start, the one loopback hop in `routes/api.$.ts`, `hc<AppType>`, the coin list, and the two guards — `boundary.test.ts` on the source, `bundle.test.ts` on both built bundles |
 | 5 | The editor shell: load, one Save per section, one CAS bump, the 409 that re-seeds every box, and the first two sections (product gate, risk notes) |
 | 6 | The blocker list on screen, generated from `GATE_REQUIREMENTS`, with commit-written rows rendered `unknown` |
 | 7 | The four remaining sections — liquidity, narrative, team, accrual — and the final shell |
@@ -2864,7 +2914,7 @@ with no foreign key."
 ```
 
 ---
-### Task 4: `apps/web` — the tsconfig split that compiles, the SPA, and the boundary guard
+### Task 4: `apps/web` — the tsconfig split that compiles, TanStack Start, and the two-sided boundary guard
 
 **The tsconfig arrangement is the first thing to get right, because the design's version does not build.** Extending `tsconfig.base.json` and overriding only `moduleResolution` yields, on the pinned tsc 5.9.3:
 
@@ -2873,23 +2923,46 @@ error TS5095: Option 'bundler' can only be used when 'module' is set to 'preserv
 error TS5109: Option 'moduleResolution' must be set to 'NodeNext' (or left unspecified) when option 'module' is set to 'NodeNext'.
 ```
 
-because the base sets `module: nodenext` and that is inherited. Five keys are overridden, not one. The set below was compiled clean (exit 0, 2.1s) against the real `tsconfig.base.json` with React 19 JSX and explicit `.ts`/`.tsx` relative imports, with the inherited `erasableSyntaxOnly`, `verbatimModuleSyntax`, `allowImportingTsExtensions` and `noUncheckedIndexedAccess` all still active.
+because the base sets `module: nodenext` and that is inherited. Five keys are overridden, not one. The set below was compiled clean against the real `tsconfig.base.json` with React 19 JSX and explicit `.ts`/`.tsx` relative imports, with the inherited `erasableSyntaxOnly`, `verbatimModuleSyntax`, `allowImportingTsExtensions` and `noUncheckedIndexedAccess` all still active — and, under Start, with the generated route tree in the same program.
 
-**`"node"` is in `types` on purpose.** `boundary.test.ts` reads the source tree with `node:fs`, and it has to live in the same program as the code it guards. It also makes visible something that happens anyway: `tsc --listFiles` shows **15 `apps/api` files and 83 `@types/node` files** entering the web program through `import type { AppType }`, whatever `types` says. The consequence to know about is that `setTimeout` is typed as returning `Timeout`, not `number` — step 4 uses no timers, and anything that stores one later writes `ReturnType<typeof setTimeout>`.
+**`moduleResolution: bundler` is load-bearing twice, not once.** It lets `apps/api`'s explicit-`.ts` relative imports resolve inside the web program, *and* it lets `routeTree.gen.ts`'s extensionless `import { Route } from './routes/__root'` resolve. The generated tree cannot compile under `nodenext`, which is the second reason the override is five keys rather than an experiment.
 
-**There is no `@tanstack/react-start` and no `routeTree.gen.ts`.** Decision, recorded in Task 8: routes are code-based. The generated tree fails `biome check` (`assist/source/organizeImports` as an error, plus `noExplicitAny` and `noUnusedImports` on the generator's own output), its header asks to be excluded from the linter, `pnpm format` then reorders imports that the next `vite dev` regenerates back, and nothing asserts the committed tree matches the route files. Two routes do not need a code generator. SSR, server functions and head/meta also buy nothing on loopback, single-user, no-SEO, with the backend deliberately outside Start's server — and the design's own risk list conceded that SPA mode does not stop a loader added to `__root.tsx` later putting the web tier back on the network.
+**`"node"` is in `types` on purpose.** `boundary.test.ts` and `bundle.test.ts` read the source tree and the built output with `node:fs`, and they have to live in the same program as the code they guard. It also makes visible something that happens anyway: `tsc --listFiles` shows **15 `apps/api` files and 83 `@types/node` files** entering the web program through `import type { AppType }`, whatever `types` says. The consequence to know about is that `setTimeout` is typed as returning `Timeout`, not `number` — step 4 uses no timers, and anything that stores one later writes `ReturnType<typeof setTimeout>`.
+
+**`@tanstack/react-start` 1.168.57 stays, and `routeTree.gen.ts` is generated and committed.** An earlier draft of this plan dropped Start for plain Vite with code-based routes. **The owner reversed that on 2026-09-21**; Task 8 Step 7 records the reversal. Start is in the approved spec §9 and in `CLAUDE.md`'s stack table, and both premises of the drop were re-tested here and both are closed:
+
+- *The generated tree fails `biome check`.* True, and **one line closes it.** Measured against a real Start build of this tree: with `biome.json` as it is today, `biome check` walks the generated tree and **exits 1** — `assist/source/organizeImports` as an **error** at `routeTree.gen.ts:11`, plus four warnings (`lint/suspicious/noExplicitAny` at 20, 25 and 30, and `lint/correctness/noUnusedImports` at 98). With `"!**/routeTree.gen.ts"` added to `files.includes` it walks **one file fewer and exits 0**. (In the scratch tree that was 52 against 51; the repo checks 35 files today and will check more once this plan lands, so the delta of exactly one is the part to hold onto, not the total.) That is exactly the arrangement the sibling repo at `../profe` already runs — its `biome.json` line 9 reads `"includes": ["**", "!**/dist", "!**/node_modules", "!**/routeTree.gen.ts"]` while its `apps/web/package.json` line 22 pins `"@tanstack/react-start": "1.168.49"`. The file is excluded **because it is generated**: the Start plugin rewrites it from `src/routes/` on every `vite dev` and every `vite build`, so linting it is linting an output.
+- *`pnpm format` and the generator then fight over it.* Not reproducible once it is excluded. Round-tripped here: `sha256(routeTree.gen.ts)` is `790aa396aff84af7…` before `biome check --write`, unchanged after it, and unchanged after the next `vite build`; `biome check` exits 0 across the round trip.
+
+And keeping Start buys something the SPA could not have had. The Start vite plugin ships **`importProtection`**, a first-class build-time import guard. Defect 5 — the one-word import slip — stops being a bundle nobody measures and becomes a build that fails with a full import trace. Plain Vite plus `@tanstack/react-router` has no equivalent, at any price.
+
+**The leak guard matters MORE under Start, not less.** A Start build emits **two** bundles — `dist/client/` (what a browser downloads) and `dist/server/` (the SSR fetch handler) — and two things follow, both measured here rather than reasoned about:
+
+- **A scan of the wrong directory passes.** The SPA draft's own command, run verbatim against a Start build, prints `grep: dist/assets/index-*.js: No such file or directory` and the pipeline **exits 0 having read zero bytes**. The `|| true` — which that draft explicitly defended as "not decoration" — is what converts the missing directory into a pass. Step 11 names `dist/client` and drops the `|| true`, and `bundle.test.ts` asserts both directories exist and that what it read was big enough to be a real bundle.
+- **A client-only scan is not sufficient.** A value import used only inside a `createServerFn` body leaves the client bundle spotless — measured at **587,978 bytes against a clean 583,379, zero ORM needles, under the byte ceiling** — and puts drizzle plus this project's table and constraint names in `dist/server` (`drizzle:` ×15, `PgTable` ×6, `PgColumn` ×88, `report_scores` ×2, `rs_gate` ×1). That is a database handle in the tier that is supposed to hold none. `bundle.test.ts` scans **both** halves, and `importProtection` carries a `server` specifier list as well as a `client` one.
+
+**What Start's server is for here, and what it is not.** One sentence, and Task 8 puts it in the decisions log: *Start's server hosts the page and one loopback hop, and nothing else.* Two consequences are written into files rather than into prose:
+
+- `routes/__root.tsx` now executes on the server, so the SPA draft's "no network egress from `__root.tsx` by construction" is replaced by a mechanical guarantee. `boundary.test.ts` asserts that `__root.tsx` contains none of `loader`, `beforeLoad`, `createServerFn`, `fetch(`, `ssr:`, and that no file under `src/` other than `routes/api.$.ts` contains `fetch(` at all. That is stronger than "by construction", because it fails a commit rather than a code review — and the SPA draft itself conceded that a loader added later would have put the web tier back on the network.
+- **The citation verifier (step 5) and the EvidenceFinder (step 8) do not belong in a Start server function.** Both fetch a third party or hold a key, and the tier that holds `DATABASE_URL` — and would hold an LLM key — is `apps/api`. They are reached from the browser through the same `hc<AppType>` hop as everything else. `importProtection.server` is what mechanically stops someone taking the shortcut, because a server function reaching for `@coinpicks/api` fails the SSR build.
 
 **Files:**
-- Create: `apps/web/package.json`, `apps/web/tsconfig.json`, `apps/web/vite.config.ts`, `apps/web/vitest.config.ts`, `apps/web/index.html`
-- Create: `apps/web/src/index.css`, `apps/web/src/main.tsx`, `apps/web/src/router.tsx`, `apps/web/src/lib/client.ts`, `apps/web/src/pages/CoinList.tsx`
-- Create: `apps/web/src/pages/ReportEditor.tsx` (a stub in this task; Task 5 writes it properly)
-- Modify: `package.json` (the root `dev` script)
-- Test: `apps/web/src/boundary.test.ts`
+- Create: `apps/web/package.json`, `apps/web/tsconfig.json`, `apps/web/vite.config.ts`, `apps/web/vitest.config.ts`
+- Create: `apps/web/src/styles.css`, `apps/web/src/router.tsx`, `apps/web/src/lib/client.ts`
+- Create: `apps/web/src/routes/__root.tsx`, `apps/web/src/routes/index.tsx`, `apps/web/src/routes/api.$.ts`
+- Create: `apps/web/src/routes/reports.$reportId.tsx` (a stub in this task; Task 5 writes it properly)
+- Create: `apps/web/scripts/serve.ts`
+- Generated by the Start plugin and **committed**: `apps/web/src/routeTree.gen.ts`
+- Modify: `biome.json` (one exclude line), `package.json` (the root `dev` script)
+- Test: `apps/web/src/boundary.test.ts`, `apps/web/src/bundle.test.ts`
+
+There is no `index.html` and no `src/main.tsx`. Start supplies both; `src/routes/__root.tsx` is the document.
 
 **Interfaces:**
 - Consumes: `type AppType` from `@coinpicks/api`, by `import type` and by nothing else.
-- Produces, from `src/lib/client.ts`: `client`, `ReportPayload`, `Scores`, `TeamRow`, `Citation`, `Blocker`, `Bounds`, `ProductBody`, `LiquidityBody`, `NarrativeBody`, `AccrualBody`, `RiskBody`, `TeamBody`, `CitationBody`, `type Fields<T> = Omit<T, 'version'>`, `interface ApiError`, `readError(response): Promise<ApiError>`.
-- Produces, from `src/router.tsx`: `router`, plus the `@tanstack/react-router` `Register` augmentation that makes `<Link to="/reports/$reportId">` type-checked.
+- Produces, from `src/lib/client.ts`: `client`, `ReportPayload`, `Scores`, `TeamRow`, `Citation`, `Blocker`, `Bounds`, `CoinRows`, `ProductBody`, `LiquidityBody`, `NarrativeBody`, `AccrualBody`, `RiskBody`, `TeamBody`, `CitationBody`, `type Fields<T> = Omit<T, 'version'>`, `interface ApiError`, `readError(response): Promise<ApiError>`.
+- Produces, from `src/router.tsx`: `getRouter`, plus the `@tanstack/react-router` `Register` augmentation that makes `<Link to="/reports/$reportId">` type-checked.
+- Produces, from each file under `src/routes/`: `Route`. The route tree is generated from those exports; nothing hand-assembles it.
 
 - [ ] **Step 1: The package**
 
@@ -2901,15 +2974,18 @@ Create `apps/web/package.json`:
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite dev",
     "build": "vite build",
-    "test": "vitest run",
+    "start": "node --env-file-if-exists=../../.env scripts/serve.ts",
+    "test": "vite build && vitest run",
     "typecheck": "tsc --noEmit",
     "check": "biome check"
   },
   "dependencies": {
     "@coinpicks/api": "workspace:*",
+    "@hono/node-server": "2.1.1",
     "@tanstack/react-router": "1.170.38",
+    "@tanstack/react-start": "1.168.57",
     "hono": "4.13.8",
     "react": "19.3.0",
     "react-dom": "19.3.0"
@@ -2932,6 +3008,12 @@ cd /home/dev/projects/trade-god && pnpm install
 ```
 Expected: no peer warnings. `@vitejs/plugin-react@6.1.1` peers `vite ^8.0.0`; its three other peers (`oxc-transform-react`, `@rolldown/plugin-babel`, `babel-plugin-react-compiler`) are all `optional: true`. `@tailwindcss/vite@4.3.3` peers `vite ^5.2.0 || ^6 || ^7 || ^8`. `@tanstack/react-router@1.170.38` peers `react >=18`.
 
+Three things about this file are decisions, not boilerplate:
+
+- **`test` runs `vite build` first.** `bundle.test.ts` reads `dist/client` and `dist/server`, and a scan of a `dist` left over from an earlier source tree is the same failure as a scan of a directory that does not exist: a guard reporting success over bytes it did not read. Building first makes the scanned bundle the current one, every time, and it costs about a second (measured: 296 ms for the client environment and 205 ms for the ssr environment). It also means `pnpm -r --if-present run test` — which is what CI runs and what every later task's green step runs — needs no build step in front of it.
+- **No `@tanstack/router-plugin` and no `@tanstack/router-cli`.** Start's vite plugin carries the route generator. The sibling repo has `@tanstack/router-cli` only because it runs a manual `tsr generate` script; nothing here does.
+- **`@hono/node-server` is a runtime dependency**, not a dev one: `scripts/serve.ts` (Step 8) is what hosts the built app.
+
 Without `@types/react` and `@types/react-dom` this package cannot typecheck at all: `TS7016: Could not find a declaration file for module 'react'` and `TS7026: JSX element implicitly has type 'any'`. They are in the list above; do not trim them.
 
 - [ ] **Step 2: The tsconfig — five keys, named**
@@ -2951,34 +3033,97 @@ Create `apps/web/tsconfig.json`:
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "vitest.config.ts"]
 }
 ```
-- [ ] **Step 3: Vite, vitest, the shell**
+
+Five keys, and Start needs no sixth. `scripts/serve.ts` is deliberately **outside** `include`: it imports `../dist/server/server.js`, which does not exist until `vite build` has run, so `tsc --noEmit` on a clean checkout would otherwise fail on a file that is never executed unbuilt.
+
+- [ ] **Step 3: One line in `biome.json`, because the route tree is generated**
+
+In `/home/dev/projects/trade-god/biome.json`, replace
+
+```json
+    "includes": ["apps/**", "*.json", "*.jsonc"]
+```
+
+with
+
+```json
+    "includes": ["apps/**", "*.json", "*.jsonc", "!**/routeTree.gen.ts"]
+```
+
+That is the whole change, and it is the sibling repo's arrangement: `../profe/biome.json` line 9 excludes the same filename, beside `@tanstack/react-start` in `../profe/apps/web/package.json`. **The reason is that the file is generated** — the Start plugin rewrites it from `src/routes/` on every dev start and every build — not that it is inconvenient. Its own header says the same thing: *"you should also exclude this file from your linter and/or formatter"*.
+
+Nothing else is needed. `!**/node_modules`, `!**/dist` and `!**/.tanstack` would be redundant: `vcs.useIgnoreFile: true` is already set and `.gitignore` already lists `node_modules/`, `dist/`, `.output/` and `.tanstack/`. Measured with the one-line change on a tree that has a real `routeTree.gen.ts` in it: `No fixes applied.`, exit 0, over exactly one file fewer than without it.
+
+**Do not add `"css": { "parser": { "tailwindDirectives": true } }`.** The sibling repo carries it; this repo does not need it, and the claim that `@import 'tailwindcss'` is a biome *parse* error does not reproduce here. Measured on this machine, against the config above: `@import "tailwindcss";` with **double** quotes is clean, and the single-quoted form is a *formatter* error, not a parse error — `javascript.formatter.quoteStyle` is JavaScript-only and biome formats CSS strings with double quotes regardless. Step 4 writes the file with double quotes.
+
+- [ ] **Step 4: Vite, vitest and the stylesheet**
 
 Create `apps/web/vite.config.ts`:
 
 ```ts
 import tailwindcss from '@tailwindcss/vite'
-import react from '@vitejs/plugin-react'
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import viteReact from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
+/*
+ * NO `server.proxy`. `src/routes/api.$.ts` serves the `/api` prefix in dev AND in production, so
+ * the hop that ships is the hop that is developed against. With a Vite proxy in front of it the
+ * server route is dead code in dev and the only code in production -- measured: with the proxy
+ * configured and its target pointed at a dead port, `curl /api/health` returned 502 rather than
+ * falling through to the route, which is two paths where the project only wants one.
+ */
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  server: {
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8789',
-        changeOrigin: false,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+  plugins: [
+    tanstackStart({
+      /*
+       * THE LEAK GUARD, AT BUILD TIME. This is the thing plain Vite has no equivalent of.
+       *
+       * `import { type AppType, createApp } from '@coinpicks/api'` plus one value use is the
+       * defect the boundary test exists for: tsc accepts it, biome says nothing, and the client
+       * bundle silently grows by 136 kB. With this option the build STOPS, naming the line and
+       * printing the whole import chain that reached it.
+       *
+       * `server` as well as `client`, and they are different rules. `client` says "not in the
+       * browser". `server` says "not in the RENDERER either" -- without it a value import used
+       * only inside a `createServerFn` body builds clean, leaves the client bundle spotless, and
+       * puts drizzle plus this project's DDL in dist/server, which is a database handle in the
+       * tier that is supposed to hold none. Measured both ways.
+       *
+       * A type-only import is erased before the bundler sees the specifier, so `hc<AppType>`
+       * still compiles with both lists in place.
+       */
+      importProtection: {
+        behavior: 'error',
+        client: { specifiers: ['@coinpicks/api', /^drizzle-orm/, /^pg$/] },
+        enabled: true,
+        server: { specifiers: ['@coinpicks/api', /^drizzle-orm/, /^pg$/] },
       },
-    },
-  },
+    }),
+    // react's vite plugin must come AFTER start's vite plugin; tailwind last.
+    viteReact(),
+    tailwindcss(),
+  ],
+  // Vite 8 resolves tsconfig `paths` natively. Declared because the documented default is false.
+  resolve: { tsconfigPaths: true },
+  /*
+   * `strictPort`, because this machine has already been bitten. 5173 is held by the sibling repo's
+   * dev server right now; without this, `vite dev` moves to 5174 with one grey line of output and
+   * the first `curl localhost:5173/` reads ANOTHER APP'S HTML. Measured with 5173 occupied:
+   * `Error: Port 5173 is already in use`, exit 1. A loud failure beats a health check that passed
+   * against the wrong process -- which is the same lesson as the 8787 note Task 8 strikes.
+   */
+  server: { port: 5173, strictPort: true },
 })
 ```
+
 Create `apps/web/vitest.config.ts`:
 
 ```ts
 import { defineConfig } from 'vitest/config'
 
+// Node, not jsdom: both suites read files off disk — the source tree and the built bundles — and
+// neither renders a component. There is no jsdom and no @testing-library/react in this plan.
 export default defineConfig({
   test: {
     environment: 'node',
@@ -2986,28 +3131,16 @@ export default defineConfig({
   },
 })
 ```
-Create `apps/web/index.html`:
 
-```html
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CoinPicks</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
-```
-Create `apps/web/src/index.css`:
+Create `apps/web/src/styles.css`:
 
 ```css
 @import "tailwindcss";
 ```
-- [ ] **Step 4: The typed client — the one line the whole boundary rests on**
+
+Double quotes, per Step 3. `__root.tsx` links it through `import appCss from '../styles.css?url'`, which is how Tailwind reaches the document under Start — there is no `index.html` to put a `<link>` in.
+
+- [ ] **Step 5: The typed client — the one line the whole boundary rests on**
 
 Create `apps/web/src/lib/client.ts`:
 
@@ -3018,15 +3151,30 @@ import { hc, type InferRequestType, type InferResponseType } from 'hono/client'
 /*
  * `import type`, and the whole line is type-only.
  *
- * `import { type AppType, createApp } from '@coinpicks/api'` — one word different, a genuine
- * value use — makes `vite build` exit 0 with no warning and grows the production bundle from
- * 571.57 kB to 716.11 kB, with drizzle in it. Biome's `useImportType` does not fire on the mixed
- * form and tsc under `verbatimModuleSyntax` accepts it, so `boundary.test.ts` is what actually
- * holds this line in place.
+ * The mixed form -- `import` then `{ type AppType, createApp }` -- is one word different and a
+ * genuine value use. tsc accepts it under `verbatimModuleSyntax`, biome's `useImportType` does
+ * not fire on it, and the client bundle goes from 583,379 to 727,230 bytes with this project's
+ * DDL in it. Three things hold this line in place, in the order they fire: the Start plugin's
+ * `importProtection` (vite.config.ts) fails the BUILD with an import trace, `boundary.test.ts`
+ * reads this source, and `bundle.test.ts` reads dist/client -- which is the browser's half of a
+ * Start build, and the only half a client-side scan may look at.
  */
 
-/** Absolute, because `hc` builds URLs and a relative base is one more thing to be unsure about. */
-export const client = hc<AppType>(`${window.location.origin}/api`)
+/*
+ * TanStack Start renders this app on the server as well as in the browser, so this module is
+ * evaluated in a place where `window` does not exist. `import.meta.env.SSR` is replaced by a
+ * literal at build time — `true` in the server bundle, `false` in the client bundle — so the
+ * branch not taken is eliminated rather than guarded, and neither bundle carries a reference to
+ * a global it does not have.
+ *
+ * Browser: same-origin `/api`, which `src/routes/api.$.ts` forwards to the Hono API in dev and
+ * in production alike. Server: the loopback origin directly, no hop.
+ */
+const API_BASE = import.meta.env.SSR
+  ? (import.meta.env.VITE_API_ORIGIN ?? 'http://127.0.0.1:8789')
+  : `${window.location.origin}/api`
+
+export const client = hc<AppType>(API_BASE)
 
 export type ReportPayload = InferResponseType<(typeof client.reports)[':reportId']['$get'], 200>
 export type Scores = ReportPayload['scores']
@@ -3034,6 +3182,8 @@ export type TeamRow = ReportPayload['team'][number]
 export type Citation = ReportPayload['citations'][number]
 export type Blocker = ReportPayload['blockers'][number]
 export type Bounds = ReportPayload['bounds']
+
+export type CoinRows = InferResponseType<typeof client.coins.$get, 200>['rows']
 
 type JsonOf<T> = T extends { json: infer J } ? J : never
 
@@ -3089,117 +3239,135 @@ export async function readError(response: Response): Promise<ApiError> {
   return actualVersion === undefined ? { code, message } : { code, message, actualVersion }
 }
 ```
-- [ ] **Step 5: Routes, code-based**
+
+**`window.location.origin` at module scope is a bug under Start, not a style point.** Start evaluates this module on the server, where `window` is undefined, and the SPA draft's version crashed the first render. `import.meta.env.SSR` is better than a runtime `typeof window` guard: Vite replaces it with a literal per environment, so the dead branch is eliminated and neither bundle carries a reference to a global it lacks.
+
+Two names for one origin, and it is deliberate: `VITE_API_ORIGIN` is read at **build** time and reaches the client bundle if it is ever set; `COINPICKS_API_ORIGIN` in `routes/api.$.ts` is read at **run** time, in the process. This plan gives no route a `loader`, so nothing on the server ever calls `client` at all — the SSR branch exists so the module can be *evaluated* there, not so it can be *used* there.
+
+- [ ] **Step 6: The router and the shell route**
 
 Create `apps/web/src/router.tsx`:
 
 ```tsx
-import {
-  createRootRoute,
-  createRoute,
-  createRouter,
-  Outlet,
-  useParams,
-} from '@tanstack/react-router'
-import { CoinList } from './pages/CoinList.tsx'
-import { ReportEditor } from './pages/ReportEditor.tsx'
+import { createRouter } from '@tanstack/react-router'
+import { routeTree } from './routeTree.gen'
 
-/*
- * CODE-BASED ROUTES, not file-based.
- *
- * There is no `routeTree.gen.ts`: a committed generated file fails `biome check`
- * (assist/source/organizeImports fires as an error, and `pnpm format` then reorders imports that
- * the next `vite dev` regenerates back), its own header asks to be excluded from the linter, and
- * nothing asserts the committed tree matches the route files. Two routes do not need a code
- * generator.
- */
-
-const rootRoute = createRootRoute({ component: Outlet })
-
-const coinsRoute = createRoute({
-  component: CoinList,
-  getParentRoute: () => rootRoute,
-  path: '/',
-})
-
-function ReportRoute() {
-  const { reportId } = useParams({ from: '/reports/$reportId' })
-  return <ReportEditor reportId={reportId} />
+// `getRouter`, not a module-level `router`: TanStack Start calls this once per REQUEST on the
+// server, and a shared instance would leak one render's loaded data into the next. The name is
+// the convention Start's plugin looks for in `src/router.tsx`.
+//
+// `routeTree.gen.ts` is generated by the Start plugin from `src/routes/`, and is excluded from
+// biome by one pattern in the repo-root biome.json — the same arrangement the sibling repo runs.
+//
+// LINE comments, not a block comment. That biome pattern is `!` then `**` then `/routeTree...`,
+// and the `*` `/` in the middle of it closes a `/*` block early: `vite build` reported
+// "Unterminated string" at this line with the paragraph written the other way.
+export function getRouter() {
+  return createRouter({
+    routeTree,
+    scrollRestoration: true,
+    defaultPreload: 'intent',
+  })
 }
-
-const reportRoute = createRoute({
-  component: ReportRoute,
-  getParentRoute: () => rootRoute,
-  path: '/reports/$reportId',
-})
-
-export const router = createRouter({
-  routeTree: rootRoute.addChildren([coinsRoute, reportRoute]),
-})
 
 declare module '@tanstack/react-router' {
   interface Register {
-    router: typeof router
+    router: ReturnType<typeof getRouter>
   }
 }
 ```
-Create `apps/web/src/main.tsx`:
+
+The import of `./routeTree.gen` is **extensionless on purpose** — it is the generator's own spelling, and it resolves because `moduleResolution` is `bundler` (Step 2). Do not "fix" it to `./routeTree.gen.ts`; the next `vite build` writes it back.
+
+Create `apps/web/src/routes/__root.tsx`:
 
 ```tsx
-import { RouterProvider } from '@tanstack/react-router'
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import { router } from './router.tsx'
+import { createRootRoute, HeadContent, Scripts } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
+import appCss from '../styles.css?url'
 
-const host = document.getElementById('root')
-if (host === null) throw new Error('index.html has no #root')
+/*
+ * THE BOUNDARY RULE, stated where it is easiest to break.
+ *
+ * This file runs on the SERVER as well as in the browser. It therefore has, and must keep
+ * having: no `loader`, no `beforeLoad`, no `createServerFn`, no `fetch`, and no import of
+ * `@coinpicks/api` as a value. The renderer holds no key and calls no third party; the only
+ * process allowed to do either is the Hono API. `boundary.test.ts` asserts each of those five
+ * words is absent from this file, because "we did not add one" is not a guarantee.
+ */
+export const Route = createRootRoute({
+  head: () => ({
+    meta: [
+      { charSet: 'utf-8' },
+      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+      { title: 'CoinPicks' },
+    ],
+    links: [{ rel: 'stylesheet', href: appCss }],
+  }),
+  shellComponent: RootDocument,
+})
 
-createRoot(host).render(
-  <StrictMode>
-    <RouterProvider router={router} />
-  </StrictMode>,
-)
+function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
+  return (
+    <html lang="en">
+      <head>
+        <HeadContent />
+      </head>
+      <body className="bg-white text-neutral-900">
+        {children}
+        <Scripts />
+      </body>
+    </html>
+  )
+}
 ```
-- [ ] **Step 6: The coin list**
 
-Create `apps/web/src/pages/CoinList.tsx`:
+`shellComponent` — not `component` plus a hand-written `<html>` — is the 1.168 convention, and the sibling repo uses the same.
+
+- [ ] **Step 7: The three route files**
+
+Create `apps/web/src/routes/index.tsx`:
 
 ```tsx
-import { Link, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
-import { type ApiError, client, readError } from '../lib/client.ts'
+import { type ApiError, type CoinRows, client, readError } from '../lib/client.ts'
 
-type CoinRows = Awaited<ReturnType<typeof fetchCoins>>
+/*
+ * NO `loader`, and no `beforeLoad`.
+ *
+ * The list is fetched in an effect, in the BROWSER. A loader runs on the server first, and the
+ * server half of this tier is the one place that must not start reaching outwards: it holds no
+ * key and calls no third party, and `boundary.test.ts` is written to keep it that way. Step 4 has
+ * no SEO and no first-paint data requirement, so a loader would buy nothing and cost the rule.
+ */
+export const Route = createFileRoute('/')({ component: CoinList })
 
-async function fetchCoins() {
-  const response = await client.coins.$get()
-  if (!response.ok) throw await readError(response)
-  const body = await response.json()
-  return body.rows
+const EMPTY_FORM = {
+  symbol: '',
+  name: '',
+  chain: '',
+  contractAddress: '',
+  coingeckoId: '',
+  addressSources: '',
 }
 
-export function CoinList() {
+function CoinList() {
   const navigate = useNavigate()
   const [rows, setRows] = useState<CoinRows | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
-  const [form, setForm] = useState({
-    symbol: '',
-    name: '',
-    chain: '',
-    contractAddress: '',
-    coingeckoId: '',
-    addressSources: '',
-  })
+  const [form, setForm] = useState(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
-    try {
-      setRows(await fetchCoins())
-      setError(null)
-    } catch (thrown) {
-      setError(thrown as ApiError)
+    const response = await client.coins.$get()
+    if (!response.ok) {
+      setError(await readError(response))
+      return
     }
+    const body = await response.json()
+    setRows(body.rows)
+    setError(null)
   }, [])
 
   useEffect(() => {
@@ -3238,14 +3406,7 @@ export function CoinList() {
       setError(await readError(response))
       return
     }
-    setForm({
-      symbol: '',
-      name: '',
-      chain: '',
-      contractAddress: '',
-      coingeckoId: '',
-      addressSources: '',
-    })
+    setForm(EMPTY_FORM)
     await load()
   }
 
@@ -3347,15 +3508,115 @@ export function CoinList() {
   )
 }
 ```
-And a stub so the router compiles — Task 5 replaces this file entirely. Create `apps/web/src/pages/ReportEditor.tsx`:
+
+Create `apps/web/src/routes/api.$.ts` — **the one outbound request in the whole web tier**:
+
+```ts
+import { createFileRoute } from '@tanstack/react-router'
+
+/*
+ * THE ONE HOP TO THE API, IN DEV AND IN PRODUCTION.
+ *
+ * A Vite `server.proxy` on `/api` would work in dev and would not exist in a built app, leaving
+ * the shipped hop untested -- measured: with a proxy configured and pointed at a dead port,
+ * `/api/health` returned 502 rather than falling through to this route, so in dev the route
+ * would never run at all. A Start server route runs in both, so there is one path, not two.
+ *
+ * It is the ONE place in apps/web where the server makes an outbound request, and the boundary
+ * rule survives it for one reason only — the target is this machine's own API on loopback, built
+ * from an origin this process is configured with. It never takes a URL from the request, from a
+ * report, or from a citation. Fetching a third-party URL is the citation verifier's job in
+ * build-order step 5 and it belongs to apps/api, which is the tier that holds keys.
+ */
+const API_ORIGIN = process.env.COINPICKS_API_ORIGIN ?? 'http://127.0.0.1:8789'
+
+async function forward({ request }: { request: Request }): Promise<Response> {
+  const url = new URL(request.url)
+  const target = `${API_ORIGIN}${url.pathname.replace(/^\/api/, '')}${url.search}`
+  const response = await fetch(target, {
+    body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+    // `manual`, so a redirect reaches the BROWSER. hono's proxy default is `follow`, which
+    // resolves the chain in this process and drops both the Location and any Set-Cookie on it.
+    // The sibling repo shipped that bug and only found it in production.
+    headers: request.headers,
+    method: request.method,
+    redirect: 'manual',
+    // Required by undici whenever a body is a stream, and a PATCH body is.
+    ...{ duplex: 'half' },
+  })
+  return new Response(response.body, {
+    headers: response.headers,
+    status: response.status,
+    statusText: response.statusText,
+  })
+}
+
+export const Route = createFileRoute('/api/$')({
+  server: {
+    handlers: {
+      DELETE: forward,
+      GET: forward,
+      PATCH: forward,
+      POST: forward,
+      PUT: forward,
+    },
+  },
+})
+```
+
+`createFileRoute(...)({ server: { handlers } })` is the 1.168 spelling. `createAPIFileRoute` is the older one and is not what this version exports.
+
+And a stub so the route exists and `<Link to="/reports/$reportId">` has something to type against — Task 5 replaces this file entirely. Create `apps/web/src/routes/reports.$reportId.tsx`:
 
 ```tsx
-export function ReportEditor({ reportId }: { reportId: string }) {
+import { createFileRoute } from '@tanstack/react-router'
+
+/*
+ * A stub, so the route exists and the generated tree has something to type `<Link to=...>`
+ * against. Task 5 replaces this file entirely.
+ */
+export const Route = createFileRoute('/reports/$reportId')({ component: ReportEditor })
+
+function ReportEditor() {
+  const { reportId } = Route.useParams()
   return <main className="mx-auto max-w-5xl p-6">The editor for {reportId} lands in Task 5.</main>
 }
 ```
 
-- [ ] **Step 7: The boundary guard**
+**A warning for anyone scripting this file's creation:** the filename contains `$reportId`. In a shell heredoc that is a variable, and an unescaped `cat > src/routes/reports.$reportId.tsx` produces `reports..tsx`, a `/reports/` route, and a `Route.useParams()` typed `{}` — with everything still compiling. Escape the `$`, or write the file with an editor.
+
+- [ ] **Step 8: The production host**
+
+`vite build` under Start does **not** emit a server. It emits `dist/server/server.js`, which default-exports `{ fetch }` and nothing else, plus `dist/client/` as files. These are the twenty lines that host them. Create `apps/web/scripts/serve.ts`:
+
+```ts
+import { serve } from '@hono/node-server'
+import { serveStatic } from '@hono/node-server/serve-static'
+import { Hono } from 'hono'
+import ssr from '../dist/server/server.js'
+
+/*
+ * The web tier in production: the assets first, everything else -- pages AND the `/api/$` route
+ * -- through the SSR handler.
+ *
+ * Deliberately OUTSIDE apps/web/tsconfig.json's `include`: it imports ../dist/server/server.js,
+ * which does not exist until `vite build` has run, so `tsc --noEmit` on a clean checkout would
+ * fail on a file that is never executed unbuilt.
+ */
+const PORT = Number(process.env.PORT ?? 3000)
+
+const app = new Hono()
+  .use('/assets/*', serveStatic({ root: './dist/client' }))
+  .all('*', (c) => ssr.fetch(c.req.raw))
+
+serve({ fetch: app.fetch, hostname: '127.0.0.1', port: PORT }, (info) => {
+  console.log(`coinpicks web on http://127.0.0.1:${info.port}`)
+})
+```
+
+This is the one `Number()` call anywhere in `apps/web`, and it is legal because `boundary.test.ts` scans `src/` and this file is not under it — and because a port read from the process's own environment is not operator input on the wire. The no-`Number()` rule stands unchanged for everything under `src/`.
+
+- [ ] **Step 9: The two guards**
 
 Create `apps/web/src/boundary.test.ts`:
 
@@ -3366,16 +3627,21 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /*
- * THE TIER BOUNDARY, ENFORCED MECHANICALLY.
+ * THE TIER BOUNDARY, ENFORCED MECHANICALLY — the SOURCE half.
  *
- * Measured, not assumed, at the finished tree: with `import type { AppType } from
- * '@coinpicks/api'` the production bundle is 571.57 kB and contains no drizzle. Changing that
- * one line to `import { type AppType, createApp } from '@coinpicks/api'` plus one value use
- * makes `vite build` exit 0 with no error, and the bundle becomes 716.11 kB WITH drizzle in it.
- * The same probe on the day this file is written, with five source files, is 535.31 kB against
- * 679.88 kB.
- * Biome's useImportType does not fire on the mixed form and tsc under verbatimModuleSyntax
- * accepts it, so the only signal is a bundle nobody measures. That is why this is a test.
+ * `bundle.test.ts` reads the built output; this reads the source. Both are needed and neither
+ * replaces the other: a source scan names the offending line, and only a bundle scan can catch a
+ * leak that arrives through a dependency nobody typed.
+ *
+ * Measured, not assumed, against a real build of this tree: with `import type { AppType } from
+ * '@coinpicks/api'` the client bundle is 583,379 bytes and carries no ORM. Changing that one line
+ * to `import { type AppType, createApp } from '@coinpicks/api'` plus one value use makes it
+ * 727,230 bytes, with this project's table and constraint names in it. Biome's useImportType does
+ * not fire on the mixed form and tsc under verbatimModuleSyntax accepts it.
+ *
+ * Three signals fire on that slip, in this order: the Start plugin's importProtection fails the
+ * BUILD (vite.config.ts), this test names the line, and bundle.test.ts reads dist/client. This
+ * one is the signal that survives someone turning the first one off.
  *
  * The second rule is the arithmetic ban. The frozen formulas are evaluated in exactly one place
  * and apps/web is not it, so no rubric bound is written here at all — every maximum, threshold
@@ -3404,7 +3670,12 @@ function sourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {
     const path = join(directory, entry)
     if (statSync(path).isDirectory()) return sourceFiles(path)
-    return /\.tsx?$/.test(path) && !path.endsWith('.test.ts') ? [path] : []
+    if (!/\.tsx?$/.test(path)) return []
+    if (path.endsWith('.test.ts')) return []
+    // The generated route tree is an OUTPUT of the files this scan already reads, and it is
+    // excluded from biome for the same reason.
+    if (path.endsWith('routeTree.gen.ts')) return []
+    return [path]
   })
 }
 
@@ -3413,8 +3684,8 @@ const FILES: SourceFile[] = sourceFiles(SRC).map((path) => ({
   lines: stripComments(readFileSync(path, 'utf8')).split('\n'),
 }))
 
-function offenders(pattern: RegExp): string[] {
-  return FILES.flatMap((file) =>
+function offenders(pattern: RegExp, only?: (file: SourceFile) => boolean): string[] {
+  return FILES.filter((file) => only === undefined || only(file)).flatMap((file) =>
     file.lines
       .map((line, index) => ({ line, number: index + 1 }))
       .filter((entry) => pattern.test(entry.line))
@@ -3422,12 +3693,16 @@ function offenders(pattern: RegExp): string[] {
   )
 }
 
+/** Everything but the one route that is allowed to make an outbound loopback request. */
+const RENDERER = (file: SourceFile): boolean => file.path !== join('routes', 'api.$.ts')
+
 describe('the web tier cannot reach the api tier at runtime', () => {
   it('scans every source file', () => {
-    // Five at the end of Task 4 (main, router, lib/client, CoinList, ReportEditor) and fourteen
-    // once Task 7 lands. The bound is the lower number on purpose: this case exists to stop the
-    // scan passing because it matched nothing, not to count the tree.
-    expect(FILES.length).toBeGreaterThanOrEqual(5)
+    // Six at the end of Task 4 — router, lib/client, routes/__root, routes/index,
+    // routes/reports.$reportId, routes/api.$ — and fifteen once Task 7 lands. The bound is the
+    // lower number on purpose: this case exists to stop the scan passing because it matched
+    // nothing, not to count the tree.
+    expect(FILES.length).toBeGreaterThanOrEqual(6)
   })
 
   it('imports @coinpicks/api only with `import type`', () => {
@@ -3441,13 +3716,44 @@ describe('the web tier cannot reach the api tier at runtime', () => {
         )
         .map((entry) => `${file.path}:${String(entry.number)} ${entry.line.trim()}`),
     )
-    expect(found, 'a value import of @coinpicks/api ships drizzle and pg to the browser').toEqual(
-      [],
-    )
+    expect(
+      found,
+      'a value import of @coinpicks/api ships the ORM and the DDL to the browser',
+    ).toEqual([])
   })
 
   it('imports no node builtin, no driver and no ORM', () => {
     expect(offenders(/from '(node:[a-z/]+|pg|drizzle-orm[a-z/-]*)'/)).toEqual([])
+  })
+})
+
+describe('the renderer never fetches', () => {
+  it('has exactly one file allowed to make an outbound request', () => {
+    expect(offenders(/\bfetch\(/, RENDERER)).toEqual([])
+  })
+
+  it('declares no loader, beforeLoad or server function in the shell', () => {
+    const root = FILES.find((file) => file.path === join('routes', '__root.tsx'))
+    expect(root, 'routes/__root.tsx is gone or was renamed').toBeDefined()
+    const shell = (root?.lines ?? []).join('\n')
+    for (const forbidden of ['loader', 'beforeLoad', 'createServerFn', 'fetch(', 'ssr:']) {
+      expect(shell, `__root.tsx must not declare ${forbidden}`).not.toContain(forbidden)
+    }
+  })
+
+  it('points the one proxy at an origin this process configures, never at a request URL', () => {
+    const proxy = FILES.find((file) => file.path === join('routes', 'api.$.ts'))
+    expect(proxy, 'routes/api.$.ts is gone or was renamed').toBeDefined()
+    const source = (proxy?.lines ?? []).join('\n')
+    expect(source).toContain("process.env.COINPICKS_API_ORIGIN ?? 'http://127.0.0.1:8789'")
+    // Built from API_ORIGIN and the request's PATH only. Asserted in three pieces rather than as
+    // one template literal, which biome reads as a placeholder in a plain string.
+    expect(source).toContain('const target = ')
+    expect(source).toContain('API_ORIGIN')
+    expect(source).toContain('url.pathname.replace')
+    expect(source, 'the proxy target must never come from the request body').not.toContain(
+      'await request.json()',
+    )
   })
 })
 
@@ -3467,9 +3773,139 @@ describe('the web tier does no rubric arithmetic', () => {
   })
 })
 ```
-The last two cases are dead weight until Tasks 5–7 add the code they guard; they are written now because the guard has to exist before the code it guards, not after.
 
-- [ ] **Step 8: Make `pnpm dev` start both apps**
+Create `apps/web/src/bundle.test.ts`:
+
+```ts
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { dirname, join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+
+/*
+ * THE BUNDLE SCAN. TanStack Start emits TWO bundles and only one of them is the browser's:
+ *
+ *   apps/web/dist/client/assets/*.js   <- served as files; this is what a browser downloads
+ *   apps/web/dist/server/**\/*.js      <- the SSR fetch handler; runs in node
+ *
+ * The directory is NAMED here rather than globbed loosely, because the obvious wrong answer
+ * passes silently. The command a plain-Vite SPA would use --
+ * `grep -c -e drizzle dist/assets/index-*.js || true` -- run against a Start build prints
+ * "grep: dist/assets/index-*.js: No such file or directory" and, with the `|| true`, the
+ * pipeline EXITS 0. That is a guard reporting success having read zero bytes. Both the existence
+ * of each directory and a byte floor are asserted below so that cannot happen quietly.
+ *
+ * `apps/web`'s `test` script runs `vite build` before vitest for the same reason: a scan of a
+ * dist left over from an earlier source tree is the same failure wearing a different hat.
+ */
+
+const WEB = dirname(dirname(fileURLToPath(import.meta.url)))
+const CLIENT = join(WEB, 'dist', 'client')
+const SERVER = join(WEB, 'dist', 'server')
+
+/*
+ * NEEDLES THAT SURVIVE MINIFICATION.
+ *
+ * This list was written wrong first and the mistake is the reason it is spelled out. With a real
+ * leak in place, the built client chunk contains
+ *
+ *   drizzle: x15   PgTable x1   PgColumn x2   report_scores x1   rs_gate x1
+ *   drizzle-orm x0   pg-protocol x0   node:crypto x0   DATABASE_URL x0   coinpicks_app x0
+ *
+ * The module SPECIFIER is gone -- rolldown rewrote it -- and the `pg` driver never arrives at
+ * all, because `db/client.ts` reaches apps/web only as a type. What survives is the string
+ * literals drizzle builds its class registry from (`Symbol.for('drizzle:entityKind')`) and, more
+ * to the point, the DDL: this project's table and constraint names, in the browser, for anyone
+ * to read. So `pg-protocol`, `node:crypto`, `DATABASE_URL` and `coinpicks_app` are kept as
+ * belt-and-braces and are NOT what catches this.
+ */
+const FORBIDDEN = [
+  'drizzle:',
+  'PgTable',
+  'PgColumn',
+  'report_scores',
+  'rs_gate',
+  'pg-protocol',
+  'DATABASE_URL',
+  'coinpicks_app',
+] as const
+
+/*
+ * The client bundle's ceiling, in characters as `readFileSync(..., 'utf8').length` counts them --
+ * which is a few dozen fewer than `dist` on disk, and the same either way.
+ *
+ * The needle list catches what it knows to look for; this catches the rest. Measured on the Task 4
+ * tree: clean 583,321, and a value import of `@coinpicks/api` 719,045 -- with `vite build` exiting
+ * 0 and silent either way once importProtection is off. The SPA draft of this plan grew its own
+ * tree by about 36 kB between Task 4 and Task 7, so 660,000 sits roughly 40,000 above a clean
+ * finished tree and 59,000 below a leaking one.
+ *
+ * Raise it deliberately, in the commit that makes the app bigger, with the measured number
+ * written into this comment -- and never to make a red test green.
+ */
+const CLIENT_CHAR_CEILING = 660_000
+
+function jsFiles(directory: string): string[] {
+  return readdirSync(directory).flatMap((entry) => {
+    const path = join(directory, entry)
+    if (statSync(path).isDirectory()) return jsFiles(path)
+    return /\.m?js$/.test(path) ? [path] : []
+  })
+}
+
+function scan(directory: string): { files: number; characters: number; hits: string[] } {
+  const files = jsFiles(directory)
+  const hits: string[] = []
+  let characters = 0
+  for (const path of files) {
+    const source = readFileSync(path, 'utf8')
+    characters += source.length
+    for (const needle of FORBIDDEN) {
+      const count = source.split(needle).length - 1
+      if (count > 0) hits.push(`${relative(WEB, path)}: ${needle} x${String(count)}`)
+    }
+  }
+  return { characters, files: files.length, hits }
+}
+
+describe('the built client bundle', () => {
+  it('exists, which means `vite build` ran', () => {
+    expect(existsSync(CLIENT), `${relative(WEB, CLIENT)} is missing -- run \`pnpm build\``).toBe(
+      true,
+    )
+    expect(existsSync(SERVER), 'dist/server is missing, so this is not a Start build').toBe(true)
+  })
+
+  it('is big enough to be a real bundle, so a clean scan means something', () => {
+    const { files, characters } = scan(CLIENT)
+    expect(files).toBeGreaterThanOrEqual(2)
+    expect(characters).toBeGreaterThan(200_000)
+  })
+
+  it('carries no ORM, no schema, no driver and no connection string', () => {
+    expect(scan(CLIENT).hits).toEqual([])
+  })
+
+  it('has not silently grown by the size of a dependency nobody meant to ship', () => {
+    expect(scan(CLIENT).characters).toBeLessThan(CLIENT_CHAR_CEILING)
+  })
+})
+
+describe('the built server bundle', () => {
+  it('carries no ORM, no schema and no connection string either', () => {
+    // The renderer is not the tier that holds a database handle; apps/api is. A value import used
+    // only inside a createServerFn body leaves the CLIENT bundle spotless and lands here instead
+    // -- measured on the Task 4 tree: client 587,978 bytes with ZERO needles and comfortably under
+    // the ceiling, while dist/server carries drizzle: x15, PgTable x6, PgColumn x88,
+    // report_scores x2, rs_gate x1. This case is the only one that sees it.
+    expect(scan(SERVER).hits).toEqual([])
+  })
+})
+```
+
+The arithmetic cases and half the renderer cases are dead weight until Tasks 5–7 add the code they guard; they are written now because a guard has to exist before the code it guards, not after.
+
+- [ ] **Step 10: Make `pnpm dev` start both apps**
 
 The root `dev` script names the api package only, so the setup sequence would have started one process and then curled a port nothing was listening on. In `/home/dev/projects/trade-god/package.json` replace
 
@@ -3483,34 +3919,49 @@ with
     "dev": "pnpm --parallel --if-present run dev",
 ```
 
-- [ ] **Step 9: Compile it, build it, and measure the bundle**
+- [ ] **Step 11: Generate the tree, compile, build, and measure BOTH bundles**
+
+The build comes first, because it is what writes `routeTree.gen.ts` — until it has run once, `tsc` has no route tree to compile and `Route.useParams()` has no route to be typed against.
 
 ```bash
 cd /home/dev/projects/trade-god/apps/web
+pnpm build
 pnpm typecheck
 pnpm test
-pnpm build
 ```
-Expected: typecheck silent in about two seconds; `Tests 5 passed` — five cases over the five source files this task leaves behind (`main.tsx`, `router.tsx`, `lib/client.ts`, `pages/CoinList.tsx`, `pages/ReportEditor.tsx`; `index.css` does not match `/\.tsx?$/` and `boundary.test.ts` excludes itself), which is why the scan's floor is `toBeGreaterThanOrEqual(5)` and not `toBeGreaterThan(5)`; and a build reporting roughly
+Expected, in that order. `pnpm build` reports two environments and writes the tree:
 
 ```
-dist/index.html                   0.39 kB
-dist/assets/index-*.css           7.23 kB
-dist/assets/index-*.js          535.31 kB
+vite v8.3.0 building client environment for production...
+dist/client/assets/styles-*.css              7.42 kB
+dist/client/assets/reports._reportId-*.js    0.50 kB
+dist/client/assets/rolldown-runtime-*.js     0.58 kB
+dist/client/assets/routes-*.js              10.57 kB
+dist/client/assets/jsx-dev-runtime-*.js     44.84 kB
+dist/client/assets/index-*.js              526.86 kB
+vite v8.3.0 building ssr environment for production...
+dist/server/server.js                      238.39 kB
 ```
 
-with rolldown's generic "some chunks are larger than 500 kB" note, which is React plus the router and is expected. Those are the numbers for **this task's** five source files; Tailwind scans the source for class names, so both grow as Tasks 5–7 add sections. At the end of Task 7 the same build reports `11.99 kB` and `571.57 kB`, which is the pair quoted everywhere else in this plan.
+with rolldown's generic "some chunks are larger than 500 kB" note, which is React plus the router and is expected. Exact totals for **this task's** tree, measured: **`dist/client` 5 JS files, 583,379 bytes** plus a 7,427-byte stylesheet, and **`dist/server` 254,704 bytes**. Tailwind scans the source for class names and Task 5 replaces the stub with the real editor, so both grow through Tasks 5–7.
 
-Then the measurement that matters:
+`pnpm typecheck` is silent in about two seconds. `pnpm test` rebuilds (about a second) and reports **`Test Files 2 passed`, `Tests 13 passed`** — eight boundary cases and five bundle cases, over the six source files this task leaves behind (`router.tsx`, `lib/client.ts`, `routes/__root.tsx`, `routes/index.tsx`, `routes/reports.$reportId.tsx`, `routes/api.$.ts`). `styles.css` does not match `/\.tsx?$/`, the two test files exclude themselves, and `routeTree.gen.ts` is excluded by name — which is why the scan's floor is `toBeGreaterThanOrEqual(6)` and not `toBeGreaterThan(6)`.
+
+Then the measurement that matters, by hand, against the directory a browser actually downloads:
 
 ```bash
-grep -c -e pg-protocol -e drizzle -e node:crypto dist/assets/index-*.js || true
+grep -c -e 'drizzle:' -e PgTable -e report_scores -e rs_gate -e pg-protocol dist/client/assets/*.js; echo "grep exit=$? (1 means NO match, which is the passing case)"
+grep -rc -e 'drizzle:' -e PgTable -e report_scores dist/server --include='*.js'
 ```
-Expected: `0`. The `|| true` is not decoration: `grep -c` prints `0` and **exits 1** when there are no matches, which is the result being asked for.
+Expected: `0` on every line of both.
 
-- [ ] **Step 10: Break the boundary on purpose, watch both signals, put it back**
+**Do not carry over the SPA draft's version of this command.** `grep -c ... dist/assets/index-*.js || true` reads a directory a Start build does not create; measured here, it prints `grep: dist/assets/index-*.js: No such file or directory` and the `|| true` makes the pipeline **exit 0 having matched nothing**. The needles changed too: in a bundle with a real leak, `drizzle-orm`, `pg-protocol` and `node:crypto` are all **0** — rolldown rewrites the module specifier away and the `pg` driver never arrives at all, because `apps/api` imports its pool as a type. What survives minification is `Symbol.for('drizzle:entityKind')` and this project's own DDL strings.
 
-This is the one finding that cannot be checked by reading. In `apps/web/src/lib/client.ts`, temporarily change the first line to
+- [ ] **Step 12: Break the boundary on purpose — three ways — and put it back**
+
+This is the finding that cannot be checked by reading, and under Start it has three parts. Do all three.
+
+**(a) The slip fails the build.** In `apps/web/src/lib/client.ts`, temporarily change the first line to
 
 ```ts
 import { type AppType, createApp } from '@coinpicks/api'
@@ -3522,22 +3973,78 @@ and add, directly above the `export const client` line,
 export const leak = createApp
 ```
 
-Then:
-
-```bash
-cd /home/dev/projects/trade-god/apps/web && pnpm build && pnpm test
-```
-Expected: `vite build` **exits 0 with no error and no warning**, the bundle grows from 535.31 kB to **679.88 kB** (571.57 kB → 716.11 kB once Task 7 has landed — the +144 kB is drizzle either way), `grep -c drizzle dist/assets/index-*.js` is now `1`, and `boundary.test.ts` fails with
+Then `pnpm build`. Expected: **exit non-zero**, no bundle, and this, verbatim:
 
 ```
-imports @coinpicks/api only with `import type`
-a value import of @coinpicks/api ships drizzle and pg to the browser
-+ [ "lib/client.ts:1 import { type AppType, createApp } from '@coinpicks/api'" ]
+vite v8.3.0 building client environment for production...
+✗ Build failed in 269ms
+error during build:
+[plugin tanstack-start-core:import-protection]
+[import-protection] Import denied in client environment
+
+  Denied by specifier pattern: @coinpicks/api
+  Importer: src/lib/client.ts:30:21
+  Import: "@coinpicks/api"
+  Resolved: /home/dev/projects/trade-god/apps/api/src/app.ts
+
+  Trace:
+    1. src/router.tsx:2:27 (entry) (import "./routeTree.gen")
+    2. src/routeTree.gen.ts:7:53 (import "./routes/reports.$reportId")
+    3. src/routes/reports.$reportId.tsx:3:70 (import "../lib/client.ts")
+    4. src/lib/client.ts:30:21 (import "@coinpicks/api")
 ```
 
-Biome says nothing: `useImportType` only fires when *every* binding in the specifier is type-only, and tsc under `verbatimModuleSyntax` accepts the mixed form. Revert both edits, re-run `pnpm test` and see 5 passed.
+**(b) With the guard off, the build is silent — and the tests are not.** Temporarily set `enabled: false` in `vite.config.ts`'s `importProtection`, then `pnpm build && pnpm test`. Expected: `vite build` **exits 0 with no error and no warning about the leak**, the client bundle grows from 583,379 to **727,230 bytes**, and four cases fail:
 
-- [ ] **Step 11: Run the two servers together**
+```
+FAIL boundary.test.ts > imports @coinpicks/api only with `import type`
+  + [ "lib/client.ts:1 import { type AppType, createApp } from '@coinpicks/api'" ]
+FAIL bundle.test.ts > carries no ORM, no schema, no driver and no connection string
+  + [ "dist/client/assets/routes-*.js: drizzle: x15", "…: PgTable x1", "…: PgColumn x2",
+      "…: report_scores x1", "…: rs_gate x1" ]
+FAIL bundle.test.ts > has not silently grown by the size of a dependency nobody meant to ship
+  AssertionError: expected 727172 to be less than 660000
+FAIL bundle.test.ts > the built server bundle > carries no ORM, no schema and no connection string
+```
+
+`report_scores` and `rs_gate` are this project's own table and constraint names, minified into a file a browser downloads. `drizzle-orm`, `pg-protocol` and `node:crypto` are all **0** in that same file — which is why the needle list looks the way it does.
+
+Biome says nothing: `useImportType` only fires when *every* binding in the specifier is type-only, and tsc under `verbatimModuleSyntax` accepts the mixed form. **Revert the `client.ts` edits**, leave `enabled: false` for (c).
+
+**(c) The client-only scan is the one that would have lied.** Now put the value import somewhere a Start build moves off the browser. In `apps/web/src/routes/index.tsx`, temporarily add
+
+```tsx
+import { createServerFn } from '@tanstack/react-start'
+import { createApp } from '@coinpicks/api'
+
+const probe = createServerFn().handler(() => typeof createApp)
+```
+
+and a `void probe` inside `CoinList`. Then `pnpm build && pnpm test`. Expected — and this is the whole reason `bundle.test.ts` scans two directories:
+
+```
+client bundle  587,978 bytes -- clean 583,379 plus a 4.6 kB RPC stub, and ZERO ORM needles
+server bundle  dist/server/assets/routes-*.js: drizzle: x15, PgTable x6, PgColumn x88,
+                                               report_scores x2, rs_gate x1
+client scan    PASS        byte ceiling   PASS
+source scan    FAIL        server scan    FAIL
+Tests  2 failed | 11 passed (13)
+```
+
+Then set `enabled: true` back and run `pnpm build` once more. Expected: the SSR environment now fails too, exit non-zero — but the diagnostic is poor, and knowing that in advance is the point of doing this:
+
+```
+vite v8.3.0 building ssr environment for production...
+✗ Build failed in 196ms
+[MISSING_EXPORT] "createApp" is not exported by "\0tanstack-start-import-protection:mock-edge:…"
+   ╭─[ src/routes/index.tsx?tss-serverfn-split:3:10 ]
+```
+
+It fails, which is what matters; it does not say "import denied" the way the client environment does. Note also that the **client** environment builds first and succeeds, so a failed build can still leave a `dist/client` on disk — which is the second reason `pnpm test` builds before it scans.
+
+Revert every edit from (a), (b) and (c), then `pnpm test` and see `Tests 13 passed`.
+
+- [ ] **Step 13: Run the two servers together**
 
 ```bash
 cd /home/dev/projects/trade-god && pnpm dev
@@ -3547,32 +4054,49 @@ In another shell:
 curl -s http://127.0.0.1:8789/health
 curl -s http://localhost:5173/api/health
 ```
-Expected: the same `{"ok":true,"migrations":4,"scoringVersion":"coinpicks-2026-09-21"}` from both — the first proves the API, the second proves the proxy. Open `http://localhost:5173/`, add a coin, and press "new draft"; the stub editor says which task fills it in.
+Expected: the same `{"ok":true,"migrations":4,"scoringVersion":"coinpicks-2026-09-21"}` from both — the first proves the API, the second proves `routes/api.$.ts`, which is the same code the production build runs. Open `http://localhost:5173/`, add a coin, and press "new draft"; the stub editor says which task fills it in.
+
+If `vite dev` exits with `Error: Port 5173 is already in use`, that is `strictPort` doing its job — something else holds the port (on this machine, the sibling repo's dev server). Stop it or move this one; do **not** let Vite pick 5174 silently and then curl 5173.
 
 If the api instead exits with `4 migrations are committed but 5 are applied`, a migration was applied outside the migrator and `drizzle.__drizzle_migrations` has a duplicate. Delete the row whose `hash` is not one of the four `.sql` files' sha256 and start again; Task 1 Step 7 applies `0003` through the migrator precisely so this cannot happen.
 
-- [ ] **Step 12: Green, then commit**
+The built app can be checked the same way, and should be at least once:
+
+```bash
+cd /home/dev/projects/trade-god/apps/web && pnpm build && pnpm start
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/
+curl -s http://127.0.0.1:3000/api/health
+```
+Expected: `200` and the same health JSON — the page server-rendered, and the `/api` hop working outside dev. (`vite preview` serves the whole thing too, including `/api/*`; it is a quick check, not a production host.)
+
+- [ ] **Step 14: Green, then commit**
 
 ```bash
 cd /home/dev/projects/trade-god && pnpm -r run typecheck && pnpm -r run test
 pnpm check --write && pnpm check
 ```
+Expected: Biome `No fixes applied.` and exit 0. Check the file count it prints against a run with the Step 3 exclusion removed: it must be exactly **one lower**, and the removed run must **exit 1** on `routeTree.gen.ts:11`. That pair is the check; the absolute number is whatever `apps/api` plus `apps/web` add up to on the day. `git status` must also show `apps/web/src/routeTree.gen.ts` as a file to be **added** — it is generated, it is committed, and `.gitignore` does not list it.
 
 ```bash
 git add -A
-git commit -m "feat: apps/web -- a plain Vite SPA, code-based routes, and a boundary test
+git commit -m "feat: apps/web -- TanStack Start, one loopback hop, and a two-sided boundary guard
 
 The tsconfig overrides five keys, not one: the base sets module: nodenext, so
-moduleResolution: bundler alone is TS5095 + TS5109.
+moduleResolution: bundler alone is TS5095 + TS5109. bundler is also what lets
+the generated route tree's extensionless imports resolve.
 
-No TanStack Start and no routeTree.gen.ts. The generated tree fails biome check
-as an error, its own header asks to be excluded from the linter, pnpm format
-then fights the generator, and nothing asserts the committed tree matches the
-route files. Two routes do not need codegen.
+routeTree.gen.ts is committed and excluded from biome by one line, because it is
+generated -- the same arrangement the sibling repo runs. Measured: exit 1 without
+the exclusion (organizeImports at routeTree.gen.ts:11) and exit 0 with it, over one
+file fewer, and the file is byte-identical across biome check --write and the next
+vite build.
 
-boundary.test.ts exists because the leak is invisible: import { type AppType,
-app } plus one value use builds clean and silently, and only the bundle knows
--- measured here at 570 kB without it and 715 kB with drizzle in it."
+Two guards, because Start emits two bundles. boundary.test.ts reads the source;
+bundle.test.ts reads dist/client AND dist/server. A value import used only inside
+a createServerFn leaves the client bundle spotless and puts drizzle plus this
+project's DDL in dist/server, so a client-only grep passes on it -- measured.
+importProtection fails the build on both, which is the thing plain Vite could not
+have done at all."
 ```
 
 ---
@@ -3594,7 +4118,7 @@ Two consequences of that mechanism are built into `runSave` rather than left to 
 - Create: `apps/web/src/editor/common.tsx`
 - Create: `apps/web/src/editor/ProductSection.tsx`
 - Create: `apps/web/src/editor/RiskSection.tsx`
-- Modify: `apps/web/src/pages/ReportEditor.tsx` (replaces the Task 4 stub entirely)
+- Modify: `apps/web/src/routes/reports.$reportId.tsx` (replaces the Task 4 stub entirely)
 
 **Interfaces:**
 - Consumes: everything `src/lib/client.ts` exports.
@@ -4355,10 +4879,10 @@ export function RiskSection({
 ```
 - [ ] **Step 4: The shell**
 
-Replace `apps/web/src/pages/ReportEditor.tsx` entirely:
+Replace `apps/web/src/routes/reports.$reportId.tsx` entirely:
 
 ```tsx
-import { Link } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ProductSection } from '../editor/ProductSection.tsx'
 import { RiskSection } from '../editor/RiskSection.tsx'
@@ -4384,7 +4908,15 @@ const FRESH_SEEDS: Record<SectionKey, number> = {
   risk: 0,
 }
 
-export function ReportEditor({ reportId }: { reportId: string }) {
+/*
+ * This file IS the route, so the report id comes from the router's typed params rather than from
+ * a prop nobody passes: `createFileRoute('/reports/$reportId')` is what puts the route in the
+ * generated tree, and `Route.useParams()` is what types `reportId` as a string off it.
+ */
+export const Route = createFileRoute('/reports/$reportId')({ component: ReportEditor })
+
+function ReportEditor() {
+  const { reportId } = Route.useParams()
   const [payload, setPayload] = useState<ReportPayload | null>(null)
   const [loadError, setLoadError] = useState<ApiError | null>(null)
   const [seeds, setSeeds] = useState(FRESH_SEEDS)
@@ -4594,7 +5126,7 @@ cd /home/dev/projects/trade-god/apps/web && pnpm typecheck && pnpm test
 cd /home/dev/projects/trade-god && pnpm check --write && pnpm check
 pnpm dev
 ```
-Expected: typecheck silent, `Tests 5 passed`, Biome clean, and both servers up. Open `http://localhost:5173/`, add a coin, press "new draft". The product gate and Risk notes sections render; the blocker list arrives in Task 6 and the other four sections in Task 7.
+Expected: typecheck silent, `Tests 13 passed` over two files (`pnpm test` rebuilds first, so the bundle scan reads this task's tree and not Task 4's), Biome clean, and both servers up. Open `http://localhost:5173/`, add a coin, press "new draft". The product gate and Risk notes sections render; the blocker list arrives in Task 6 and the other four sections in Task 7.
 
 - [ ] **Step 6: A save that works**
 
@@ -4667,7 +5199,7 @@ Three properties are the point of the task, and all three were failures in the n
 
 **Files:**
 - Create: `apps/web/src/editor/Blockers.tsx`
-- Modify: `apps/web/src/pages/ReportEditor.tsx` (two edits)
+- Modify: `apps/web/src/routes/reports.$reportId.tsx` (two edits)
 
 **Interfaces:**
 - Consumes: `type Blocker` from `src/lib/client.ts` — itself `InferResponseType<...>['blockers'][number]`, so a change to `evaluateBlockers`'s return type is a compile error here.
@@ -4739,7 +5271,7 @@ export function Blockers({ blockers }: { blockers: Blocker[] }) {
 ```
 - [ ] **Step 2: Wire it into the shell — two edits**
 
-In `apps/web/src/pages/ReportEditor.tsx`, add the import:
+In `apps/web/src/routes/reports.$reportId.tsx`, add the import:
 
 ```tsx
 import { Blockers } from '../editor/Blockers.tsx'
@@ -4805,7 +5337,7 @@ Liquidity, narrative, team and accrual. Each follows the model Task 5 establishe
 - Create: `apps/web/src/editor/NarrativeSection.tsx`
 - Create: `apps/web/src/editor/TeamSection.tsx`
 - Create: `apps/web/src/editor/AccrualSection.tsx`
-- Modify: `apps/web/src/pages/ReportEditor.tsx` (the final version)
+- Modify: `apps/web/src/routes/reports.$reportId.tsx` (the final version)
 
 **Interfaces:**
 - Consumes: `common.tsx`, `fields.tsx`, and the body types from `src/lib/client.ts`.
@@ -5431,10 +5963,10 @@ export function AccrualSection({
 
 - [ ] **Step 5: The final shell**
 
-Replace `apps/web/src/pages/ReportEditor.tsx` entirely:
+Replace `apps/web/src/routes/reports.$reportId.tsx` entirely:
 
 ```tsx
-import { Link } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AccrualSection } from '../editor/AccrualSection.tsx'
 import { Blockers } from '../editor/Blockers.tsx'
@@ -5469,7 +6001,15 @@ const FRESH_SEEDS: Record<SectionKey, number> = {
   risk: 0,
 }
 
-export function ReportEditor({ reportId }: { reportId: string }) {
+/*
+ * This file IS the route, so the report id comes from the router's typed params rather than from
+ * a prop nobody passes: `createFileRoute('/reports/$reportId')` is what puts the route in the
+ * generated tree, and `Route.useParams()` is what types `reportId` as a string off it.
+ */
+export const Route = createFileRoute('/reports/$reportId')({ component: ReportEditor })
+
+function ReportEditor() {
+  const { reportId } = Route.useParams()
   const [payload, setPayload] = useState<ReportPayload | null>(null)
   const [loadError, setLoadError] = useState<ApiError | null>(null)
   const [seeds, setSeeds] = useState(FRESH_SEEDS)
@@ -5821,7 +6361,18 @@ In the product gate, type `THIS TEXT MUST SURVIVE` into **Ease of Use rationale*
 cd /home/dev/projects/trade-god && pnpm -r run typecheck && pnpm -r run test && pnpm check --write && pnpm check
 python -m pytest -q
 ```
-Expected: api `Tests 119 passed` over 14 files, web `Tests 5 passed`, pytest `111 passed`, Biome clean.
+Expected: api `Tests 119 passed` over 14 files, web `Tests 13 passed` over 2 files, pytest `111 passed`, Biome clean.
+
+Then read the one number this task can move and nothing else pins:
+
+```bash
+cd /home/dev/projects/trade-god/apps/web && find dist/client -name '*.js' -printf '%s\n' | paste -sd+ | bc
+```
+Measured at the end of Task 4 the same total was **583,379**, and `bundle.test.ts`'s ceiling is
+660,000. If Task 7's finished tree comes in above it, raise the ceiling **in this commit** with the
+measured number written into that file's comment — never silently, and never by making a red test
+green after the fact. If it comes in well under, leave the ceiling alone: its job is to sit between
+an honest tree and a leaking one (719,045), not to track the app's size.
 
 ```bash
 git add -A
@@ -5844,7 +6395,7 @@ literal 5 in apps/web is a frozen bound nothing pins."
 
 **Files:**
 - Modify: `CLAUDE.md`
-- Modify: `docs/superpowers/specs/2026-09-21-coin-research-platform-design.md` (§9 and two rows of the stack table — the frozen formulas section is not touched)
+- Modify: `docs/superpowers/specs/2026-09-21-coin-research-platform-design.md` (one sentence in §9 and one row of the stack table — §9's heading and first paragraph are **correct as they stand** and the frozen formulas section is not touched)
 - Modify: `agents/CONTEXT.md` (chore 1)
 - Modify: `apps/api/src/server.ts` — already done in Task 3 (chore 2); verify
 - Modify: `.env.example` (chore 3)
@@ -5853,7 +6404,7 @@ literal 5 in apps/web is a frozen bound nothing pins."
 
 **Interfaces:**
 - Consumes: nothing. **No file under `apps/` changes in this task at all** — every interface is already final. What changes is `.env.example`, the CI job, and the written record.
-- Produces: no export. It produces the written record: the amended `CLAUDE.md` rules, the amended spec §9, the dated `agents/decisions.md` entry the TanStack Start reversal needs, and a CI step that builds the client so the bundle `boundary.test.ts` reasons about is actually produced.
+- Produces: no export. It produces the written record: the amended `CLAUDE.md` rules, the amended spec §9, the dated `agents/decisions.md` entry recording that dropping TanStack Start was **proposed, reviewed and reversed** — and why — and a CI step that catches a committed route tree that no longer matches the route files.
 
 - [ ] **Step 1: Chore 1 — the stale sub-score sentence**
 
@@ -5879,7 +6430,7 @@ Scope the check to what this plan owns. The two prior plans in `docs/superpowers
 ```bash
 cd /home/dev/projects/trade-god && grep -rn "my-teacher-api-1\|8787" apps/ .env.example
 ```
-Expected: no output. Task 3 replaced `server.ts`'s comment. The claim is false on this machine today — `docker ps` lists `coinpicks-db` and `medi-pal-db-1` and nothing else, `docker ps -a` lists no container bound to 8787 at all, and `ss -ltn` shows nothing on 8787 or 8789. A fabricated verification note in a repo whose standing lesson is fabricated verification notes should not survive another commit.
+Expected: one hit — `apps/web/vite.config.ts`, the `strictPort` comment, which cites the 8787 episode deliberately as the reason a dev server must fail loudly rather than drift to another port. That is a citation, not a claim, and it stays. `apps/api/src/server.ts` was already corrected at HEAD `ebb74bc`; there is nothing to strike there.
 
 Then confirm the spec is the only remaining live carrier, so Step 4 knows what it is fixing:
 
@@ -5892,41 +6443,17 @@ Expected: one hit, `2026-09-21-coin-research-platform-design.md:67`.
 
 Delete line 35 of `.env.example`, which is a bare ```` ``` ```` left over from a paste. The `PORT=8789` line above it is correct and stays.
 
-- [ ] **Step 4: Rewrite the UI section of the spec**
+- [ ] **Step 4: Two amendments to the spec — and one that is no longer wanted**
 
-In `docs/superpowers/specs/2026-09-21-coin-research-platform-design.md`. **The file is hard-wrapped at about 100 columns, so every quotation below is given with its line breaks exactly as they are on disk; a one-line find/replace matches nothing.** The line numbers are where the text sits before any edit in this step; match on the text, not on the number, because the paragraph replacement below turns three lines into seven.
+In `docs/superpowers/specs/2026-09-21-coin-research-platform-design.md`. **The file is hard-wrapped at about 100 columns, so every quotation below is given with its line breaks exactly as they are on disk; a one-line find/replace matches nothing.** The line numbers are where the text sits before any edit in this step; match on the text, not on the number, because the paragraph replacement below turns two lines into six.
 
-Line 560, the heading:
+**§9's heading and first paragraph are correct as they stand and are NOT edited.** An earlier draft of this step rewrote
 
 ```
 ## 9. UI (`apps/web`, TanStack Start)
 ```
 
-becomes
-
-```
-## 9. UI (`apps/web`, Vite + TanStack Router)
-```
-
-Lines 562–564, the first paragraph:
-
-```
-TanStack Start 1.168.57 on @tanstack/react-router 1.170.38, React 19.3.0, Vite 8.3.0, Tailwind 4.3.3
-via `@tailwindcss/vite`. No component library: the whole UI is four views and one long form, and a
-design system is a dependency to maintain, not a shortcut.
-```
-
-becomes
-
-```
-Plain Vite 8.3.0 on @tanstack/react-router 1.170.38 with **code-based routes**, React 19.3.0,
-Tailwind 4.3.3 via `@tailwindcss/vite`. No component library: the whole UI is four views and one
-long form, and a design system is a dependency to maintain, not a shortcut. TanStack Start was
-dropped on 2026-09-21 — SSR, server functions and head/meta buy nothing on loopback with the
-backend deliberately outside Start's server, and its generated `routeTree.gen.ts` fails
-`biome check` as an error while `pnpm format` and the generator fight over it. See
-`agents/decisions.md`.
-```
+to name Vite and TanStack Router, and rewrote the paragraph under it to say Start had been dropped. The owner reversed that decision on 2026-09-21; the spec already says what is true, and the amendment is struck. Leave lines 560 and 562–564 exactly as they are.
 
 Lines 579–580, the Commit-button sentence:
 
@@ -5958,7 +6485,7 @@ Replace it with
 | API | `apps/api` — hono 4.13.8, @hono/zod-validator 0.9.1, @hono/node-server 2.1.1, zod 4.6.5, on port **8789**, overridable via `PORT` |
 ```
 
-That parenthetical is the same fabricated claim Step 2 strikes from `server.ts`, and it is the last live copy of it. While in that table, the `Web` row still names `@tanstack/react-start 1.168.57`; replace `@tanstack/react-start 1.168.57 on @tanstack/react-router 1.170.38` with `@tanstack/react-router 1.170.38 (code-based routes)`.
+That parenthetical is the same fabricated claim Step 2 strikes from `server.ts`, and it is the last live copy of it. **The `Web` row is not touched**: it already reads `@tanstack/react-start 1.168.57 on @tanstack/react-router 1.170.38`, which is what this plan builds.
 
 **Leave the `## Normative formulas (frozen)` section untouched.**
 
@@ -5966,7 +6493,7 @@ That parenthetical is the same fabricated claim Step 2 strikes from `server.ts`,
 
 Five edits.
 
-1. In the **Stack** table, replace the `apps/web` row
+1. In the **Stack** table, the `apps/web` row already names `@tanstack/react-start 1.168.57` and stays that way — an earlier draft of this step removed it, and the owner reversed that. What it is missing is the rest of the package list. Replace
 
 ```
 | `apps/web` | @tanstack/react-start 1.168.57 · @tanstack/react-router 1.170.38 · react/react-dom 19.3.0 · vite 8.3.0 · tailwindcss + @tailwindcss/vite 4.3.3 |
@@ -5975,10 +6502,19 @@ Five edits.
 with
 
 ```
-| `apps/web` | @tanstack/react-router 1.170.38 (code-based routes; **no @tanstack/react-start**) · react/react-dom 19.3.0 · @types/react + @types/react-dom 19.3.0 · vite 8.3.0 · @vitejs/plugin-react 6.1.1 · tailwindcss + @tailwindcss/vite 4.3.3 · hono 4.13.8 (for `hc`) |
+| `apps/web` | @tanstack/react-start 1.168.57 · @tanstack/react-router 1.170.38 (file-based routes; `src/routeTree.gen.ts` is generated and committed) · react/react-dom 19.3.0 · @types/react + @types/react-dom 19.3.0 · vite 8.3.0 · @vitejs/plugin-react 6.1.1 · tailwindcss + @tailwindcss/vite 4.3.3 · hono 4.13.8 (for `hc`) · @hono/node-server 2.1.1 (hosts the built app) |
 ```
 
-and add `@hono/node-server 2.1.1` to the `apps/api` row.
+and add `@hono/node-server 2.1.1` to the `apps/api` row. Then, directly under the table, add:
+
+```markdown
+**`apps/web/src/routeTree.gen.ts` is generated, committed, and excluded from Biome.** The Start
+vite plugin rewrites it from `src/routes/` on every `vite dev` and every `vite build`, so
+`biome.json` carries one exclusion for it — the same line the sibling repo at `../profe` runs —
+and CI runs `git diff --exit-code` on it after the build, which is what catches a route added
+without committing the tree. Never hand-edit it, and never add anything hand-written to that
+exclusion.
+```
 
 2. Under **THE FROZEN FORMULAS**, after the bullet beginning "They are evaluated at **exactly one moment**", add:
 
@@ -6045,16 +6581,28 @@ grep -cE '^[`]{3}' CLAUDE.md
 
    Expected: an even number (8 after the deletion, 9 before it).
 
-- [ ] **Step 6: Teach CI to build the client**
+- [ ] **Step 6: Teach CI to notice a stale route tree**
 
-The import-scan in `boundary.test.ts` is the mechanical guard, and it runs in the `Test` step already. The build is the measurement behind it, and it needs no database. In `.github/workflows/ci.yml`, after the `Test` step, append:
+**No separate build step is added, and the earlier draft's one is not wanted.** `@coinpicks/web`'s `test` script runs `vite build` before vitest (Task 4 Step 1), so the existing `Test` step already builds the client and the server, and with `importProtection` on that build is itself a boundary gate — a value import of `@coinpicks/api` fails it outright rather than shipping quietly. A second `pnpm --filter @coinpicks/web run build` would only do the same work twice.
+
+What CI genuinely cannot see today is the one real objection the drop-Start draft raised and never answered: **nothing asserts that the committed route tree matches the route files.** Biome does not lint it — it is generated — and `tsc` compiles whatever is committed. But the `Test` step has just regenerated it, so a diff is the whole check.
+
+In `.github/workflows/ci.yml`, add a comment above the `Test` step and one step after it:
 
 ```yaml
-      - name: Build the client
-        # The boundary test greps the source; this compiles it. A value import of
-        # @coinpicks/api builds clean and silently and only the bundle knows: measured at
-        # 571.57 kB with `import type` and 716.11 kB with drizzle in it without. Two seconds.
-        run: pnpm --filter @coinpicks/web run build
+      - name: Test
+        # @coinpicks/web's `test` runs `vite build` first: bundle.test.ts scans dist/client and
+        # dist/server, and a scan of a stale dist is a guard reporting success over bytes it did
+        # not read. That build is also a gate in its own right -- the Start plugin's
+        # importProtection fails it on a value import of @coinpicks/api, in either environment.
+        run: pnpm -r --if-present run test
+
+      - name: The committed route tree matches the route files
+        # vite build has just rewritten apps/web/src/routeTree.gen.ts from src/routes/. A
+        # non-empty diff therefore means someone added, renamed or deleted a route and did not
+        # commit the regenerated tree. Nothing else checks this file: it is excluded from Biome
+        # because it is generated, and tsc happily compiles a stale one.
+        run: git diff --exit-code apps/web/src/routeTree.gen.ts
 ```
 
 - [ ] **Step 7: Record the decisions**
@@ -6092,14 +6640,46 @@ Append to `agents/decisions.md`, dated 2026-09-21:
   typo used to return 200, bump the version and empty the column. The parse happens once, in
   zod, through the frozen validators. This also gets in front of Postgres rounding `7.5` into
   `8` and the CHECK passing on the rounded value.
-- **TanStack Start dropped; plain Vite + @tanstack/react-router with code-based routes.** SSR,
-  server functions and head/meta buy nothing on loopback, single-user, no-SEO, with the backend
-  deliberately outside Start's server; SPA mode turns most of it off and does not stop a loader
-  added to `__root.tsx` later putting the web tier back on the network. Its generated
-  `routeTree.gen.ts` fails `biome check` as an error, its own header asks to be excluded from
-  the linter, `pnpm format` then reorders imports the next `vite dev` regenerates back, and
-  nothing asserts the committed tree matches the route files. Reversal cost was zero today and
-  rises the moment the UI exists — the same argument this log makes about the Electron reversal.
+- **Dropping TanStack Start was proposed, reviewed, and REVERSED by the owner.** The proposal was
+  plain Vite plus `@tanstack/react-router` with code-based routes, on three grounds: that the
+  generated `routeTree.gen.ts` fails `biome check` as an error, that `pnpm format` and the
+  generator then fight over it, and that dropping Start removes the network-egress hazard in
+  `__root.tsx` by construction. Start stays. It is what was asked for when this pivot began, it
+  is in the approved spec §9 and in `CLAUDE.md`'s stack table, and two of the three grounds do
+  not survive measurement:
+  - **The biome objection costs one line**, and the sibling repo at `../profe` has been running
+    exactly that line beside `@tanstack/react-start` since before this repo existed. Measured
+    here: `biome check` exits 1 without `"!**/routeTree.gen.ts"`, on
+    `assist/source/organizeImports` at `routeTree.gen.ts:11`, and exits 0 with it, over exactly
+    one file fewer. The file is excluded because it is **generated**, which is the same reason
+    its own header gives.
+  - **There is no fight.** `sha256(routeTree.gen.ts)` is identical before `biome check --write`,
+    after it, and after the next `vite build`.
+  - **The third ground was real and is now closed better.** `__root.tsx` does execute on the
+    server under Start, so "by construction" is gone — but the drop only ever bought
+    "by construction until someone adds a loader", which that proposal conceded itself.
+    `boundary.test.ts` now asserts that `__root.tsx` contains none of `loader`, `beforeLoad`,
+    `createServerFn`, `fetch(` or `ssr:`, and that `routes/api.$.ts` is the only file under
+    `src/` that fetches anything at all. A test fails a commit; a construction argument fails a
+    code review, if anyone is looking.
+
+  And keeping Start bought something the SPA could not have had. The Start vite plugin's
+  **`importProtection`** turns defect 5 — `import { type AppType, createApp }`, one word
+  different, `vite build` exit 0, 135,724 bytes of ORM and this project's own DDL strings in the
+  browser — into a build that fails with the full import trace. Both a `client` and a `server`
+  specifier list, because they are different rules: the same value import confined to a
+  `createServerFn` body leaves the client bundle spotless (measured: 587,978 bytes against a
+  clean 583,379, zero ORM needles, under the ceiling) and puts drizzle in `dist/server`, which is
+  a database handle in the renderer. `bundle.test.ts` scans both halves for the same reason.
+
+  **Start's server hosts the page and one loopback hop, and nothing else.** `routes/api.$.ts`
+  forwards `/api` to `COINPICKS_API_ORIGIN` — loopback, configured by the process, never a URL
+  taken from a request, a report or a citation — and it replaces a dev-only Vite proxy, so the
+  hop that ships is the hop that is developed against. The citation verifier (step 5) and the
+  EvidenceFinder (step 8) do **not** go in server functions: both reach a third party or hold a
+  key, and the tier that holds `DATABASE_URL` is `apps/api`. `importProtection.server` is what
+  stops that shortcut mechanically — a server function reaching for `@coinpicks/api` fails the
+  SSR build.
 - **`reports/bounds.ts` rather than exporting from the frozen modules.** `product.ts` and
   `team.ts` hold `0, 10`, `< 3`, `> 5` and `* 5` as inline literals. Exporting them would edit
   two frozen files to avoid a copy; the copy lives in a non-frozen module and
@@ -6142,8 +6722,8 @@ Append to `agents/roadmap.md`:
 ```markdown
 - 2026-09-21 — build-order step 4 complete: the minimal editor. One required-field list
   generating both `rs_gate_completeness` and the blocker list, migration 0003, thirteen API routes
-  with per-section CAS saves, and apps/web as a plain Vite SPA with a mechanical tier boundary.
-  Next: step 5, the citation verifier.
+  with per-section CAS saves, and apps/web on TanStack Start with a mechanical tier boundary on
+  both sides of the build. Next: step 5, the citation verifier.
 ```
 
 - [ ] **Step 8: Full green, then commit**
@@ -6154,10 +6734,14 @@ python -m pytest -q
 pnpm -r run typecheck
 pnpm -r run test
 pnpm check --write && pnpm check
-pnpm --filter @coinpicks/web run build
-grep -c -e pg-protocol -e drizzle -e node:crypto apps/web/dist/assets/index-*.js || true
+git diff --exit-code apps/web/src/routeTree.gen.ts
+cd apps/web
+grep -c -e 'drizzle:' -e PgTable -e report_scores -e rs_gate -e pg-protocol dist/client/assets/*.js; echo "grep exit=$? (1 means NO match, which is the passing case)"
+grep -rc -e 'drizzle:' -e PgTable -e report_scores dist/server --include='*.js'
 ```
-Expected: pytest `111 passed`; typecheck silent; api `Tests 119 passed` over 14 files and web `Tests 5 passed`; Biome clean; a build around 571 kB; and `0` from the grep.
+Expected: pytest `111 passed`; typecheck silent; api `Tests 119 passed` over 14 files and web `Tests 13 passed` over 2 files; Biome clean; the route-tree diff empty; and `0` on every line of both greps.
+
+`pnpm -r run test` is what builds — `@coinpicks/web`'s `test` script runs `vite build` first — so there is no separate build command here and `dist/client` is guaranteed to be this tree's. **Note what the grep does not say.** It names `dist/client`, not `dist/assets`, because a Start build has no `dist/assets` and the old command exited 0 having read nothing. And it looks for `drizzle:` rather than `drizzle-orm`: in a client bundle with a real leak, `drizzle-orm`, `pg-protocol` and `node:crypto` are all **0** — rolldown rewrites the specifier away and the `pg` driver never arrives — while `drizzle:` is 15 and this project's own `report_scores` and `rs_gate` are in the browser for anyone to read.
 
 ```bash
 git add -A
@@ -6171,9 +6755,11 @@ struck-through copy on purpose -- that one is the historical record.
 The 8787 / my-teacher-api-1 note in server.ts was false on this machine: docker
 ps lists two containers, neither of them that, and nothing listens on 8787.
 
-Also: TanStack Start dropped for plain Vite, the spec's UI section rewritten to
-match, and CI now builds the client so the bundle that the boundary test greps
-is actually produced."
+Also: the proposal to drop TanStack Start is recorded as reversed, with what the
+three grounds for it actually measured -- one biome exclude line, a route tree
+that is byte-identical across format and rebuild, and a boundary now asserted by
+a test rather than by construction. CI gains the one check nothing else does:
+the committed route tree still matches the route files."
 ```
 
 ---
@@ -6187,19 +6773,29 @@ Step 4 **creates and edits a DRAFT**. It does not commit one, does not verify a 
 
 **Behaviours.** No autosave and no debounce. No optimistic updates. No error boundaries, loading skeletons or transitions. No clamping — out of range is rejected and the refusal is shown verbatim. No arithmetic on any rubric value anywhere, in either tier. No `drizzle-kit push`, ever.
 
-**Dependencies.** No component library, no form library (a resolver restating the bounds would be a fourth copy pinned by nothing), no state manager, no data-fetching library, no auth, no `user_id`, no jsdom, no `@testing-library/react`, no `@tanstack/react-start`, no `@tanstack/router-cli`, no `openai`, no `viem`, no `paths` alias in `apps/web`.
+**Dependencies.** No component library, no form library (a resolver restating the bounds would be a fourth copy pinned by nothing), no state manager, no data-fetching library, no auth, no `user_id`, no jsdom, no `@testing-library/react`, no `@tanstack/router-plugin` and no `@tanstack/router-cli` (Start's vite plugin carries the route generator), no `openai`, no `viem`, no `paths` alias in `apps/web`.
+
+**Start's server, beyond the two things it does here.** No `createServerFn` anywhere. No `loader` and no `beforeLoad` on any route — `boundary.test.ts` fails on one in `__root.tsx`, and the coin list fetches in an effect for the same reason. No second outbound request: `routes/api.$.ts` forwards `/api` to loopback and that is the whole list. The citation verifier and the EvidenceFinder are `apps/api`'s, in steps 5 and 8, because that is the tier that holds keys.
 
 ### Files that should not exist when this plan is done
 
-`apps/web/src/routeTree.gen.ts` · `apps/web/src/components/ui/*` · `apps/web/src/lib/scoring.ts` or `totals.ts` or anything that adds numbers · `apps/web/src/lib/constants.ts` holding a rubric maximum · `apps/web/src/store/*` · `apps/web/src/routes/ledger.tsx` · `apps/web/src/routes/chain.tsx` · `apps/web/src/lib/auth.ts` · `apps/web/src/i18n/*` · any `*.test.tsx` · `apps/web/Dockerfile` · `apps/api/src/sources/*` · `apps/api/src/verify/*` · `apps/api/src/evidence/*` · `apps/api/src/chain/*` · `apps/api/src/providers.ts` (the spec names it `evidence/providers.ts` when it lands) · `apps/api/scripts/rescore.ts`.
+`apps/web/src/components/ui/*` · `apps/web/src/lib/scoring.ts` or `totals.ts` or anything that adds numbers · `apps/web/src/lib/constants.ts` holding a rubric maximum · `apps/web/src/store/*` · `apps/web/src/routes/ledger.tsx` · `apps/web/src/routes/chain.tsx` · `apps/web/src/lib/auth.ts` · `apps/web/src/i18n/*` · any `*.test.tsx` · `apps/web/Dockerfile` · `apps/api/src/sources/*` · `apps/api/src/verify/*` · `apps/api/src/evidence/*` · `apps/api/src/chain/*` · `apps/api/src/providers.ts` (the spec names it `evidence/providers.ts` when it lands) · `apps/api/scripts/rescore.ts`.
 
-And two symbols that should not exist anywhere: a `snake()` function, and a `commitAllowed` boolean.
+`apps/web/src/routeTree.gen.ts` is **not** on that list any more: it is generated by the Start plugin, it is committed, and `biome.json` excludes it by name. Two symbols should not exist anywhere either: a `snake()` function, and a `commitAllowed` boolean.
 
 ```bash
 cd /home/dev/projects/trade-god
-test ! -e apps/web/src/routeTree.gen.ts && echo "no generated route tree"
+test -e apps/web/src/routeTree.gen.ts && echo "the generated route tree is committed"
+git diff --exit-code apps/web/src/routeTree.gen.ts && echo "and it matches the route files"
 grep -rn "function snake\|commitAllowed" apps/ || echo "neither symbol exists"
+cd apps/web && pnpm test
 ```
+
+**Do not check the server-function ban with a bare `grep`.** `routes/__root.tsx` and
+`routes/index.tsx` both *name* `createServerFn` and `beforeLoad` in their comments, on purpose, so
+`grep -rn "createServerFn\|beforeLoad" apps/web/src` matches the two files it is meant to clear.
+`boundary.test.ts` blanks comment bodies before scanning, which is exactly why that check is a test
+and not a one-liner — the same reason the bundle scan is a test and not a `grep ... || true`.
 
 ---
 
@@ -6232,9 +6828,20 @@ Each of these is a decision step 4 has already made by writing something, or a h
 
 ## Known limits of what this plan guarantees
 
+- **The build-time leak guard rides on an UNPINNED transitive.** `importProtection` — the thing that
+  stops `import { createApp }` from shipping drizzle and pg to the browser, and the single strongest
+  reason this plan kept TanStack Start — is emitted by `@tanstack/start-plugin-core`, not by
+  `@tanstack/react-start`. Pinning `@tanstack/react-start` to 1.168.57 does **not** pin it: it
+  resolved to **1.171.47** during verification (stack frame
+  `node_modules/.pnpm/@tanstack+start-plugin-core@1.171.47_.../vite/import-protection-plugin/plugin.js`).
+  So a `pnpm update` can change the guard's behaviour, or its diagnostic text, without any version in
+  `apps/web/package.json` moving. Two consequences: the expected trace quoted in Task 4 Step 12 is
+  the 1.171.47 wording and may drift, and the guard itself could in principle weaken silently. The
+  bundle scan in `boundary.test.ts` is the backstop and is deliberately NOT removed just because the
+  build-time check exists — belt and braces, because only one of the two is pinned.
 - **The blocker list is complete with respect to `rs_gate_completeness`, and that is all.** Every conjunct of that constraint has a row, mechanically. Nothing here promises the constraint is the whole commit gate — step 6 will add citation coverage, waiver rules and the frozen evaluations, and those are `unknown` rows or absent rows today.
-- **`apps/web`'s typecheck compiles `apps/api`'s sources.** Fifteen of them, plus 83 `@types/node` files. Two packages report the same error, and a broken api compile blocks the web typecheck.
+- **`apps/web`'s typecheck compiles `apps/api`'s sources.** Fifteen of them, plus 83 `@types/node` files, plus drizzle's `.d.ts` tree behind them. Two packages report the same error, and a broken api compile blocks the web typecheck. It also compiles `routeTree.gen.ts`, which carries `@ts-nocheck` and is therefore checked by nothing but CI's `git diff`.
 - **`hc<AppType>` instantiation depth is a watched number, not a solved problem.** An adversary measured 1.74s at 52 routes against the real 62-column `$inferSelect`; this plan ships thirteen. `time pnpm --filter @coinpicks/web run typecheck` is about 2.1s today. Treat a jump as the early warning, and **do not unpin TypeScript while adding routes.**
-- **Nothing asserts the browser renders.** There is no jsdom, no `@testing-library/react` and no render test; the web suite is the boundary scan. The route suite covers the API's money path against real Postgres, and Tasks 5–7 each end with a manual walk-through whose expected text is written down. A render test suite is a step-6 decision, not something to add here by reflex.
-- **`pnpm dev` runs two processes with no supervisor.** If the api dies, the proxy returns 502 and the editor shows `HTTP_502`. That is fine for one user on loopback and is not worth a process manager.
+- **Nothing asserts the browser renders.** There is no jsdom, no `@testing-library/react` and no render test; the web suite is the two scans — `boundary.test.ts` over the source, `bundle.test.ts` over `dist/client` and `dist/server`. Under Start that also means nothing asserts the **server** render works beyond Task 4 Step 13's `curl`, which is one manual check of one page. The route suite covers the API's money path against real Postgres, and Tasks 5–7 each end with a manual walk-through whose expected text is written down. A render test suite is a step-6 decision, not something to add here by reflex.
+- **`pnpm dev` runs two processes with no supervisor.** If the api dies, `routes/api.$.ts`'s `fetch` to loopback fails and the editor shows the refusal `readError` builds from whatever comes back. That is fine for one user on loopback and is not worth a process manager. `strictPort` means the web process refuses to start on the wrong port rather than moving quietly — which on this machine is not hypothetical, because the sibling repo holds 5173.
 - **A figure below 1e-6 or at/above 1e21 has to be typed out in full to be saved again.** `numberOf` seeds a box with `String(value)`, and `String(1e-7)` is `'1e-7'`, which the API's digit regex refuses by design. The reachable case is a sub-0.0001% `accrualCaptureShare` or `accrualPct`: because a section sends all of its fields, editing the accrual rationale would come back `INVALID` on a fraction nobody touched. It is loud, named and recoverable by typing `0.0000001`. Both cheap repairs were tried and are worse — expanding the exponent in the browser needs `Number(parts[3])` and trips `boundary.test.ts` (measured: `editor/fields.tsx:38 const point = whole.length + Number(parts[3])`), and `toFixed(20)` silently rewrites `1.5e-20` as `0.00000000000000000002`. Widening the server's regex to admit exponents would re-open `'1e999'` → `Infinity`. The fix belongs on the read path; see item 8 of "What this hands to step 5".
