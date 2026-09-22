@@ -83,8 +83,6 @@ export async function createDraftReport(db: Db): Promise<DraftReport> {
     VALUES (${coinId}, 'TST', 'Test Coin', 'ethereum', ${`0x${coinId.replace(/-/g, '')}`},
             '["https://a.example","https://b.example"]'::jsonb)`)
   await db.execute(sql`INSERT INTO reports (id, coin_id) VALUES (${reportId}, ${coinId})`)
-  // Task 4 deletes the next statement: the reports_seed_scores trigger does it instead.
-  await db.execute(sql`INSERT INTO report_scores (report_id) VALUES (${reportId})`)
   return { coinId, reportId }
 }
 
