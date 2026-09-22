@@ -24,6 +24,6 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["apps/**", "*.json", "*.jsonc"]
+    "includes": ["apps/**", "*.json", "*.jsonc", "!**/routeTree.gen.ts"]
   }
 }
