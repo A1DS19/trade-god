@@ -106,6 +106,13 @@ unpinned TypeScript across workspaces is what produces Hono's *"Type instantiati
 deep"* across an RPC boundary. Revisit the week after report #1 commits. State this as a
 deliberate pin wherever versions are listed.
 
+**Node 26 strips types; it does not transform them.** `--experimental-transform-types` no
+longer exists on v26.8.1 — `node --help` lists only `--experimental-strip-types`. So no
+parameter properties, no `enum`, no `namespace`, no decorators anywhere under `apps/`, and
+every relative import carries an explicit `.ts`. `tsconfig.base.json` sets
+`erasableSyntaxOnly` and `moduleResolution: "nodenext"` so either slip is a compile error
+rather than a green typecheck over code that cannot boot.
+
 **Not in this project:** no shadcn or any component library, no Better Auth, no Redis, no S3, no
 BullMQ, no git-hook gate, no jscpd, no fallow. Those belong to a deployed product with customers.
 
@@ -118,8 +125,20 @@ which is already held by an unrelated container (`medi-pal-db-1`, postgres:17.2)
 A **fresh** named volume `coinpicks_data` — never reuse `trade-god_postgres_data`, which still
 holds the dead trading database and an `alembic_version` row at revision 006.
 
+**THREE roles, two DSNs, one process.** `coinpicks_owner` owns every table and is used only
+by the boot migrator, which closes its pool before the port is taken; `coinpicks_app` is
+`LOGIN NOSUPERUSER`, owns nothing, and holds only `SELECT/INSERT/UPDATE/DELETE` on the seven
+tables; `research` reads five tables and writes only the outcome columns of
+`forward_returns`. The split exists because a session owning the tables can
+`SET session_replication_role = replica` and edit a committed report with every trigger
+installed and silent — confirmed live, then confirmed refused for a NOSUPERUSER non-owner.
+Roles are created once by `pnpm --filter @coinpicks/api run db:bootstrap`; grants live in
+`apps/api/drizzle/0002_role_grants.sql`, because grants die with the table they were granted
+on.
+
 ```
-DATABASE_URL=postgresql://coinpicks:coinpicks@localhost:5433/coinpicks
+DATABASE_URL_OWNER=postgresql://coinpicks_owner:coinpicks_owner@localhost:5433/coinpicks
+DATABASE_URL=postgresql://coinpicks_app:coinpicks_app@localhost:5433/coinpicks
 ```
 
 **Drizzle is the ONLY DDL author.** `apps/api/src/db/schema.ts` declares every column;
@@ -133,14 +152,31 @@ the silent drift this repo's standing lesson is about.
 1. **`pgEnum`, never `text().$type<>()`** — for `reports.status` ∈ {draft, committed} and
    `citations.status` ∈ {unverified, verified, near_miss, failed, unverifiable_js, waived}.
    `$type<T>()` is a TypeScript fiction, not a database constraint.
-2. **A `BEFORE UPDATE OR DELETE` trigger** on `reports`, `report_scores`, `report_team` and
-   `citations`, raising when the parent report's status = `'committed'`. Drizzle's DSL cannot
-   express a trigger: it needs `drizzle-kit generate --custom` and a hand-written `.sql` that
-   `schema.ts` never re-emits. This is the one piece of SQL that makes "a committed report is
-   never edited" true against a stray `psql`, a GUI client, or an agent with shell access.
-   **Write it on day 2 or it never gets written.**
-3. **`report_scores.scoring_version`**, written by the commit route from the `scoring/ranges.ts`
-   constant.
+
+2. **Immutability triggers on `reports`, `report_scores`, `report_team` and `citations`**,
+   raising when the parent report's status = `'committed'`. The children fire on
+   **INSERT OR UPDATE OR DELETE**, not just UPDATE OR DELETE — under the older wording,
+   `INSERT INTO citations ... WHERE report_id = <a committed one>` returned `INSERT 0 1`, and
+   adding a citation to a committed report is editing it. Statement-level `BEFORE TRUNCATE`
+   triggers cover `forward_returns` as well, because TRUNCATE fires no row triggers at all.
+   Every trigger is `ENABLE ALWAYS`: the default is silenced by
+   `SET session_replication_role = replica`. A child row's `report_id` is immutable
+   unconditionally — re-parenting a committed report's children onto a draft was reproduced
+   live and gutted the committed row. Amended 2026-09-21 after the adversarial review; the
+   originals are in `agents/decisions.md`.
+   Drizzle's DSL cannot express a trigger: `apps/api/drizzle/0001_immutability_triggers.sql`
+   is hand-written and `schema.ts` never re-emits it. **Never run `drizzle-kit push`** — it
+   diffs `schema.ts` against the live database, knows nothing about the hand-written
+   migrations, and would leave the ledger unguarded without saying so.
+
+3. **`report_scores.scoring_version`**, written by the commit route from `SCORING_VERSION` in
+   `scoring/ranges.ts` (`'coinpicks-2026-09-21'`; bump only when a frozen formula, range,
+   weight or threshold changes). Nullable at column level and NOT NULL **by trigger** at the
+   moment of commit — a draft has not been scored under any framework version, and
+   `coinpicks_assert_commitable()` refuses a commit without one.
+   `apps/api/src/scoring/frozen-surface.test.ts` fails if a frozen number moves without a
+   deliberate bump, and pins the CHECK constraints against the same numbers.
+```
 4. **`reports.version` integer NOT NULL with compare-and-swap writes** —
    `UPDATE ... WHERE id=$1 AND version=$2`, 409 on zero rows. Two browser tabs on one draft would
    otherwise be silent last-write-wins, a hole Electron's single-instance lock used to cover for
@@ -285,7 +321,7 @@ it moved. `alembic/versions/` held **six** migrations (001–006); earlier docs 
 
 ```bash
 docker compose up -d db     # postgres:16-alpine on 127.0.0.1:5433, volume coinpicks_data
-pnpm dev                    # api on :8787, web on :5173 proxying /api
+pnpm dev                    # api on :8789, web on :5173 proxying /api
 pnpm test                   # Vitest
 pnpm check                  # Biome
 python -m pytest -q         # the Python research suite (111 tests)

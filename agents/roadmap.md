@@ -111,3 +111,5 @@ not to be started before A.1's ledger has produced a cohort worth aggregating.
 
 Trade execution of any kind. Alerting, or any deployed service. Auth or multi-user anything.
 Solana. Wallet clustering.
+
+- 2026-09-21 — build-order step 3 complete: schema, three migrations, twelve ENABLE ALWAYS triggers, the role split, CAS. Next: step 4, the minimal editor.

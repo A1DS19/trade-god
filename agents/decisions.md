@@ -9,6 +9,52 @@ morning, against an Electron design that the afternoon replaced.
 
 ---
 
+## 2026-09-21 — schema, triggers and the role split (build-order step 3)
+
+- **Three roles, two DSNs, one process.** Confirmed live: a session owning the tables can
+  `SET session_replication_role = replica` and then flip a committed report to draft and
+  delete it, with every trigger installed and silent, and can `DROP TRIGGER` outright. A
+  NOSUPERUSER non-owner is refused all of it and the triggers still fire against it. The cost
+  is a second DSN in `.env`; accepted, because it is the only thing that makes "the app
+  cannot disable its own guard" literally true.
+- **Schema rule 2 amended.** The children fire on INSERT as well as UPDATE/DELETE; there are
+  statement-level BEFORE TRUNCATE triggers on five tables; every trigger is ENABLE ALWAYS;
+  and a child's `report_id` is immutable unconditionally. All four holes were reproduced on
+  PostgreSQL 16.13 under the literal earlier wording.
+- **Spec §8.1 amended.** `report_scores` holds the draft. The containment guarantee is
+  restated without the literal single-writer claim, which could not survive a browser reload.
+- **A report whose product gate FAILS does get committed**, with `product_passed = false` and
+  the downstream sections required empty. A ledger holding only passes is survivorship bias
+  in the exact dataset built to test the framework. What it buys is the rejected population
+  and its product totals; it does NOT cure survivorship bias for narrative or team scores,
+  which only exist on a report that passed.
+- **`SCORING_VERSION = 'coinpicks-2026-09-21'`.** A date, not a semver and not a content hash
+  of `scoring/` — a hash would bump on a refactor and split the ledger for nothing. Bump only
+  when a frozen formula, range, weight or threshold changes; `frozen-surface.test.ts` fails
+  when one moves.
+- **Sub-noise net flow counts as zero** (the `MULTIPLE | ISSUANCE_NEGATIVE | PURE_PREMIUM`
+  taxonomy, not the frozen formula). 120 of 960 round-input combinations where issuance
+  equals gross to the cent left a float residue that published as a 3.4e21 payback multiple.
+- **`forward_returns` stores two prices**, and `return_fraction` is generated from them. The
+  old `return_pct` held a fraction under a percentage's name, guarded by a one-sided CHECK
+  that caught percentage-scaled losses and passed percentage-scaled gains.
+- **`research` also gets SELECT on `forward_returns`.** The spec's list said "nothing else",
+  which would leave `forward_returns.py` unable to see which horizons it had already priced.
+  A read of rows it wrote itself.
+- **`chain_facts` is deliberately NOT under the trigger set.** Rule 2 names four tables,
+  chain_facts is Phase A.2, and rows with a NULL `report_id` would be freely mutable while
+  their siblings were frozen. Open: a committed report's on-chain evidence can still be
+  rewritten. Do not "complete" the trigger set without ruling on this.
+```
+- **Port 8789, not 8787.** The sibling project's API container holds 8787 permanently on this
+  machine. Left at 8787 the server died with EADDRINUSE while that other service answered
+  `/health` on the same port with a different application's shape entirely — a boot check
+  reading green off someone else's process. Overridable via `PORT`.
+- **The vitest suite runs files serially.** `integrity.test.ts` disables a real trigger to
+  prove the boot check catches it, and every file shares one `coinpicks_test`. In parallel,
+  `immutability.test.ts` could assert a committed report is protected during the window
+  where the guard is off.
+
 ## 2026-09-21 — Rubric sub-scores are integers, and one cited worked example was never real
 
 A post-build audit of `apps/api/src/scoring/` against the vendored lessons found that the example

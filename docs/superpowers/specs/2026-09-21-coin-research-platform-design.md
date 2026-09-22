@@ -64,7 +64,7 @@ This tool makes the deterministic parts deterministic and the verification mecha
 | Phase A scope | Coin research pipeline. **A.1** = frozen scoring, editor, verifier, commit gate, ledger. **A.2** = the viem chain layer (§5) |
 | Workspace | pnpm 10.33.0, `packages: ["apps/*"]`, Biome 2.5.14 |
 | Runtime | Node **v26.8.1**. It executes a `.ts` file directly — no flag, no loader — which is why there is no build step and no Bun |
-| API | `apps/api` — hono 4.13.8, @hono/zod-validator 0.9.1, zod 4.6.5, on port **8787** |
+| API | `apps/api` — hono 4.13.8, @hono/zod-validator 0.9.1, zod 4.6.5, on port **8789** (8787 is held by an unrelated container on this machine; overridable via `PORT`) |
 | Web | `apps/web` — @tanstack/react-start 1.168.57 on @tanstack/react-router 1.170.38, react/react-dom 19.3.0, vite 8.3.0, tailwindcss + @tailwindcss/vite 4.3.3, on port **5173** |
 | Storage | PostgreSQL 16 (`postgres:16-alpine`), one docker compose service, bound `127.0.0.1:5433` |
 | ORM / DDL | drizzle-orm 0.45.3 + drizzle-kit 0.31.11 (dev) over pg 8.23.0 via `drizzle-orm/node-postgres`. **Drizzle is the only DDL author** |
@@ -281,7 +281,7 @@ Correction to carry: `alembic/versions/` held **six** migrations (001–006), no
 ```
 trade-god/
 ├── apps/
-│   ├── api/                       # NEW — Hono on Node 26, port 8787. The only writer.
+│   ├── api/                       # NEW — Hono on Node 26, port 8789. The only writer.
 │   │   ├── src/
 │   │   │   ├── app.ts              # the package's single export
 │   │   │   ├── server.ts           # applies migrations, THEN takes the port
@@ -364,7 +364,7 @@ it:
 
 ```bash
 docker compose up -d db     # postgres:16-alpine on 127.0.0.1:5433
-pnpm dev                    # api on 8787, web on 5173 proxying /api
+pnpm dev                    # api on 8789, web on 5173 proxying /api
 ```
 
 ## 4. Data model (PostgreSQL 16)
@@ -406,8 +406,12 @@ number is either verified (say where) or a guess (say so).
 database enums. `$type<T>()` is a TypeScript fiction — it constrains the ORM's inference and
 nothing in the database. `citations.origin ∈ {human, model}` is an enum for the same reason.
 
-**2. A `BEFORE UPDATE OR DELETE` trigger** on `reports`, `report_scores`, `report_team` and
-`citations`, raising when the parent report's `status = 'committed'`. Drizzle's DSL cannot express a
+**2. Immutability triggers** on `reports`, `report_scores`, `report_team` and `citations`,
+raising when the parent report's `status = 'committed'`. The children fire on `INSERT OR
+UPDATE OR DELETE`; statement-level `BEFORE TRUNCATE` triggers cover those four and
+`forward_returns`; every trigger is `ENABLE ALWAYS`; and a child's `report_id` is immutable
+unconditionally. Amended 2026-09-21 — the literal earlier wording left INSERT, TRUNCATE,
+replica mode and re-parenting open, all four reproduced live on PostgreSQL 16.13. Drizzle's DSL cannot express a
 trigger: this needs `drizzle-kit generate --custom` and a hand-written `.sql` that `schema.ts` never
 re-emits. It is the one piece of SQL that makes "a committed report is never edited" true rather
 than merely intended. **Write it on day 2 or it never gets written.**
@@ -509,6 +513,9 @@ assumption:
   wrote about *why* a number should be what it is can end up in a committed report.
 - **A test asserts that no LLM-reachable code path writes to `report_scores`.** That table is
   written in exactly one place — the commit transaction (§3.3) — from values a human typed.
+  `report_scores` also holds the operator's in-progress draft, because a half-finished report
+  has to survive a browser reload; `product_passed IS NOT NULL` is the sentinel meaning the
+  frozen gate has run, and every derived-value constraint keys off it. Amended 2026-09-21.
 
 ### 8.2 What `citations` gains
 

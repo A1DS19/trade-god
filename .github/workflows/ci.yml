@@ -89,7 +89,8 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://coinpicks:coinpicks@localhost:5433/coinpicks
+      DATABASE_URL_OWNER: postgresql://coinpicks_owner:coinpicks_owner@localhost:5433/coinpicks
+      DATABASE_URL: postgresql://coinpicks_app:coinpicks_app@localhost:5433/coinpicks
 
     steps:
       - uses: actions/checkout@v4
@@ -104,6 +105,14 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Bootstrap the database roles
+        # Not a Drizzle migration: CREATE ROLE is cluster-scoped while a migration applies
+        # once per database, and coinpicks_test would have no roles. psql is preinstalled on
+        # ubuntu-latest. This is the only superuser connection in the pipeline.
+        run: psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 -f apps/api/scripts/bootstrap-roles.sql
+        env:
+          SUPERUSER_URL: postgresql://coinpicks:coinpicks@localhost:5433/postgres
 
       # --if-present so this job survives the workspace landing one script at a
       # time; it does NOT excuse a script that exists and fails.

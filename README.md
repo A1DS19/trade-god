@@ -84,7 +84,7 @@ Requirements: Node 26, pnpm 10, Docker, and Python 3.14 for the warehouse.
 ```bash
 docker compose up -d db     # postgres:16-alpine, 127.0.0.1:5433, volume coinpicks_data
 pnpm install
-pnpm dev                    # API on :8787, web on :5173 (proxies /api)
+pnpm dev                    # API on :8789, web on :5173 (proxies /api)
 ```
 
 Port **5433**, not 5432 — 5432 on this machine is held by an unrelated container,

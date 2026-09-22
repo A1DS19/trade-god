@@ -1,6 +1,6 @@
 # The only infrastructure CoinPicks runs. One Postgres, on loopback.
 #
-#   docker compose up -d db     # then `pnpm dev` (api on 8787, web on 5173)
+#   docker compose up -d db     # then `pnpm dev` (api on 8789, web on 5173)
 #
 # There is no api, web or migrate service on purpose: the API runs from the
 # workspace under pnpm, and Drizzle applies apps/api/drizzle/*.sql at boot,
