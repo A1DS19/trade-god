@@ -90,3 +90,19 @@ export class AlreadyCommittedError extends Error {
     this.reportId = reportId
   }
 }
+
+/**
+ * A citation whose `team:<uuid>` field names a member this report does not have. `citations.field`
+ * is text with no foreign key, so this is the only place the reference can be checked before the
+ * commit gate counts it as evidence.
+ */
+export class UnknownTeamMemberError extends Error {
+  readonly httpStatus = 422
+  readonly field: string
+
+  constructor(field: string) {
+    super(`no team member on this report matches ${field}. Save the team first.`)
+    this.name = 'UnknownTeamMemberError'
+    this.field = field
+  }
+}

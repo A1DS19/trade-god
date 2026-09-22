@@ -2,9 +2,16 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import {
+  PRODUCT_SUB_SCORE_MAX,
+  TEAM_MAX_PEOPLE,
+  TEAM_MIN_PEOPLE,
+  TEAM_RUNG_MAX,
+} from '../reports/bounds.ts'
 import { NARRATIVE_MAX, NARRATIVE_TOTAL_MAX } from './narrative.ts'
 import { PRODUCT_GATE_THRESHOLD } from './product.ts'
 import { SCORING_VERSION } from './ranges.ts'
+import { teamWeightedScore } from './team.ts'
 
 /**
  * Rule 3's mechanism, not just its intention.
@@ -109,5 +116,89 @@ describe('the DDL reproduces the same numbers', () => {
     expect(ddl).toContain(
       `"forward_returns"."horizon_days" IN (${FROZEN_SURFACE.forwardReturnHorizons.join(', ')})`,
     )
+  })
+})
+
+/*
+ * `reports/bounds.ts` restates four numbers that product.ts and team.ts hold as inline literals.
+ * Exporting them from the frozen modules would edit two frozen files to avoid a copy; pinning
+ * them here costs nothing and pins them to the DDL and to the functions' own behaviour instead.
+ *
+ * It also gives teamFounderWeight / teamMinPeople / teamMaxPeople something to compare against.
+ * Before this block they sat in the FROZEN_SURFACE table above, compared with nothing at all —
+ * a literal in a test table that nothing asserts is the failure this project keeps finding.
+ */
+describe('the write path reproduces the bounds the frozen code holds inline', () => {
+  const ddl = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../drizzle/0000_init.sql'),
+    'utf8',
+  )
+
+  it('matches the frozen surface table', () => {
+    expect({
+      productSubScoreMax: PRODUCT_SUB_SCORE_MAX,
+      teamHMax: TEAM_RUNG_MAX.h,
+      teamMMax: TEAM_RUNG_MAX.m,
+      teamLMax: TEAM_RUNG_MAX.l,
+      teamMinPeople: TEAM_MIN_PEOPLE,
+      teamMaxPeople: TEAM_MAX_PEOPLE,
+    }).toEqual({
+      productSubScoreMax: FROZEN_SURFACE.productSubScoreMax,
+      teamHMax: FROZEN_SURFACE.teamHMax,
+      teamMMax: FROZEN_SURFACE.teamMMax,
+      teamLMax: FROZEN_SURFACE.teamLMax,
+      teamMinPeople: FROZEN_SURFACE.teamMinPeople,
+      teamMaxPeople: FROZEN_SURFACE.teamMaxPeople,
+    })
+  })
+
+  it('matches the DDL', () => {
+    for (const column of ['product_ease', 'product_hair_fire', 'product_exclusivity']) {
+      expect(ddl).toContain(`"report_scores"."${column}" BETWEEN 0 AND ${PRODUCT_SUB_SCORE_MAX}`)
+    }
+    expect(ddl).toContain(`"report_team"."h" BETWEEN 0 AND ${TEAM_RUNG_MAX.h}`)
+    expect(ddl).toContain(`"report_team"."m" BETWEEN 0 AND ${TEAM_RUNG_MAX.m}`)
+    expect(ddl).toContain(`"report_team"."l" BETWEEN 0 AND ${TEAM_RUNG_MAX.l}`)
+  })
+
+  it("matches teamWeightedScore()'s own refusals", () => {
+    const person = (isFounder: boolean) => ({ name: 'x', isFounder, h: 1, m: 1, l: 1 })
+    const below = Array.from({ length: TEAM_MIN_PEOPLE - 1 }, () => person(false))
+    const above = Array.from({ length: TEAM_MAX_PEOPLE + 1 }, () => person(false))
+    expect(() => teamWeightedScore(below)).toThrow(
+      `team must have ${TEAM_MIN_PEOPLE} to ${TEAM_MAX_PEOPLE} people, got ${below.length}`,
+    )
+    expect(() => teamWeightedScore(above)).toThrow(
+      `team must have ${TEAM_MIN_PEOPLE} to ${TEAM_MAX_PEOPLE} people, got ${above.length}`,
+    )
+  })
+
+  it('weights the founder by teamFounderWeight, measured against the function', () => {
+    // Everyone but the founder scores zero, so the result is (founder x W) / (W + others) and
+    // nothing else -- which pins team.ts's inline `* 5` AND the table's literal at once.
+    // `expect(FROZEN_SURFACE.teamFounderWeight).toBe(5)` would be a literal compared to a
+    // literal: it cannot fail however team.ts is edited, which is the failure this whole block
+    // exists to stop. The framework's 7.25 worked example is already pinned, verbatim, by
+    // scoring/team.test.ts.
+    const weight = FROZEN_SURFACE.teamFounderWeight
+    const founderScore = TEAM_RUNG_MAX.h + TEAM_RUNG_MAX.m + TEAM_RUNG_MAX.l
+    const others = TEAM_MIN_PEOPLE - 1
+    const team = [
+      {
+        name: 'founder',
+        isFounder: true,
+        h: TEAM_RUNG_MAX.h,
+        m: TEAM_RUNG_MAX.m,
+        l: TEAM_RUNG_MAX.l,
+      },
+      ...Array.from({ length: others }, (_, index) => ({
+        name: `other-${String(index)}`,
+        isFounder: false,
+        h: 0,
+        m: 0,
+        l: 0,
+      })),
+    ]
+    expect(teamWeightedScore(team)).toBeCloseTo((founderScore * weight) / (weight + others), 10)
   })
 })
