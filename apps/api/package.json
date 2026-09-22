@@ -6,13 +6,23 @@
     ".": "./src/app.ts"
   },
   "scripts": {
+    "dev": "node --env-file-if-exists=../../.env --watch src/server.ts",
+    "start": "node --env-file-if-exists=../../.env src/server.ts",
+    "db:bootstrap": "docker exec -i coinpicks-db psql -U coinpicks -d postgres -v ON_ERROR_STOP=1 < scripts/bootstrap-roles.sql",
+    "db:generate": "drizzle-kit generate",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "biome check"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.3",
+    "pg": "8.23.0"
   }
 }
