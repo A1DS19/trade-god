@@ -233,9 +233,12 @@ function ReportEditor({ reportId }: { reportId: string }) {
         if (reread !== null) {
           return {
             code: LANDED_UNREAD,
-            message:
-              `saved, but re-reading the report failed (${reread.code} — ${reread.message}). ` +
-              'The blocker list may be behind; reload the page to see what the database holds.',
+            message: answered
+              ? `saved, but re-reading the report failed (${reread.code} — ${reread.message}). ` +
+                'The blocker list may be behind; reload the page to see what the database holds.'
+              : `saved, but neither the save's answer nor the re-read reached this page ` +
+                `(${reread.code} — ${reread.message}), so it still holds the spent version. ` +
+                'Reload before saving again, or the next save will be refused.',
           }
         }
         return null
@@ -326,9 +329,13 @@ function ReportEditor({ reportId }: { reportId: string }) {
           json: { ...fields, version },
         })
         if (response.ok) {
-          // A clone: writeOnce reads the original for the version this write produced.
-          const body = (await response.clone().json()) as Awaited<ReturnType<typeof response.json>>
-          if (body.citationsRemoved > 0) {
+          // A clone, read best-effort: writeOnce reads the original for the version this write
+          // produced, and a cut body must not turn a landed write into "did not complete".
+          const body = (await response
+            .clone()
+            .json()
+            .catch(() => null)) as Awaited<ReturnType<typeof response.json>> | null
+          if (body !== null && body.citationsRemoved > 0) {
             setNotice(
               `${String(body.citationsRemoved)} citation(s) belonging to removed team members ` +
                 'were deleted. Evidence pointing at nobody would still have been counted.',
