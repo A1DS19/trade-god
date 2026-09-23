@@ -36,11 +36,16 @@ async function forward({ request }: { request: Request }): Promise<Response> {
     // An API that is down used to surface as h3's generic 500, which the editor could only print
     // as "HTTP_500 — HTTPError". This is the refusal shape every API route uses, so readError()
     // puts a sentence beside the button instead.
+    // A fetch can fail AFTER the API committed the write -- the connection dropped on the way
+    // back -- so a write is never told it did not happen.
     const cause = error instanceof Error ? error.message : String(error)
+    const write = request.method !== 'GET' && request.method !== 'HEAD'
     return Response.json(
       {
         code: 'API_UNREACHABLE',
-        message: `the CoinPicks API at ${API_ORIGIN} did not answer (${cause}) — is it running?`,
+        message:
+          `the CoinPicks API at ${API_ORIGIN} did not answer (${cause}) — is it running?` +
+          (write ? ' The save may or may not have landed; reload before saving again.' : ''),
       },
       { status: 502 },
     )

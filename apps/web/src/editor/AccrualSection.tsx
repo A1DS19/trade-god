@@ -42,6 +42,7 @@ export function AccrualSection({
 }: SectionProps & { onSave: Save<AccrualBody> }) {
   const section = useSection<AccrualForm, AccrualBody>(
     seedToken,
+    error,
     () => ({
       accrualSegmentRevenueUsd: numberOf(scores.accrualSegmentRevenueUsd),
       accrualCaptureShare: numberOf(scores.accrualCaptureShare),
@@ -76,7 +77,7 @@ export function AccrualSection({
     <SectionShell
       dirty={section.dirty}
       disabled={disabled}
-      error={error}
+      error={section.error}
       onSave={section.onSave}
       saving={section.saving}
       title="5 · Value accrual and discovery premium"

@@ -11,6 +11,7 @@ export function RiskSection({
 }: SectionProps & { onSave: Save<RiskBody> }) {
   const section = useSection<{ riskNotes: string }, RiskBody>(
     seedToken,
+    error,
     () => ({ riskNotes: textOf(scores.riskNotes) }),
     (form) => ({ riskNotes: blankToNull(form.riskNotes) }),
     onSave,
@@ -21,7 +22,7 @@ export function RiskSection({
     <SectionShell
       dirty={section.dirty}
       disabled={disabled}
-      error={error}
+      error={section.error}
       onSave={section.onSave}
       saving={section.saving}
       title="6 · Risk notes"

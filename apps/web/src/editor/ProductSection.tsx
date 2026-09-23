@@ -25,6 +25,7 @@ export function ProductSection({
 }: SectionProps & { onSave: Save<ProductBody> }) {
   const section = useSection<ProductForm, ProductBody>(
     seedToken,
+    error,
     () => ({
       overviewSentence: textOf(scores.overviewSentence),
       productEase: numberOf(scores.productEase),
@@ -51,7 +52,7 @@ export function ProductSection({
     <SectionShell
       dirty={section.dirty}
       disabled={disabled}
-      error={error}
+      error={section.error}
       onSave={section.onSave}
       saving={section.saving}
       title="1 · Product gate"

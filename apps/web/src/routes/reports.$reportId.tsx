@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AccrualSection } from '../editor/AccrualSection.tsx'
 import { Blockers } from '../editor/Blockers.tsx'
+import { LANDED_UNREAD } from '../editor/common.tsx'
 import { LiquiditySection } from '../editor/LiquiditySection.tsx'
 import { NarrativeSection } from '../editor/NarrativeSection.tsx'
 import { ProductSection } from '../editor/ProductSection.tsx'
@@ -41,6 +42,12 @@ const CONFLICTS: ReadonlySet<string> = new Set([
 ])
 
 const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
+/** The version a landed write produced. Every write route answers `{ version, ... }`. */
+const versionOf = (body: unknown): number | null => {
+  const version = (body as { version?: unknown } | null)?.version
+  return typeof version === 'number' ? version : null
+}
 
 /*
  * This file IS the route, so the report id comes from the router's typed params rather than from
@@ -175,12 +182,23 @@ function ReportEditor({ reportId }: { reportId: string }) {
           if (CONFLICTS.has(refusal.code)) await reseedAll(refusal)
           return refusal
         }
+        /*
+         * Take the new token from the landed write's own answer, BEFORE the re-read. If the
+         * re-read then fails, the page still holds the version this write produced -- without
+         * this it held a spent one, and its next save came back STALE_VERSION, blamed on
+         * "another tab", wiping every section. A write from a genuinely other tab is still
+         * caught: this is the version our screen is based on, not the database's latest.
+         */
+        const landedVersion = versionOf(await response.json())
+        if (landedVersion !== null) {
+          current.current = { ...report, report: { ...report.report, version: landedVersion } }
+        }
         setConflict(null)
         const reread = await load()
         if (reread !== null) {
           // Re-seeding now would fill the section from the pre-write payload.
           return {
-            code: 'REREAD_FAILED',
+            code: LANDED_UNREAD,
             message:
               `saved, but re-reading the report failed (${reread.code} — ${reread.message}). ` +
               'Reload the page to see what the database holds.',
@@ -283,7 +301,8 @@ function ReportEditor({ reportId }: { reportId: string }) {
           json: { ...fields, version },
         })
         if (response.ok) {
-          const body = await response.json()
+          // A clone: writeOnce reads the original for the version this write produced.
+          const body = (await response.clone().json()) as Awaited<ReturnType<typeof response.json>>
           if (body.citationsRemoved > 0) {
             setNotice(
               `${String(body.citationsRemoved)} citation(s) belonging to removed team members ` +

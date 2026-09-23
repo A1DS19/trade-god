@@ -32,8 +32,8 @@ export function Blockers({ blockers }: { blockers: Blocker[] }) {
         requirements are met. Whether this report passes the product gate is decided by the frozen
         gate inside the commit transaction, which is build-order step 6 and does not exist yet. This
         list is the database's completeness check only: team size, the single founder and every
-        citation are the commit gate's to check, so a report can clear all of it with no team and no
-        evidence.
+        citation are the commit gate's to check, so every row this editor can evaluate can clear
+        with no team and no evidence.
       </p>
       {outstanding.length === 0 ? (
         <p className="mt-3 text-sm">

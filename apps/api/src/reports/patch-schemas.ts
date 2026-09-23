@@ -24,19 +24,23 @@ const WHOLE = /^(0|[1-9]\d*)$/
 const DECIMAL = /^(0|[1-9]\d*)(\.\d+)?$/
 
 /*
- * The refusal names the exact form DECIMAL admits. The old wording -- "digits, with at most one
+ * The refusal describes exactly what DECIMAL admits. The old wording -- "digits, with at most one
  * decimal point" -- was satisfied by '.35', '5.' and '07', all of which DECIMAL refuses, so the
  * operator was told their input broke a rule it visibly kept.
  */
 const decimalMessage = (field: string): string =>
-  `${field} must be written like 1250000.5 or 0.35 — digits only, a 0 before any decimal point, ` +
-  'no leading zeros, commas or signs'
+  `${field} must be written like 1250000.5 or 0.35: whole digits with no leading zero (a lone 0 ` +
+  "is fine), then optionally a point and at least one more digit — so not '.35', '5.' or '07', " +
+  'and no commas, signs or exponents'
 
 /**
  * No measurement predates the Bitcoin genesis block. Ruled 2026-09-22: a typo in the year --
- * '0026' for '2026' -- passed `z.iso.datetime`, saved with 200, and read back in the wrong
- * century, because JavaScript's Date maps years 0-99 onto 1900-1999. An untouched re-save then
- * wrote the corrupted instant back. This is wire validation, not a frozen formula.
+ * '0026' for '2026' -- passed `z.iso.datetime` and saved with 200, but did not read back.
+ * drizzle maps a timestamptz with `new Date(pgText)`, and V8 reads a year below 100 in that text
+ * form as a two-digit year: '0026' becomes an Invalid Date (null on the wire), so the figure
+ * comes back with four of its five boxes filled and no untouched re-save can pass; '0075' comes
+ * back as 1975 and an untouched re-save writes 1975 into the row. Wire validation, not a frozen
+ * formula.
  */
 export const MEASURED_AT_FLOOR = '2009-01-03T00:00:00Z'
 

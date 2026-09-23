@@ -35,6 +35,7 @@ export function LiquiditySection({
 }: SectionProps & { onSave: Save<LiquidityBody> }) {
   const section = useSection<LiquidityForm, LiquidityBody>(
     seedToken,
+    error,
     () => ({
       depth: seedMeasured(
         scores.liquidityDepth2pctUsd,
@@ -69,7 +70,7 @@ export function LiquiditySection({
     <SectionShell
       dirty={section.dirty}
       disabled={disabled}
-      error={error}
+      error={section.error}
       onSave={section.onSave}
       saving={section.saving}
       title="2 · Liquidity"

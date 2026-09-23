@@ -59,6 +59,7 @@ export function TeamSection({
 }: Omit<SectionProps, 'scores'> & { onSave: Save<TeamBody>; team: TeamRow[] }) {
   const section = useSection<MemberForm[], TeamBody>(
     seedToken,
+    error,
     () => seedMembers(team),
     (members) => ({
       members: members.map((person) => ({ ...person, roles: toRoles(person.roles) })),
@@ -85,7 +86,7 @@ export function TeamSection({
     <SectionShell
       dirty={section.dirty}
       disabled={disabled}
-      error={error}
+      error={section.error}
       onSave={section.onSave}
       saving={section.saving}
       title="4 · Team"

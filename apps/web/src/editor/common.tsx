@@ -12,6 +12,16 @@ import { isMeasuredEmpty, type MeasuredForm, numberOf, textOf } from './fields.t
 
 export type Save<B> = (fields: Fields<B>) => Promise<ApiError | null>
 
+/**
+ * The refusal code for a write that LANDED and whose re-read failed. Callers treat it as saved --
+ * the section stops being dirty, an evidence box empties -- because pressing again would store it
+ * a second time.
+ */
+export const LANDED_UNREAD = 'REREAD_FAILED'
+
+const landed = (refusal: ApiError | null): boolean =>
+  refusal === null || refusal.code === LANDED_UNREAD
+
 export interface SectionProps {
   bounds: Bounds
   citations: Citation[]
@@ -66,6 +76,7 @@ export function SectionShell({
               instead. */}
           <button
             aria-busy={saving}
+            aria-label={`Save ${title}`}
             className="border border-neutral-500 px-3 py-1 text-sm disabled:opacity-50"
             disabled={disabled}
             onClick={onSave}
@@ -104,11 +115,13 @@ export function SectionShell({
  */
 export function useSection<F, B>(
   seedToken: number,
+  error: ApiError | null,
   seed: () => F,
   toBody: (form: F) => Fields<B>,
   save: Save<B>,
 ): {
   dirty: boolean
+  error: ApiError | null
   form: F
   onSave: () => void
   saving: boolean
@@ -120,6 +133,8 @@ export function useSection<F, B>(
   const [seededFrom, setSeededFrom] = useState(seedToken)
   // A ref, not `saving`: two presses dispatched before React re-renders both read `saving` as false.
   const inFlight = useRef(false)
+  // The refusal the operator has since edited past. A new refusal is a new object, so it shows.
+  const [dismissed, setDismissed] = useState<ApiError | null>(null)
 
   if (seededFrom !== seedToken) {
     setSeededFrom(seedToken)
@@ -130,6 +145,7 @@ export function useSection<F, B>(
   const update = (next: F) => {
     setForm(next)
     setDirty(true)
+    setDismissed(error)
   }
 
   const onSave = () => {
@@ -139,11 +155,11 @@ export function useSection<F, B>(
     void save(toBody(form)).then((refusal) => {
       inFlight.current = false
       setSaving(false)
-      if (refusal === null) setDirty(false)
+      if (landed(refusal)) setDirty(false)
     })
   }
 
-  return { dirty, form, onSave, saving, update }
+  return { dirty, error: error === dismissed ? null : error, form, onSave, saving, update }
 }
 
 const STATUS_CLASS: Record<string, string> = {
@@ -186,24 +202,37 @@ export function Citations({
   const [quote, setQuote] = useState('')
   const [error, setError] = useState<ApiError | null>(null)
   const [busy, setBusy] = useState(false)
+  // add/remove stay enabled while busy -- disabling the pressed button blurs it -- so this ref,
+  // not `busy`, is what refuses a second press.
+  const inFlight = useRef(false)
   const mine = citations.filter((citation) => citation.field === field)
 
-  const add = () => {
+  const act = (write: () => Promise<ApiError | null>, onLanded: () => void) => {
+    if (inFlight.current) return
+    inFlight.current = true
     setBusy(true)
-    void onAdd({ field, url, quote }).then((refusal) => {
+    void write().then((refusal) => {
+      inFlight.current = false
       setBusy(false)
       setError(refusal)
-      if (refusal !== null) return
-      setUrl('')
-      setQuote('')
+      if (landed(refusal)) onLanded()
     })
   }
+
+  const add = () =>
+    act(
+      () => onAdd({ field, url, quote }),
+      () => {
+        setUrl('')
+        setQuote('')
+      },
+    )
 
   return (
     <div className="my-2 ml-4 border-l border-neutral-300 pl-3 text-sm">
       <p className="text-neutral-600">{label}</p>
       <ul>
-        {mine.map((citation) => (
+        {mine.map((citation, index) => (
           <li className="flex flex-wrap items-baseline gap-2 py-0.5" key={citation.id}>
             <span
               className={`rounded px-1 text-xs ${STATUS_CLASS[citation.status] ?? 'bg-neutral-200'}`}
@@ -215,16 +244,16 @@ export function Citations({
             </a>
             <span className="text-neutral-600">“{citation.quote}”</span>
             <button
-              aria-label={`${label}: remove ${citation.url}`}
+              aria-busy={busy}
+              aria-label={`${label}: remove evidence ${String(index + 1)}, ${citation.url}`}
               className="text-red-800 underline disabled:opacity-50"
-              disabled={disabled || busy}
-              onClick={() => {
-                setBusy(true)
-                void onRemove(citation.id).then((refusal) => {
-                  setBusy(false)
-                  setError(refusal)
-                })
-              }}
+              disabled={disabled}
+              onClick={() =>
+                act(
+                  () => onRemove(citation.id),
+                  () => undefined,
+                )
+              }
               type="button"
             >
               remove
@@ -237,7 +266,10 @@ export function Citations({
           aria-label={`${label}: source URL`}
           className="w-72 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
           disabled={disabled || busy}
-          onChange={(event) => setUrl(event.target.value)}
+          onChange={(event) => {
+            setUrl(event.target.value)
+            setError(null)
+          }}
           placeholder="https://"
           value={url}
         />
@@ -245,14 +277,18 @@ export function Citations({
           aria-label={`${label}: exact quote`}
           className="w-96 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
           disabled={disabled || busy}
-          onChange={(event) => setQuote(event.target.value)}
+          onChange={(event) => {
+            setQuote(event.target.value)
+            setError(null)
+          }}
           placeholder="the exact quote to search the page for"
           value={quote}
         />
         <button
+          aria-busy={busy}
           aria-label={`${label}: add`}
           className="border border-neutral-500 px-2 disabled:opacity-50"
-          disabled={disabled || busy}
+          disabled={disabled}
           onClick={add}
           type="button"
         >

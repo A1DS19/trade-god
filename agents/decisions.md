@@ -27,10 +27,15 @@ a real operator types.
   version and this tab's own write came back `STALE_VERSION`, blamed on "another tab", wiping
   every section. A queue would send a body built from the screen as it stood *before* the first
   write's outcome — after a 409, text the database had just refused.
-- **A measured-at before 2009-01-03 is refused** (owner's ruling). `0026` for `2026` passed
+- **A measured-at before 2009-01-03 is refused** (owner's ruling). ~~`0026` for `2026` passed
   `z.iso.datetime`, saved with 200 and read back a century off, because JavaScript's `Date`
-  maps years 0–99 onto the 1900s; an untouched re-save then wrote the corruption back. Wire
-  validation, not a frozen formula.
+  maps years 0–99 onto the 1900s; an untouched re-save then wrote the corruption back.~~
+  **[Corrected the same day, after the second review round: drizzle maps a timestamptz with
+  `new Date(pgText)`, and V8 reads a year below 100 in that text form as two digits. `0026`
+  becomes an Invalid Date — null on the wire — so the figure returns with four of five boxes
+  filled and an untouched re-save is refused; `0050`–`0099` come back in the 1900s and an
+  untouched re-save writes that into the row. The floor stands.]** Wire validation, not a
+  frozen formula.
 - **Open, deliberately: five citable fields have no evidence box** — ±2% depth, top-pool TVL,
   capture share, token accrual, annual issuance. The API accepts citations on them; the editor
   cannot show or remove one. Which fields the commit gate demands evidence for is step 6's
