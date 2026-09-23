@@ -32,6 +32,9 @@ function seedMembers(team: TeamRow[]): MemberForm[] {
   }))
 }
 
+/** Every row repeats the same controls, so each one's accessible name says whose it is. */
+const personLabel = (index: number, what: string): string => `Person ${String(index + 1)}: ${what}`
+
 const BLANK_MEMBER: MemberForm = {
   id: null,
   name: '',
@@ -47,12 +50,15 @@ export function TeamSection({
   bounds,
   citations,
   disabled,
+  error,
   onAddCitation,
   onRemoveCitation,
   onSave,
+  seedToken,
   team,
 }: Omit<SectionProps, 'scores'> & { onSave: Save<TeamBody>; team: TeamRow[] }) {
   const section = useSection<MemberForm[], TeamBody>(
+    seedToken,
     () => seedMembers(team),
     (members) => ({
       members: members.map((person) => ({ ...person, roles: toRoles(person.roles) })),
@@ -79,7 +85,7 @@ export function TeamSection({
     <SectionShell
       dirty={section.dirty}
       disabled={disabled}
-      error={section.error}
+      error={error}
       onSave={section.onSave}
       saving={section.saving}
       title="4 · Team"
@@ -100,14 +106,16 @@ export function TeamSection({
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="w-6 text-neutral-500">{index + 1}</span>
               <input
-                className="w-40 border border-neutral-400 px-2 py-1"
+                aria-label={personLabel(index, 'name')}
+                className="w-40 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
                 disabled={disabled}
                 onChange={(event) => patch(index, { name: event.target.value })}
                 placeholder="name"
                 value={person.name}
               />
               <input
-                className="w-56 border border-neutral-400 px-2 py-1"
+                aria-label={personLabel(index, 'roles, comma separated')}
+                className="w-56 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
                 disabled={disabled}
                 onChange={(event) => patch(index, { roles: event.target.value })}
                 placeholder="roles, comma separated"
@@ -115,6 +123,7 @@ export function TeamSection({
               />
               <label className="flex items-center gap-1">
                 <input
+                  aria-label={personLabel(index, 'founder')}
                   checked={person.isFounder}
                   disabled={disabled}
                   name="founder"
@@ -129,7 +138,11 @@ export function TeamSection({
                 <label className="flex items-center gap-1 text-xs" key={rung}>
                   {rung.toUpperCase()} 0–{bounds.teamRungMax[rung]}
                   <input
-                    className="w-12 border border-neutral-400 px-1 py-1"
+                    aria-label={personLabel(
+                      index,
+                      `${rung.toUpperCase()}, whole number 0 to ${String(bounds.teamRungMax[rung])}`,
+                    )}
+                    className="w-12 border border-neutral-400 px-1 py-1 disabled:bg-neutral-100"
                     disabled={disabled}
                     inputMode="numeric"
                     onChange={(event) => patch(index, { [rung]: event.target.value })}
@@ -138,6 +151,7 @@ export function TeamSection({
                 </label>
               ))}
               <button
+                aria-label={personLabel(index, 'move up')}
                 className="border border-neutral-400 px-2 disabled:opacity-40"
                 disabled={disabled || index === 0}
                 onClick={() => move(index, -1)}
@@ -146,6 +160,7 @@ export function TeamSection({
                 ↑
               </button>
               <button
+                aria-label={personLabel(index, 'move down')}
                 className="border border-neutral-400 px-2 disabled:opacity-40"
                 disabled={disabled || index === form.length - 1}
                 onClick={() => move(index, 1)}
@@ -154,7 +169,8 @@ export function TeamSection({
                 ↓
               </button>
               <button
-                className="border border-neutral-400 px-2 text-red-800"
+                aria-label={personLabel(index, 'remove')}
+                className="border border-neutral-400 px-2 text-red-800 disabled:opacity-40"
                 disabled={disabled}
                 onClick={() => update(form.filter((_, at) => at !== index))}
                 type="button"
@@ -163,7 +179,8 @@ export function TeamSection({
               </button>
             </div>
             <input
-              className="mt-2 w-full border border-neutral-400 px-2 py-1 text-sm"
+              aria-label={personLabel(index, 'prior-experience summary')}
+              className="mt-2 w-full border border-neutral-400 px-2 py-1 text-sm disabled:bg-neutral-100"
               disabled={disabled}
               onChange={(event) => patch(index, { summary: event.target.value })}
               placeholder="one sentence about prior experience, with a financial metric"
@@ -173,7 +190,7 @@ export function TeamSection({
         ))}
       </ul>
       <button
-        className="mt-2 border border-neutral-500 px-3 py-1 text-sm"
+        className="mt-2 border border-neutral-500 px-3 py-1 text-sm disabled:opacity-40"
         disabled={disabled}
         onClick={() => update([...form, BLANK_MEMBER])}
         type="button"

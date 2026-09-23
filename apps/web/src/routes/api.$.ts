@@ -19,17 +19,32 @@ const API_ORIGIN = process.env.COINPICKS_API_ORIGIN ?? 'http://127.0.0.1:8789'
 async function forward({ request }: { request: Request }): Promise<Response> {
   const url = new URL(request.url)
   const target = `${API_ORIGIN}${url.pathname.replace(/^\/api/, '')}${url.search}`
-  const response = await fetch(target, {
-    body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
-    // `manual`, so a redirect reaches the BROWSER. hono's proxy default is `follow`, which
-    // resolves the chain in this process and drops both the Location and any Set-Cookie on it.
-    // The sibling repo shipped that bug and only found it in production.
-    headers: request.headers,
-    method: request.method,
-    redirect: 'manual',
-    // Required by undici whenever a body is a stream, and a PATCH body is.
-    ...{ duplex: 'half' },
-  })
+  let response: Response
+  try {
+    response = await fetch(target, {
+      body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+      // `manual`, so a redirect reaches the BROWSER. hono's proxy default is `follow`, which
+      // resolves the chain in this process and drops both the Location and any Set-Cookie on it.
+      // The sibling repo shipped that bug and only found it in production.
+      headers: request.headers,
+      method: request.method,
+      redirect: 'manual',
+      // Required by undici whenever a body is a stream, and a PATCH body is.
+      ...{ duplex: 'half' },
+    })
+  } catch (error) {
+    // An API that is down used to surface as h3's generic 500, which the editor could only print
+    // as "HTTP_500 — HTTPError". This is the refusal shape every API route uses, so readError()
+    // puts a sentence beside the button instead.
+    const cause = error instanceof Error ? error.message : String(error)
+    return Response.json(
+      {
+        code: 'API_UNREACHABLE',
+        message: `the CoinPicks API at ${API_ORIGIN} did not answer (${cause}) — is it running?`,
+      },
+      { status: 502 },
+    )
+  }
   return new Response(response.body, {
     headers: response.headers,
     status: response.status,

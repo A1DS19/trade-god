@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useRef, useState } from 'react'
 import type {
   ApiError,
   Bounds,
@@ -16,9 +16,14 @@ export interface SectionProps {
   bounds: Bounds
   citations: Citation[]
   disabled: boolean
+  /** This section's last refusal. ReportEditor owns it: it is the one place that sees how a save
+   *  ended, including the 409 that re-seeds every section at once. */
+  error: ApiError | null
   onAddCitation: (input: Fields<CitationBody>) => Promise<ApiError | null>
   onRemoveCitation: (citationId: string) => Promise<ApiError | null>
   scores: Scores
+  /** Moved by ReportEditor to re-seed this section from the database. */
+  seedToken: number
 }
 
 /*
@@ -28,6 +33,10 @@ export interface SectionProps {
  * naive per-field blur save fires many CAS writes: blur a score, click a citation's "add" before
  * the first response lands, and the second request carries a spent token and is refused 409 while
  * the screen still shows the value as entered.
+ *
+ * While the save is in flight the whole section is a disabled <fieldset>. Text typed into it
+ * meanwhile would be replaced when the section re-seeds from the database a moment later, so the
+ * section refuses the keystrokes rather than accepting them and then losing them.
  */
 export function SectionShell({
   children,
@@ -52,9 +61,13 @@ export function SectionShell({
         <h2 className="text-lg font-medium">{title}</h2>
         <div className="flex items-center gap-3">
           {dirty ? <span className="text-xs text-amber-800">unsaved changes</span> : null}
+          {/* Not `disabled` while saving: a browser blurs a focused control the moment it is
+              disabled, so every Save sent keyboard focus to <body>. useSection ignores the press
+              instead. */}
           <button
+            aria-busy={saving}
             className="border border-neutral-500 px-3 py-1 text-sm disabled:opacity-50"
-            disabled={saving || disabled}
+            disabled={disabled}
             onClick={onSave}
             type="button"
           >
@@ -62,23 +75,40 @@ export function SectionShell({
           </button>
         </div>
       </div>
-      <div className="mt-3">{children}</div>
+      {/* Beside the Save button that produced it, not at the foot of a section that can run to
+          six sub-scores and their evidence. */}
       {error === null ? null : (
-        <p className="mt-3 border-l-4 border-red-700 bg-red-50 py-1 pl-2 text-sm text-red-900">
+        <p
+          className="mt-2 border-l-4 border-red-700 bg-red-50 py-1 pl-2 text-sm text-red-900"
+          role="alert"
+        >
           <strong>{error.code}</strong> — {error.message}
         </p>
       )}
+      <fieldset className="mt-3 min-w-0" disabled={saving}>
+        {children}
+      </fieldset>
     </section>
   )
 }
 
+/**
+ * A section's form, re-seeded from the database whenever ReportEditor moves `seedToken`.
+ *
+ * The re-seed adjusts state during render -- React's documented pattern for resetting state when
+ * a prop changes -- rather than remounting the section through its `key`. The remount did reset
+ * the boxes, but it also reset everything else below it: the URL and quote typed into an evidence
+ * box but not yet added were silently emptied by the section's own successful Save, keyboard focus
+ * fell to <body>, and a refusal set by the save that caused the remount landed on an instance
+ * being thrown away. Only the form is replaced here; the evidence boxes keep what was typed.
+ */
 export function useSection<F, B>(
+  seedToken: number,
   seed: () => F,
   toBody: (form: F) => Fields<B>,
   save: Save<B>,
 ): {
   dirty: boolean
-  error: ApiError | null
   form: F
   onSave: () => void
   saving: boolean
@@ -87,7 +117,15 @@ export function useSection<F, B>(
   const [form, setForm] = useState(seed)
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<ApiError | null>(null)
+  const [seededFrom, setSeededFrom] = useState(seedToken)
+  // A ref, not `saving`: two presses dispatched before React re-renders both read `saving` as false.
+  const inFlight = useRef(false)
+
+  if (seededFrom !== seedToken) {
+    setSeededFrom(seedToken)
+    setForm(seed())
+    setDirty(false)
+  }
 
   const update = (next: F) => {
     setForm(next)
@@ -95,15 +133,17 @@ export function useSection<F, B>(
   }
 
   const onSave = () => {
+    if (inFlight.current) return
+    inFlight.current = true
     setSaving(true)
     void save(toBody(form)).then((refusal) => {
+      inFlight.current = false
       setSaving(false)
-      setError(refusal)
       if (refusal === null) setDirty(false)
     })
   }
 
-  return { dirty, error, form, onSave, saving, update }
+  return { dirty, form, onSave, saving, update }
 }
 
 const STATUS_CLASS: Record<string, string> = {
@@ -124,7 +164,8 @@ const STATUS_CLASS: Record<string, string> = {
  * UI looked entirely correct while the commit gate would have counted zero.
  *
  * The boxes are cleared only on success. The quote is the one thing in this product that must be
- * transcribed exactly, and an unconditional clear meant a refused add silently ate it.
+ * transcribed exactly, and an unconditional clear meant a refused add silently ate it. For the
+ * same reason nothing above this component remounts it: useSection re-seeds its form in place.
  */
 export function Citations({
   citations,
@@ -174,6 +215,7 @@ export function Citations({
             </a>
             <span className="text-neutral-600">“{citation.quote}”</span>
             <button
+              aria-label={`${label}: remove ${citation.url}`}
               className="text-red-800 underline disabled:opacity-50"
               disabled={disabled || busy}
               onClick={() => {
@@ -192,20 +234,23 @@ export function Citations({
       </ul>
       <div className="mt-1 flex flex-wrap gap-2">
         <input
-          className="w-72 border border-neutral-400 px-2 py-1"
+          aria-label={`${label}: source URL`}
+          className="w-72 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
           disabled={disabled || busy}
           onChange={(event) => setUrl(event.target.value)}
           placeholder="https://"
           value={url}
         />
         <input
-          className="w-96 border border-neutral-400 px-2 py-1"
+          aria-label={`${label}: exact quote`}
+          className="w-96 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
           disabled={disabled || busy}
           onChange={(event) => setQuote(event.target.value)}
           placeholder="the exact quote to search the page for"
           value={quote}
         />
         <button
+          aria-label={`${label}: add`}
           className="border border-neutral-500 px-2 disabled:opacity-50"
           disabled={disabled || busy}
           onClick={add}
@@ -215,7 +260,7 @@ export function Citations({
         </button>
       </div>
       {error === null ? null : (
-        <p className="mt-1 text-red-900">
+        <p className="mt-1 text-red-900" role="alert">
           <strong>{error.code}</strong> — {error.message}
         </p>
       )}

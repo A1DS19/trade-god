@@ -28,10 +28,13 @@ interface LiquidityForm {
 export function LiquiditySection({
   bounds,
   disabled,
+  error,
   onSave,
   scores,
+  seedToken,
 }: SectionProps & { onSave: Save<LiquidityBody> }) {
   const section = useSection<LiquidityForm, LiquidityBody>(
+    seedToken,
     () => ({
       depth: seedMeasured(
         scores.liquidityDepth2pctUsd,
@@ -66,7 +69,7 @@ export function LiquiditySection({
     <SectionShell
       dirty={section.dirty}
       disabled={disabled}
-      error={section.error}
+      error={error}
       onSave={section.onSave}
       saving={section.saving}
       title="2 · Liquidity"
@@ -78,6 +81,7 @@ export function LiquiditySection({
       </p>
       <MeasuredFields
         disabled={disabled}
+        floor={bounds.measuredAtFloor}
         form={form.depth}
         label="±2% depth across CEXs"
         onChange={(depth) => update({ ...form, depth })}
@@ -85,6 +89,7 @@ export function LiquiditySection({
       />
       <MeasuredFields
         disabled={disabled}
+        floor={bounds.measuredAtFloor}
         form={form.topPool}
         label="Largest DEX pool TVL"
         onChange={(topPool) => update({ ...form, topPool })}
@@ -93,7 +98,7 @@ export function LiquiditySection({
       <CheckField
         checked={form.liquidityNoDexPool}
         disabled={disabled}
-        label="No DEX pool exists (different from 'not measured')"
+        label="No DEX pool exists (different from 'not measured') — leave the pool figure's five boxes blank"
         onChange={(liquidityNoDexPool) => update({ ...form, liquidityNoDexPool })}
       />
       <ChoiceField

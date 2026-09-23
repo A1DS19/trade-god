@@ -4,10 +4,13 @@ import { blankToNull, ProseField, textOf } from './fields.tsx'
 
 export function RiskSection({
   disabled,
+  error,
   onSave,
   scores,
+  seedToken,
 }: SectionProps & { onSave: Save<RiskBody> }) {
   const section = useSection<{ riskNotes: string }, RiskBody>(
+    seedToken,
     () => ({ riskNotes: textOf(scores.riskNotes) }),
     (form) => ({ riskNotes: blankToNull(form.riskNotes) }),
     onSave,
@@ -18,7 +21,7 @@ export function RiskSection({
     <SectionShell
       dirty={section.dirty}
       disabled={disabled}
-      error={section.error}
+      error={error}
       onSave={section.onSave}
       saving={section.saving}
       title="6 · Risk notes"

@@ -11,8 +11,8 @@ const PILL: Record<Blocker['state'], string> = {
  *
  * Every row comes from the API's GATE_REQUIREMENTS — the same array that generates the
  * gate-completeness CHECK — so a conjunct cannot exist in the database and be missing here.
- * (The constraint is not named: dist/server keeps doc comments, and bundle.test.ts refuses
- * DDL names in either bundle.)
+ * (The constraint is not named here: dist/server keeps /** comments, and its name's prefix is
+ * one of bundle.test.ts's needles.)
  *
  * Three things this deliberately does NOT do:
  *  - it does not decide whether this report passes the gate. That is productGate(), evaluated
@@ -30,7 +30,10 @@ export function Blockers({ blockers }: { blockers: Blocker[] }) {
       <p className="mt-1 text-sm text-neutral-600">
         {blockers.filter((blocker) => blocker.state === 'clear').length} of {blockers.length}{' '}
         requirements are met. Whether this report passes the product gate is decided by the frozen
-        gate inside the commit transaction, which is build-order step 6 and does not exist yet.
+        gate inside the commit transaction, which is build-order step 6 and does not exist yet. This
+        list is the database's completeness check only: team size, the single founder and every
+        citation are the commit gate's to check, so a report can clear all of it with no team and no
+        evidence.
       </p>
       {outstanding.length === 0 ? (
         <p className="mt-3 text-sm">

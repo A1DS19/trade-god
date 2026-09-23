@@ -9,6 +9,33 @@ morning, against an Electron design that the afternoon replaced.
 
 ---
 
+## 2026-09-22 — the editor review, after Plan 3 Task 7
+
+A five-lens review of the finished editor (each finding checked by a skeptic who tried to
+reproduce it) confirmed defects the plan's own walk could not see, because `fill()` pastes and
+a real operator types.
+
+- **Sections re-seed in place, not by remount.** Plan 3 keyed each section on a seed token so a
+  409 could not leave the loser's text in the boxes. The remount did that, and also emptied
+  every evidence box in the section on its own successful Save — a hand-transcribed quote typed
+  but not yet added vanished with a 200 and no message — dropped focus to `<body>`, and threw
+  away the refusal the save produced. `useSection` now resets its form when the token moves
+  (React's adjust-state-during-render pattern). The property the key existed for is kept; do
+  not restore the `key`.
+- **One write at a time per page, and a second is refused as `BUSY`, not queued.** The CAS token
+  was read off the last render, so two actions inside one round trip sent the same spent
+  version and this tab's own write came back `STALE_VERSION`, blamed on "another tab", wiping
+  every section. A queue would send a body built from the screen as it stood *before* the first
+  write's outcome — after a 409, text the database had just refused.
+- **A measured-at before 2009-01-03 is refused** (owner's ruling). `0026` for `2026` passed
+  `z.iso.datetime`, saved with 200 and read back a century off, because JavaScript's `Date`
+  maps years 0–99 onto the 1900s; an untouched re-save then wrote the corruption back. Wire
+  validation, not a frozen formula.
+- **Open, deliberately: five citable fields have no evidence box** — ±2% depth, top-pool TVL,
+  capture share, token accrual, annual issuance. The API accepts citations on them; the editor
+  cannot show or remove one. Which fields the commit gate demands evidence for is step 6's
+  ruling, and the owner deferred it there.
+
 ## 2026-09-21 — schema, triggers and the role split (build-order step 3)
 
 - **Three roles, two DSNs, one process.** Confirmed live: a session owning the tables can

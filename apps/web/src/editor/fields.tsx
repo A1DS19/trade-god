@@ -238,12 +238,15 @@ export const isMeasuredEmpty = (form: MeasuredForm): boolean =>
  */
 export function MeasuredFields({
   disabled,
+  floor,
   form,
   label,
   onChange,
   provenanceLabels,
 }: {
   disabled: boolean
+  /** The earliest measured-at the API accepts, served in `bounds`. */
+  floor: string
   form: MeasuredForm
   label: string
   onChange: (form: MeasuredForm) => void
@@ -254,7 +257,7 @@ export function MeasuredFields({
     <fieldset className="my-2 border border-neutral-300 p-3">
       <legend className="px-1 text-sm text-neutral-700">{label}</legend>
       <AmountField
-        caption="digits, at most one decimal point"
+        caption="plain digits, like 1250000.5 — no commas"
         disabled={disabled}
         label="Figure (USD)"
         onChange={set('value')}
@@ -290,8 +293,10 @@ export function MeasuredFields({
         width="w-72"
       />
       <p className="mt-1 text-xs text-neutral-600">
-        All five, or leave all five blank. The timestamp needs an offset and cannot be in the future
-        — three CHECK constraints depend on it.
+        All five, or leave all five blank — the database refuses a figure without its provenance.
+        Measured-at is ISO 8601 with seconds and an offset, like 2026-09-21T14:32:00+02:00 or
+        2026-09-21T12:32:00Z; it cannot be in the future or before {floor.slice(0, 10)}. After a
+        save it is shown back in UTC — the same instant.
       </p>
     </fieldset>
   )

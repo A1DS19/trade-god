@@ -27,12 +27,15 @@ export function NarrativeSection({
   bounds,
   citations,
   disabled,
+  error,
   onAddCitation,
   onRemoveCitation,
   onSave,
   scores,
+  seedToken,
 }: SectionProps & { onSave: Save<NarrativeBody> }) {
   const section = useSection<NarrativeForm, NarrativeBody>(
+    seedToken,
     () => ({
       narrativeMaturity: numberOf(scores.narrativeMaturity),
       narrativeSmartMoney: numberOf(scores.narrativeSmartMoney),
@@ -69,7 +72,7 @@ export function NarrativeSection({
     <SectionShell
       dirty={section.dirty}
       disabled={disabled}
-      error={section.error}
+      error={error}
       onSave={section.onSave}
       saving={section.saving}
       title="3 · Narrative"

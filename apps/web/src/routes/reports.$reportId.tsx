@@ -33,40 +33,71 @@ const FRESH_SEEDS: Record<SectionKey, number> = {
   risk: 0,
 }
 
+/** A 409 that means the page is behind the database: every section re-seeds from it. */
+const CONFLICTS: ReadonlySet<string> = new Set([
+  'STALE_VERSION',
+  'ALREADY_COMMITTED',
+  'REPORT_COMMITTED',
+])
+
+const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
 /*
  * This file IS the route, so the report id comes from the router's typed params rather than from
  * a prop nobody passes: `createFileRoute('/reports/$reportId')` is what puts the route in the
  * generated tree, and `Route.useParams()` is what types `reportId` as a string off it.
+ *
+ * ReportRoute keys the editor on that id. The router keeps a matched component mounted across a
+ * param change, so without the key a navigation from one report to another kept the first
+ * report's forms, and the next Save wrote report A's text into report B.
  */
-export const Route = createFileRoute('/reports/$reportId')({ component: ReportEditor })
+export const Route = createFileRoute('/reports/$reportId')({ component: ReportRoute })
 
-function ReportEditor() {
+function ReportRoute() {
   const { reportId } = Route.useParams()
+  return <ReportEditor key={reportId} reportId={reportId} />
+}
+
+function ReportEditor({ reportId }: { reportId: string }) {
   const [payload, setPayload] = useState<ReportPayload | null>(null)
   const [loadError, setLoadError] = useState<ApiError | null>(null)
   const [seeds, setSeeds] = useState(FRESH_SEEDS)
+  const [errors, setErrors] = useState<Partial<Record<SectionKey, ApiError | null>>>({})
   const [conflict, setConflict] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   /*
-   * The CAS token, held in a ref as well as in state.
+   * The CAS token, in a ref that load() writes the moment a read lands.
    *
-   * `reports.version` is bumped by EVERY successful write, so the token a save sends has to be
-   * the one the last response produced — not one read out of a render that may not have happened
-   * yet. Deriving it from `payload` inside an async callback is how two saves started close
-   * together end up sending the same spent token.
+   * `reports.version` is bumped by EVERY successful write, so a write must carry the version the
+   * latest read returned. Reading it off `payload` meant reading the last RENDER, which trails the
+   * last read -- and together with unserialised writes, two actions started within one round trip
+   * sent the same spent token, and this tab's own second write came back STALE_VERSION, blamed on
+   * "another tab".
    */
   const current = useRef<ReportPayload | null>(null)
-  current.current = payload
+  /** True while a write is in flight. One at a time; see writeOnce. */
+  const writing = useRef(false)
 
-  const load = useCallback(async () => {
-    const response = await client.reports[':reportId'].$get({ param: { reportId } })
-    if (!response.ok) {
-      setLoadError(await readError(response))
-      return
+  /** Never rejects: a read that fails ends as a named refusal, not as "Loading…" forever. */
+  const load = useCallback(async (): Promise<ApiError | null> => {
+    try {
+      const response = await client.reports[':reportId'].$get({ param: { reportId } })
+      if (!response.ok) {
+        const refusal = await readError(response)
+        setLoadError(refusal)
+        return refusal
+      }
+      const next = await response.json()
+      current.current = next
+      setPayload(next)
+      setLoadError(null)
+      return null
+    } catch (error) {
+      const refusal = { code: 'UNREACHABLE', message: `the API did not answer (${reason(error)})` }
+      setLoadError(refusal)
+      return refusal
     }
-    setPayload(await response.json())
-    setLoadError(null)
   }, [reportId])
 
   useEffect(() => {
@@ -74,66 +105,119 @@ function ReportEditor() {
   }, [load])
 
   /**
-   * One save: one CAS bump, then a re-read.
+   * After a 409: re-read, re-seed every section from the database, and say so.
+   *
+   * The naive editor seeded each input with `useState(value)` and never re-synced, so after a
+   * conflict the boxes kept the losing text and the next save wrote it over the winner. Evidence
+   * typed but not yet added is kept: it is not report data, and the database has no version of it
+   * to prefer.
+   */
+  const reseedAll = useCallback(
+    async (refusal: ApiError) => {
+      const why =
+        refusal.code === 'STALE_VERSION'
+          ? 'This report moved on in another tab.'
+          : 'This report is committed and the database refuses every write to it.'
+      const reread = await load()
+      if (reread !== null) {
+        setConflict(
+          `${refusal.code} — ${refusal.message}. ${why} Re-reading it failed as well ` +
+            `(${reread.code}), so reload the page before editing further.`,
+        )
+        return
+      }
+      setSeeds((previous) => {
+        const next = { ...previous }
+        for (const key of Object.keys(next) as SectionKey[]) next[key] = previous[key] + 1
+        return next
+      })
+      setErrors({})
+      setConflict(
+        `${refusal.code} — ${refusal.message}. ${why} Every section has been reloaded from the ` +
+          'database and its unsaved edits were discarded; evidence typed but not yet added is ' +
+          'still in its box.',
+      )
+    },
+    [load],
+  )
+
+  /**
+   * One write: one CAS bump, then a re-read. It never rejects -- every way it can end is a named
+   * refusal or null -- so nothing that called it can be left on "Saving…".
    *
    * The re-read is deliberate. The blocker list is computed by the API from the same array that
    * generates the CHECK constraint, and re-reading is what keeps the screen showing the database
    * rather than a client-side guess at what the write did.
    *
-   * On a 409 every section is re-seeded from the server and the operator is told. The naive
-   * editor seeded each input with `useState(value)` and never re-synced, so after a conflict the
-   * boxes kept the losing text and the next save wrote it over the winner.
+   * ONE WRITE AT A TIME. A second write started while one is in flight is refused as BUSY, beside
+   * the control that was pressed. Queuing it instead would send a body built from the screen as it
+   * stood BEFORE the first write's outcome -- after a 409, text the database has just refused.
    */
+  const writeOnce = useCallback(
+    async (
+      section: SectionKey | null,
+      call: (version: number) => Promise<Response>,
+    ): Promise<ApiError | null> => {
+      const report = current.current
+      if (report === null) return { code: 'NOT_LOADED', message: 'the report has not loaded yet' }
+      if (writing.current) {
+        return {
+          code: 'BUSY',
+          message: 'another save on this page is still in flight — press again once it lands',
+        }
+      }
+      writing.current = true
+      setNotice(null)
+      try {
+        const response = await call(report.report.version)
+        if (!response.ok) {
+          const refusal = await readError(response)
+          if (CONFLICTS.has(refusal.code)) await reseedAll(refusal)
+          return refusal
+        }
+        setConflict(null)
+        const reread = await load()
+        if (reread !== null) {
+          // Re-seeding now would fill the section from the pre-write payload.
+          return {
+            code: 'REREAD_FAILED',
+            message:
+              `saved, but re-reading the report failed (${reread.code} — ${reread.message}). ` +
+              'Reload the page to see what the database holds.',
+          }
+        }
+        /*
+         * `null` means "no section owns this write": a citation belongs to whichever section
+         * renders it, and bumping one fixed token would silently discard unsaved text in THAT
+         * section whenever evidence was attached anywhere else on the page. The new row reaches
+         * <Citations> through the `citations` prop that load() refreshed.
+         */
+        if (section !== null) {
+          setSeeds((previous) => ({ ...previous, [section]: previous[section] + 1 }))
+        }
+        return null
+      } catch (error) {
+        return {
+          code: 'UNREACHABLE',
+          message:
+            `the request did not complete (${reason(error)}). Reload before saving again: if ` +
+            'the write landed, the version has moved.',
+        }
+      } finally {
+        writing.current = false
+      }
+    },
+    [load, reseedAll],
+  )
+
+  /** A write, with its outcome filed under the section that made it. */
   const runSave = useCallback(
     async (section: SectionKey | null, call: (version: number) => Promise<Response>) => {
-      const report = current.current
-      if (report === null) {
-        return { code: 'NOT_LOADED', message: 'the report has not loaded yet' }
-      }
-      setNotice(null)
-      const response = await call(report.report.version)
-      if (!response.ok) {
-        const refusal = await readError(response)
-        if (refusal.code === 'STALE_VERSION' || refusal.code === 'ALREADY_COMMITTED') {
-          await load()
-          setSeeds((previous) => {
-            const next = { ...previous }
-            for (const key of Object.keys(next) as SectionKey[]) next[key] = previous[key] + 1
-            return next
-          })
-          /*
-           * The banner carries the refusal, because the section cannot.
-           *
-           * Re-seeding changes every section's React `key`, so the component the save was
-           * started from unmounts: the `setError(refusal)` useSection runs next lands on an
-           * instance that is being replaced, and the red per-section message never renders.
-           * ReportEditor itself is not keyed, so this banner survives the remount.
-           */
-          const why =
-            refusal.code === 'STALE_VERSION'
-              ? 'This report moved on in another tab.'
-              : 'This report is committed and the database refuses every write to it.'
-          setConflict(
-            `${refusal.code} — ${refusal.message}. ${why} Every section has been reloaded ` +
-              'from the database and any unsaved text on this page was discarded.',
-          )
-        }
-        return refusal
-      }
-      setConflict(null)
-      await load()
-      /*
-       * `null` means "no section owns this write": a citation belongs to whichever section
-       * renders it, and bumping one fixed key would silently discard unsaved text in THAT
-       * section whenever evidence was attached anywhere else on the page. The new row reaches
-       * <Citations> through the `citations` prop that load() refreshed, so no remount is needed.
-       */
-      if (section !== null) {
-        setSeeds((previous) => ({ ...previous, [section]: previous[section] + 1 }))
-      }
-      return null
+      const refusal = await writeOnce(section, call)
+      if (section !== null) setErrors((previous) => ({ ...previous, [section]: refusal }))
+      return refusal
     },
-    [load],
+    [writeOnce],
   )
 
   const saveProduct = useCallback(
@@ -234,20 +318,24 @@ function ReportEditor() {
     [reportId, runSave],
   )
 
-  if (loadError !== null) {
+  if (payload === null) {
     return (
       <main className="mx-auto max-w-5xl p-6">
-        <p className="text-red-900">
-          <strong>{loadError.code}</strong> — {loadError.message}
-        </p>
-        <Link className="underline" to="/">
-          back to the coin list
-        </Link>
+        {loadError === null ? (
+          'Loading…'
+        ) : (
+          <>
+            <p className="text-red-900" role="alert">
+              <strong>{loadError.code}</strong> — {loadError.message}
+            </p>
+            <Link className="underline" to="/">
+              back to the coin list
+            </Link>
+          </>
+        )}
       </main>
     )
   }
-
-  if (payload === null) return <main className="mx-auto max-w-5xl p-6">Loading…</main>
 
   const closed = payload.report.status !== 'draft'
   const common = {
@@ -277,8 +365,22 @@ function ReportEditor() {
           read-only.
         </p>
       ) : null}
+      {/* A failed RE-read keeps the editor on screen: replacing it would discard every section's
+          unsaved text over a read that may succeed on the next try. */}
+      {loadError === null ? null : (
+        <p
+          className="mt-3 border-l-4 border-red-700 bg-red-50 py-1 pl-2 text-sm text-red-900"
+          role="alert"
+        >
+          The last re-read failed: <strong>{loadError.code}</strong> — {loadError.message}. What is
+          on screen may be behind the database; reload the page.
+        </p>
+      )}
       {conflict === null ? null : (
-        <p className="mt-3 border-l-4 border-amber-700 bg-amber-50 py-1 pl-2 text-sm text-amber-900">
+        <p
+          className="mt-3 border-l-4 border-amber-700 bg-amber-50 py-1 pl-2 text-sm text-amber-900"
+          role="alert"
+        >
           {conflict}
         </p>
       )}
@@ -288,25 +390,43 @@ function ReportEditor() {
         </p>
       )}
 
-      <ProductSection {...common} key={`product-${String(seeds.product)}`} onSave={saveProduct} />
+      <ProductSection
+        {...common}
+        error={errors.product ?? null}
+        onSave={saveProduct}
+        seedToken={seeds.product}
+      />
       <LiquiditySection
         {...common}
-        key={`liquidity-${String(seeds.liquidity)}`}
+        error={errors.liquidity ?? null}
         onSave={saveLiquidity}
+        seedToken={seeds.liquidity}
       />
       <NarrativeSection
         {...common}
-        key={`narrative-${String(seeds.narrative)}`}
+        error={errors.narrative ?? null}
         onSave={saveNarrative}
+        seedToken={seeds.narrative}
       />
       <TeamSection
         {...common}
-        key={`team-${String(seeds.team)}`}
+        error={errors.team ?? null}
         onSave={saveTeam}
+        seedToken={seeds.team}
         team={payload.team}
       />
-      <AccrualSection {...common} key={`accrual-${String(seeds.accrual)}`} onSave={saveAccrual} />
-      <RiskSection {...common} key={`risk-${String(seeds.risk)}`} onSave={saveRisk} />
+      <AccrualSection
+        {...common}
+        error={errors.accrual ?? null}
+        onSave={saveAccrual}
+        seedToken={seeds.accrual}
+      />
+      <RiskSection
+        {...common}
+        error={errors.risk ?? null}
+        onSave={saveRisk}
+        seedToken={seeds.risk}
+      />
 
       <Blockers blockers={payload.blockers} />
     </main>
