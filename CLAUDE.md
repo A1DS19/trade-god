@@ -263,7 +263,7 @@ Datasets: `klines_1h/4h/1d`, `funding` (full history), `premium_index_1h` (basis
 `oi_1h` + `long_short_1h` (Binance serves trailing 30d only — refresh ≥ monthly or history is lost),
 `universe` (top-N snapshots with onboard dates), `klines_5m/15m` (intraday top-30 subset only —
 5m trailing ~18 months, 15m since 2023-01-01; **excluded from the default dataset list** so the
-weekly `--top 100` cron never fetches minute data for 100 symbols), `intraday_universe`
+daily `--top 100` cron never fetches minute data for 100 symbols), `intraday_universe`
 (top-30-by-30d-median-quote-volume snapshots).
 
 ```bash
@@ -281,11 +281,14 @@ with no cron): `crontab -l` shows
 `30 5 * * * cd /home/dev/projects/trade-god && /usr/bin/python -m research.backfill --top 100 >> /tmp/research-backfill.log 2>&1`.
 Each run resolves the day's top-100 USDT perps, saves that universe snapshot, and resumes every
 dataset from its high-water mark, so it also keeps stitching the trailing-30d OI / long-short
-window. Check `/tmp/research-backfill.log` when data looks stale.
+window. Check `/tmp/research-backfill.log` when data looks stale — `/tmp` is tmpfs here, so the log
+empties at every reboot.
 
 **Known data quirks:** Binance funding timestamps carry ms jitter (gap checker tolerates 1.5×);
 ICPUSDT premium index has a genuine 77-day hole (2022-07-12 → 2022-09-27); OI/L-S endpoints are
-END-anchored (`startTime`-only returns newest rows — fetchers paginate with explicit windows).
+END-anchored (`startTime`-only returns newest rows — fetchers paginate with explicit windows);
+`oi_1h` and `long_short_1h` have a permanent hole from 2026-06-12 to about 2026-08-24, the months
+with no refresh that fell out of Binance's trailing 30-day window before the 2026-09-22 backfill.
 
 **Signal code:** `research/signals/` keeps the finished studies (carry, xs_momentum, basis_mr,
 intraday). The one module the intraday study still needs is
