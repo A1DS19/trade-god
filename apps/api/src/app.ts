@@ -27,6 +27,7 @@ import {
   citationPost,
   coinPost,
   liquidityPatch,
+  MEASURED_AT_FLOOR,
   narrativePatch,
   productPatch,
   reportParam,
@@ -66,10 +67,29 @@ const BOUNDS = {
   teamMaxPeople: TEAM_MAX_PEOPLE,
   liquidityTiers: ['low', 'medium', 'high'],
   provenanceLabels: ['verified', 'vendor_claim'],
+  measuredAtFloor: MEASURED_AT_FLOOR,
   citableFields: CITABLE_FIELDS,
   teamFieldPrefix: TEAM_FIELD_PREFIX,
   scoringVersion: SCORING_VERSION,
 } as const
+
+/**
+ * An issue path as the operator reads it: list positions count from 1, as the editor numbers its
+ * rows. `members.2.h` pointed the operator at the second person on screen when the fault was in
+ * the third. `issues[].path` keeps the zero-based form for anything that reads it as data.
+ */
+function spokenPath(path: readonly PropertyKey[]): string {
+  return path.map((part) => (typeof part === 'number' ? `#${part + 1}` : String(part))).join('.')
+}
+
+/**
+ * The CHECK constraints an editor save can actually trip, as sentences. Anything not listed still
+ * refuses, by name -- a constraint name is legible to the owner if not to the operator.
+ */
+const CONSTRAINT_SENTENCES: Readonly<Record<string, string>> = {
+  rs_no_dex_pool_excludes_tvl:
+    '"No DEX pool exists" is ticked while a largest-pool TVL is filled in. Clear the five pool boxes or untick it.',
+}
 
 /**
  * ONE refusal shape for every validation failure, and 422 rather than zod-validator's default
@@ -90,14 +110,14 @@ function check<T extends ZodType, Target extends keyof ValidationTargets>(
       path: issue.path.map(String).join('.'),
       message: issue.message,
     }))
-    const first = issues[0]
+    const first = result.error.issues[0]
     return c.json(
       {
         code: 'INVALID',
         message:
           first === undefined
             ? 'the request is not valid'
-            : `${first.path === '' ? 'body' : first.path}: ${first.message}`,
+            : `${first.path.length === 0 ? 'body' : spokenPath(first.path)}: ${first.message}`,
         issues,
       },
       422,
@@ -162,10 +182,11 @@ export function createApp(db: Db, migrations: number) {
         }
         if (sqlstate === '23514' || sqlstate === '23505') {
           const constraint = (error as { cause?: { constraint?: string } }).cause?.constraint
+          const sentence = constraint === undefined ? undefined : CONSTRAINT_SENTENCES[constraint]
           return c.json(
             {
               code: sqlstate === '23514' ? 'CONSTRAINT_REFUSED' : 'DUPLICATE',
-              message: `the database refused it: ${constraint ?? sqlstate}`,
+              message: sentence ?? `the database refused it: ${constraint ?? sqlstate}`,
             },
             422,
           )

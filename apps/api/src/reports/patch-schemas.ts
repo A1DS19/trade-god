@@ -23,6 +23,23 @@ import { isCitableField } from './citable-fields.ts'
 const WHOLE = /^(0|[1-9]\d*)$/
 const DECIMAL = /^(0|[1-9]\d*)(\.\d+)?$/
 
+/*
+ * The refusal names the exact form DECIMAL admits. The old wording -- "digits, with at most one
+ * decimal point" -- was satisfied by '.35', '5.' and '07', all of which DECIMAL refuses, so the
+ * operator was told their input broke a rule it visibly kept.
+ */
+const decimalMessage = (field: string): string =>
+  `${field} must be written like 1250000.5 or 0.35 — digits only, a 0 before any decimal point, ` +
+  'no leading zeros, commas or signs'
+
+/**
+ * No measurement predates the Bitcoin genesis block. Ruled 2026-09-22: a typo in the year --
+ * '0026' for '2026' -- passed `z.iso.datetime`, saved with 200, and read back in the wrong
+ * century, because JavaScript's Date maps years 0-99 onto 1900-1999. An untouched re-save then
+ * wrote the corrupted instant back. This is wire validation, not a frozen formula.
+ */
+export const MEASURED_AT_FLOOR = '2009-01-03T00:00:00Z'
+
 /**
  * A whole-number sub-score, validated by the FROZEN `assertIntegerRange` before it can reach
  * Postgres. That order is load-bearing: `INSERT INTO t (ease integer) VALUES (7.5)` stores 8 on
@@ -36,7 +53,10 @@ export function subScore(field: string, max: number) {
   return z
     .string()
     .trim()
-    .regex(WHOLE, `${field} must be a whole number written in digits`)
+    .regex(
+      WHOLE,
+      `${field} must be a whole number in plain digits, like 7 — no decimal point, sign or leading zero`,
+    )
     .transform(Number)
     .superRefine((parsed, ctx) => {
       try {
@@ -52,7 +72,7 @@ export function money(field: string) {
   return z
     .string()
     .trim()
-    .regex(DECIMAL, `${field} must be a number written in digits, with at most one decimal point`)
+    .regex(DECIMAL, decimalMessage(field))
     .transform(Number)
     .superRefine((parsed, ctx) => {
       try {
@@ -68,7 +88,7 @@ export function fraction(field: string) {
   return z
     .string()
     .trim()
-    .regex(DECIMAL, `${field} must be a number written in digits, with at most one decimal point`)
+    .regex(DECIMAL, decimalMessage(field))
     .transform(Number)
     .superRefine((parsed, ctx) => {
       try {
@@ -105,10 +125,17 @@ export function measured(field: string) {
       url: z.url(`${field} needs a source URL`),
       label: z.enum(['verified', 'vendor_claim']),
       measuredAt: z.iso
-        .datetime({ offset: true })
+        .datetime({
+          offset: true,
+          error: `${field}: measured-at must be ISO 8601 with seconds and an offset, like 2026-09-21T14:32:00+02:00 or 2026-09-21T12:32:00Z`,
+        })
         .refine(
           (text) => Date.parse(text) <= Date.now(),
           `${field}: a measurement cannot be in the future`,
+        )
+        .refine(
+          (text) => Date.parse(text) >= Date.parse(MEASURED_AT_FLOOR),
+          `${field}: a measurement cannot predate ${MEASURED_AT_FLOOR.slice(0, 10)}, the Bitcoin genesis block`,
         )
         .transform((text) => new Date(text)),
     })

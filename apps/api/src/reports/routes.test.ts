@@ -146,6 +146,44 @@ describe('a measured figure', () => {
     expect(refused.status).toBe(422)
   })
 
+  it('cannot predate the genesis block, where a year typo would read back a century off', async () => {
+    const { reportId } = await createDraftReport(handle.db)
+    const refused = await send(`/reports/${reportId}/liquidity`, 'PATCH', {
+      ...blankLiquidity,
+      version: 1,
+      depth: {
+        value: '1000000',
+        source: 'DefiLlama',
+        url: 'https://defillama.com/',
+        label: 'verified',
+        // '0026' for '2026': a valid ISO string that JavaScript's Date reads back as 1926.
+        measuredAt: '0026-09-21T10:00:00+00:00',
+      },
+    })
+    expect(refused.status).toBe(422)
+    expect(((await refused.json()) as Refusal).message).toContain('cannot predate 2009-01-03')
+  })
+
+  it('says in words that "no DEX pool" contradicts a pool figure', async () => {
+    const { reportId } = await createDraftReport(handle.db)
+    const refused = await send(`/reports/${reportId}/liquidity`, 'PATCH', {
+      ...blankLiquidity,
+      version: 1,
+      liquidityNoDexPool: true,
+      topPool: {
+        value: '500000',
+        source: 'DefiLlama',
+        url: 'https://defillama.com/',
+        label: 'verified',
+        measuredAt: '2026-09-20T09:00:00+00:00',
+      },
+    })
+    expect(refused.status).toBe(422)
+    const refusal = (await refused.json()) as Refusal
+    expect(refusal.code).toBe('CONSTRAINT_REFUSED')
+    expect(refusal.message).toContain('"No DEX pool exists" is ticked')
+  })
+
   it('saves with its tier, and the tier is never older than its inputs', async () => {
     const { reportId } = await createDraftReport(handle.db)
     const saved = await send(`/reports/${reportId}/liquidity`, 'PATCH', {
@@ -258,6 +296,30 @@ describe('team citations', () => {
     expect((await dropped.json()) as { citationsRemoved: number }).toMatchObject({
       citationsRemoved: 1,
     })
+  })
+
+  it('names the faulty person counting from 1, as the editor numbers its rows', async () => {
+    const { reportId } = await createDraftReport(handle.db)
+    const person = (name: string, h: string) => ({
+      id: null,
+      name,
+      roles: ['x'],
+      isFounder: name === 'A',
+      h,
+      m: '1',
+      l: '1',
+      summary: 's',
+    })
+    const refused = await send(`/reports/${reportId}/team`, 'PUT', {
+      version: 1,
+      members: [person('A', '1'), person('B', '1'), person('C', '')],
+    })
+    expect(refused.status).toBe(422)
+    const refusal = (await refused.json()) as Refusal & { issues: { path: string }[] }
+    expect(refusal.message.startsWith('members.#3.h: ')).toBe(true)
+    expect(refusal.issues[0]?.path, 'the machine-readable path stays zero-based').toBe(
+      'members.2.h',
+    )
   })
 
   it('refuses two founders by name rather than by constraint', async () => {
