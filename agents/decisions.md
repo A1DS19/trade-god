@@ -34,8 +34,17 @@ a real operator types.
   `new Date(pgText)`, and V8 reads a year below 100 in that text form as two digits. `0026`
   becomes an Invalid Date — null on the wire — so the figure returns with four of five boxes
   filled and an untouched re-save is refused; `0050`–`0099` come back in the 1900s and an
-  untouched re-save writes that into the row. The floor stands.]** Wire validation, not a
-  frozen formula.
+  untouched re-save writes that into the row. The floor stands.]** **[Corrected again after the
+  third round: the mechanism is not a two-digit year. Postgres's text form is not ISO, so V8's
+  legacy parser reads it and takes a leading field of 12 or less as a month — `0001`–`0012`
+  come back as a plausible 2022 date, `0013`–`0031` as null, `0032`–`0049` as 2032–2049 and
+  `0050`–`0099` as the 1900s. Measured on Node v26.8.1. The floor stands.]** Wire validation,
+  not a frozen formula.
+- **A landed write's own answer is applied before the re-read.** Every write route answers
+  `{ version }` plus the scores, team or citations it changed. Applying that first means a
+  failed re-read still leaves the right CAS token and a section re-seeded from what was stored;
+  without it the page kept a spent token, and a team form kept `id: null` for a person the
+  database had just created, so the next team save re-created them and deleted their evidence.
 - **Open, deliberately: five citable fields have no evidence box** — ±2% depth, top-pool TVL,
   capture share, token accrual, annual issuance. The API accepts citations on them; the editor
   cannot show or remove one. Which fields the commit gate demands evidence for is step 6's

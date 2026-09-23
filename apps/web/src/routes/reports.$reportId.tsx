@@ -43,10 +43,27 @@ const CONFLICTS: ReadonlySet<string> = new Set([
 
 const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
-/** The version a landed write produced. Every write route answers `{ version, ... }`. */
-const versionOf = (body: unknown): number | null => {
-  const version = (body as { version?: unknown } | null)?.version
-  return typeof version === 'number' ? version : null
+/**
+ * The payload with a landed write's own answer applied.
+ *
+ * Every write route answers `{ version }` plus the part of the report it changed -- `scores`
+ * (a section patch), `team` (the team put) or `citations` (evidence) -- in the shape the report
+ * read serves, because both are the same rows through the same `c.json`.
+ */
+function withAnswer(payload: ReportPayload, answer: object): ReportPayload {
+  const landed = answer as Partial<Pick<ReportPayload, 'citations' | 'scores' | 'team'>> & {
+    version?: unknown
+  }
+  return {
+    ...payload,
+    citations: landed.citations ?? payload.citations,
+    report:
+      typeof landed.version === 'number'
+        ? { ...payload.report, version: landed.version }
+        : payload.report,
+    scores: landed.scores ?? payload.scores,
+    team: landed.team ?? payload.team,
+  }
 }
 
 /*
@@ -183,35 +200,43 @@ function ReportEditor({ reportId }: { reportId: string }) {
           return refusal
         }
         /*
-         * Take the new token from the landed write's own answer, BEFORE the re-read. If the
-         * re-read then fails, the page still holds the version this write produced -- without
-         * this it held a spent one, and its next save came back STALE_VERSION, blamed on
-         * "another tab", wiping every section. A write from a genuinely other tab is still
-         * caught: this is the version our screen is based on, not the database's latest.
+         * Apply the landed write's own answer, THEN re-read. The answer is authoritative for what
+         * this write changed, so if the re-read fails the page still holds the version this
+         * write produced and the section re-seeds from what the database stored. Without it a
+         * failed re-read left a spent token -- the next save came back STALE_VERSION, blamed on
+         * "another tab" -- and a team form holding `id: null` for a person the database had just
+         * created, whose next save re-created them and deleted their evidence. A write from a
+         * genuinely other tab is still caught: this is the version our screen is based on.
+         *
+         * The body is read best-effort: `response.ok` already says the write landed, and a body
+         * cut on the way back must not be reported as a write that did not happen.
          */
-        const landedVersion = versionOf(await response.json())
-        if (landedVersion !== null) {
-          current.current = { ...report, report: { ...report.report, version: landedVersion } }
+        const answer: unknown = await response.json().catch(() => null)
+        const answered = typeof answer === 'object' && answer !== null
+        if (answered) {
+          const landed = withAnswer(report, answer)
+          current.current = landed
+          setPayload(landed)
         }
         setConflict(null)
         const reread = await load()
-        if (reread !== null) {
-          // Re-seeding now would fill the section from the pre-write payload.
-          return {
-            code: LANDED_UNREAD,
-            message:
-              `saved, but re-reading the report failed (${reread.code} — ${reread.message}). ` +
-              'Reload the page to see what the database holds.',
-          }
-        }
         /*
          * `null` means "no section owns this write": a citation belongs to whichever section
          * renders it, and bumping one fixed token would silently discard unsaved text in THAT
          * section whenever evidence was attached anywhere else on the page. The new row reaches
-         * <Citations> through the `citations` prop that load() refreshed.
+         * <Citations> through the `citations` prop. With neither the answer nor the re-read
+         * there is nothing newer to re-seed from, so the section keeps what was typed.
          */
-        if (section !== null) {
+        if (section !== null && (answered || reread === null)) {
           setSeeds((previous) => ({ ...previous, [section]: previous[section] + 1 }))
+        }
+        if (reread !== null) {
+          return {
+            code: LANDED_UNREAD,
+            message:
+              `saved, but re-reading the report failed (${reread.code} — ${reread.message}). ` +
+              'The blocker list may be behind; reload the page to see what the database holds.',
+          }
         }
         return null
       } catch (error) {

@@ -35,12 +35,12 @@ const decimalMessage = (field: string): string =>
 
 /**
  * No measurement predates the Bitcoin genesis block. Ruled 2026-09-22: a typo in the year --
- * '0026' for '2026' -- passed `z.iso.datetime` and saved with 200, but did not read back.
- * drizzle maps a timestamptz with `new Date(pgText)`, and V8 reads a year below 100 in that text
- * form as a two-digit year: '0026' becomes an Invalid Date (null on the wire), so the figure
- * comes back with four of its five boxes filled and no untouched re-save can pass; '0075' comes
- * back as 1975 and an untouched re-save writes 1975 into the row. Wire validation, not a frozen
- * formula.
+ * '0026' for '2026' -- passed `z.iso.datetime` and saved with 200, but did not read back as
+ * written. drizzle maps a timestamptz with `new Date(pgText)`, and Postgres's text form
+ * ('0026-09-22 12:32:00+00') is not ISO, so V8's legacy parser reads it, taking a leading field
+ * of 12 or less as a MONTH: years 0001-0012 come back as a plausible 2022 date, 0013-0031 as an
+ * Invalid Date (null on the wire), 0032-0049 as 2032-2049 and 0050-0099 as the 1900s. Measured
+ * on Node v26.8.1. Wire validation, not a frozen formula.
  */
 export const MEASURED_AT_FLOOR = '2009-01-03T00:00:00Z'
 
