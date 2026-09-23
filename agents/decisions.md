@@ -46,6 +46,33 @@ question:
 **Reversal cost:** high once reports accumulate — the ledger's rows are only comparable within one
 research version, one signal-rule version and one pinned Jev version.
 
+## 2026-09-22 — How a Jev answer becomes a sub-score, and the data plan
+
+Rulings made after a feasibility pass (five research tracks, each fact-checked; results in the
+session record, not the repo):
+
+- **A band becomes its lowest value.** Jev's Score takes at most 10 levels, and the lessons state
+  the product scales (0–10, 11 values) only as 3–4 bands with no rule inside a band. Jev picks the
+  band; the sub-score is that band's LOWEST value (Ease 7–10 → 7, Hair-on-Fire 5–7 → 5). This is
+  conservative on purpose — a coin passes the 16+ gate only if the low end of Jev's bands passes —
+  and it is new normative content, so it is frozen and versioned with the formulas. The frozen
+  formulas themselves do not change.
+- **Narrative level text is drafted, then approved.** The six narrative sub-scores have one guiding
+  question each and no level descriptions. Claude drafts a description for every integer from the
+  lesson's own question, marked editor-authored; the owner approves it; it is frozen and versioned
+  like the band rule. Team rungs map from framework/05's own lists (H's two "4" rungs become one
+  level).
+- **Jev is not deterministic** (the vendor's own repeat runs keep the top label 90.8% of the time on
+  close calls). Raw probabilities, confidence, the answering model id and the question text's hash
+  are stored with every sub-score, and signals gate on confidence so re-research noise cannot fire
+  an exit warning by itself.
+- **Researcher bench: Claude (web search + fetch) against Perplexity's Search API feeding a model**,
+  on the 20-coin pilot. Neither guarantees a verbatim quote, so the verifier stays the only
+  authority. The owner supplies the keys.
+- **The warehouse is refreshed daily.** It had stopped in mid-July and only 57 of today's top 100
+  were in it. Backfilled today; a cron now runs `python -m research.backfill --top 100` at 05:30
+  local, which also snapshots the day's top-100 universe.
+
 ## 2026-09-22 — Elysia on Bun; shadcn with the Spectral theme
 
 - **Hono → Elysia, Node → Bun.** The owner's ruling. The recommendation had been to keep Hono,

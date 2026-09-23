@@ -276,10 +276,12 @@ python -m research.intraday_universe --top 30 --save   # print + snapshot intrad
 **Rules:** run backfills from the DEV machine only — never a hosted IP (2026-06-05 -1003 ban).
 All endpoints are unsigned (no API keys).
 
-**No refresh cron is installed** — `crontab -l` on this machine says *"no crontab for dev"*, so the
-trailing-30d OI / long-short window is only stitched when a backfill is run by hand. The
-**recommended** entry, if one is ever installed (it is not today), is:
-`0 6 * * 1 cd /home/dev/projects/trade-god && python -m research.backfill --top 100 >> /tmp/research-backfill.log 2>&1`
+**A daily refresh cron is installed** (2026-09-22; the warehouse had silently stopped in mid-July
+with no cron): `crontab -l` shows
+`30 5 * * * cd /home/dev/projects/trade-god && /usr/bin/python -m research.backfill --top 100 >> /tmp/research-backfill.log 2>&1`.
+Each run resolves the day's top-100 USDT perps, saves that universe snapshot, and resumes every
+dataset from its high-water mark, so it also keeps stitching the trailing-30d OI / long-short
+window. Check `/tmp/research-backfill.log` when data looks stale.
 
 **Known data quirks:** Binance funding timestamps carry ms jitter (gap checker tolerates 1.5×);
 ICPUSDT premium index has a genuine 77-day hole (2022-07-12 → 2022-09-27); OI/L-S endpoints are
