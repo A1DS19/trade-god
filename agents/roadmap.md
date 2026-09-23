@@ -39,14 +39,14 @@ one's floor.
       - [x] **Prerequisite, done 2026-09-21:** the seven framework lessons are vendored into
             `framework/` with a provenance README. A frozen formula with no checked-in provenance
             is a formula that stops being auditable the first time someone cleans out Downloads.
-- [ ] **3. Schema, migrations, and the trigger.** `apps/api/src/db/schema.ts`; `drizzle-kit
+- [x] **3. Schema, migrations, and the trigger.** `apps/api/src/db/schema.ts`; `drizzle-kit
       generate` output committed under `apps/api/drizzle/` with `meta/_journal.json`; applied at
       boot from `server.ts` before the port is taken. Then `--custom` for the hand-written
       `BEFORE UPDATE OR DELETE` trigger on `reports`, `report_scores`, `report_team`, `citations`.
       **The trigger gets written on day 2 or it never gets written.** The other four non-negotiable
       schema rules travel with it: `pgEnum` rather than `$type<>()`, `report_scores.scoring_version`,
       `reports.version` compare-and-swap, and `timestamptz` + `jsonb`.
-- [ ] **4. Minimal editor.** `apps/web` — enough UI to type a coin, its scores and its citations,
+- [x] **4. Minimal editor.** `apps/web` — enough UI to type a coin, its scores and its citations,
       with compare-and-swap saves against `reports.version` (409 on a stale write). Minimal means
       minimal; the UI is the disposable layer.
 - [ ] **5. Citation verifier.** Deterministic quote-at-URL check producing `verified` /
@@ -113,3 +113,5 @@ Trade execution of any kind. Alerting, or any deployed service. Auth or multi-us
 Solana. Wallet clustering.
 
 - 2026-09-21 — build-order step 3 complete: schema, three migrations, twelve ENABLE ALWAYS triggers, the role split, CAS. Next: step 4, the minimal editor.
+- 2026-09-22 — step 4 complete: the minimal editor (Plan 3 Tasks 1–7), four adversarial review rounds, a description under every label. Plan 3 Task 8 (docs/CI) folds into Phase 0 of the automated-research plan.
+- 2026-09-22 — reframed to automated research. Spec `docs/superpowers/specs/2026-09-22-automated-research-design.md` (`c55cf73`) awaits the owner's review; once approved, its Phases 0–5 replace steps 5–8 above and this roadmap is rewritten.
