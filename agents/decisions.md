@@ -9,6 +9,55 @@ morning, against an Electron design that the afternoon replaced.
 
 ---
 
+## 2026-09-22 — Reframed: automated research of the top 100, with signals the owner trades by hand
+
+The owner's ruling: the point of this tool is to **automate** researching coins with the
+`framework/` rules — not to be a form a human fills in. Decided in one session, question by
+question:
+
+- **Output: ranked signals** — buy candidate / hold / exit warning / needs review, each with
+  confidence. The owner trades by hand. **Automatic trading waits** until the signals have a
+  validated forward track record; the trading era's −15.19% out-of-sample result is why that order
+  is not negotiable.
+- **Universe: the warehouse's top-100 Binance USDT perps**, a 20-coin pilot first. Their prices are
+  already in the warehouse, so every signal is measurable from day one. Recorded caveat: lesson 01
+  targets coins with low liquidity relative to the cycle, which mostly sit below the top 100.
+- **Pipeline.** Numbers come from data APIs, never from a model. A generative LLM with web search
+  writes a sourced dossier. A claim reaches scoring only if its quote is found on the cited page
+  (string match) AND Jev judges that the page supports it. Jev scores each sub-score against the
+  lesson's own bands. The frozen formulas compute every total, unchanged. A versioned signal rule
+  decides.
+- **Signal rule v1:** the product gate (16+) is required; gate-passers rank by narrative, then team;
+  the top N are buy candidates; an exit warning fires when a flagged coin fails the gate on
+  re-research or its tier or premium worsens; a low-confidence Jev answer marks the coin "needs
+  review" instead of signalling. Versioned like `SCORING_VERSION`, tuned only as a new version.
+- **Liquidity tier** becomes a versioned rule over ±2% depth and pool TVL. Lesson 03 says "make
+  your best guess"; a machine needs a rule, and the rule is recorded with every report.
+- **Cadence:** numbers daily; full research weekly for candidates and flagged coins, monthly for the
+  rest.
+- **Validation is forward-only.** Web pages cannot be replayed for past dates, so a backtest would
+  be look-ahead. The first 30-day read comes about a month after the first run.
+- **Superseded:** "the human types every score" (the EvidenceFinder entry below) no longer holds for
+  automated reports. Hand-written reports through the editor remain, as a comparison track in the
+  ledger. The frozen formulas and their single evaluation point are unaffected.
+- **Known limits, accepted:** Ease of Use is judged from docs and reviews, never hands-on; crypto
+  marketing pages are exactly the input Jev's own documentation says can steer it.
+
+**Reversal cost:** high once reports accumulate — the ledger's rows are only comparable within one
+research version, one signal-rule version and one pinned Jev version.
+
+## 2026-09-22 — Elysia on Bun; shadcn with the Spectral theme
+
+- **Hono → Elysia, Node → Bun.** The owner's ruling. The recommendation had been to keep Hono,
+  because Elysia's advantage is Bun and this repo ran Node; moving to Bun removes that objection.
+  What it costs: the thirteen routes, the typed client (`hc` → Eden Treaty), the route-test harness
+  and the server boot are rewritten. The frozen formulas, the schema, the migrations, the triggers
+  and the role split carry over.
+- **shadcn** (Base UI "base-nova" style, Tailwind v4, oklch tokens), as in the sibling repos. This
+  reverses CLAUDE.md's "no shadcn or any component library". Theme: **Spectral** — indigo night,
+  iris-violet primary, belief strips in a cool-to-violet spectrum with Jev's chosen band glowing;
+  Unbounded over Hanken Grotesk.
+
 ## 2026-09-22 — the editor review, after Plan 3 Task 7
 
 A five-lens review of the finished editor (each finding checked by a skeptic who tried to
@@ -186,7 +235,7 @@ ledger join is a date join. Do not inherit that habit.
 **Reversal cost:** high once reports are committed — the trigger is the guarantee, and data
 written without it cannot be retroactively trusted.
 
-## 2026-09-21 — The LLM is an EvidenceFinder, not a drafter
+## 2026-09-21 — The LLM is an EvidenceFinder, not a drafter **[SUPERSEDED 2026-09-22 for automated reports]**
 
 This replaces section 8 of the design spec outright. The model proposes candidate
 `{url, quote, why}` for a claim; every candidate runs through the deterministic citation verifier
@@ -230,7 +279,7 @@ sitting inside the experiment.
 **Reversal cost:** moderate. Re-adding draft columns is a migration; re-establishing trust in
 scores produced after they existed is not.
 
-## 2026-09-21 — Node, not Bun
+## 2026-09-21 — Node, not Bun **[SUPERSEDED 2026-09-22]**
 
 Runtime is Node v26.8.1. Verified on this machine that Node executes a `.ts` file directly, with no
 flag and no loader — the thing Bun used to be needed for.
@@ -262,7 +311,7 @@ A second implementation of a frozen formula is a second framework.
 
 **Reversal cost:** high. Everything above depends on where the formulas live.
 
-## 2026-09-21 — TanStack Start + Hono + Postgres, and specifically *not* TanStack Start's server as the backend
+## 2026-09-21 — TanStack Start + Hono + Postgres, and specifically *not* TanStack Start's server as the backend **[Hono SUPERSEDED 2026-09-22 by Elysia]**
 
 pnpm workspace, `packages: ["apps/*"]`. `apps/api`: Hono 4.13.8, `@hono/zod-validator` 0.9.1,
 drizzle-orm 0.45.3, drizzle-kit 0.31.11, pg 8.23.0 via `drizzle-orm/node-postgres`, zod 4.6.5,
