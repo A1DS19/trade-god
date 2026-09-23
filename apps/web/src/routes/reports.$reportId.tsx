@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Blockers } from '../editor/Blockers.tsx'
 import { ProductSection } from '../editor/ProductSection.tsx'
 import { RiskSection } from '../editor/RiskSection.tsx'
 import {
@@ -228,9 +229,7 @@ function ReportEditor() {
       <ProductSection {...common} key={`product-${String(seeds.product)}`} onSave={saveProduct} />
       <RiskSection {...common} key={`risk-${String(seeds.risk)}`} onSave={saveRisk} />
 
-      <p className="mt-10 border-t-2 border-neutral-400 pt-4 text-sm text-neutral-600">
-        The blocker list lands in Task 6 and the four remaining sections in Task 7.
-      </p>
+      <Blockers blockers={payload.blockers} />
     </main>
   )
 }
