@@ -1,17 +1,25 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { AccrualSection } from '../editor/AccrualSection.tsx'
 import { Blockers } from '../editor/Blockers.tsx'
+import { LiquiditySection } from '../editor/LiquiditySection.tsx'
+import { NarrativeSection } from '../editor/NarrativeSection.tsx'
 import { ProductSection } from '../editor/ProductSection.tsx'
 import { RiskSection } from '../editor/RiskSection.tsx'
+import { TeamSection } from '../editor/TeamSection.tsx'
 import {
+  type AccrualBody,
   type ApiError,
   type CitationBody,
   client,
   type Fields,
+  type LiquidityBody,
+  type NarrativeBody,
   type ProductBody,
   type ReportPayload,
   type RiskBody,
   readError,
+  type TeamBody,
 } from '../lib/client.ts'
 
 type SectionKey = 'product' | 'liquidity' | 'narrative' | 'team' | 'accrual' | 'risk'
@@ -139,6 +147,39 @@ function ReportEditor() {
     [reportId, runSave],
   )
 
+  const saveLiquidity = useCallback(
+    (fields: Fields<LiquidityBody>) =>
+      runSave('liquidity', (version) =>
+        client.reports[':reportId'].liquidity.$patch({
+          param: { reportId },
+          json: { ...fields, version },
+        }),
+      ),
+    [reportId, runSave],
+  )
+
+  const saveNarrative = useCallback(
+    (fields: Fields<NarrativeBody>) =>
+      runSave('narrative', (version) =>
+        client.reports[':reportId'].narrative.$patch({
+          param: { reportId },
+          json: { ...fields, version },
+        }),
+      ),
+    [reportId, runSave],
+  )
+
+  const saveAccrual = useCallback(
+    (fields: Fields<AccrualBody>) =>
+      runSave('accrual', (version) =>
+        client.reports[':reportId'].accrual.$patch({
+          param: { reportId },
+          json: { ...fields, version },
+        }),
+      ),
+    [reportId, runSave],
+  )
+
   const saveRisk = useCallback(
     (fields: Fields<RiskBody>) =>
       runSave('risk', (version) =>
@@ -147,6 +188,27 @@ function ReportEditor() {
           json: { ...fields, version },
         }),
       ),
+    [reportId, runSave],
+  )
+
+  const saveTeam = useCallback(
+    (fields: Fields<TeamBody>) =>
+      runSave('team', async (version) => {
+        const response = await client.reports[':reportId'].team.$put({
+          param: { reportId },
+          json: { ...fields, version },
+        })
+        if (response.ok) {
+          const body = await response.json()
+          if (body.citationsRemoved > 0) {
+            setNotice(
+              `${String(body.citationsRemoved)} citation(s) belonging to removed team members ` +
+                'were deleted. Evidence pointing at nobody would still have been counted.',
+            )
+          }
+        }
+        return response
+      }),
     [reportId, runSave],
   )
 
@@ -227,6 +289,23 @@ function ReportEditor() {
       )}
 
       <ProductSection {...common} key={`product-${String(seeds.product)}`} onSave={saveProduct} />
+      <LiquiditySection
+        {...common}
+        key={`liquidity-${String(seeds.liquidity)}`}
+        onSave={saveLiquidity}
+      />
+      <NarrativeSection
+        {...common}
+        key={`narrative-${String(seeds.narrative)}`}
+        onSave={saveNarrative}
+      />
+      <TeamSection
+        {...common}
+        key={`team-${String(seeds.team)}`}
+        onSave={saveTeam}
+        team={payload.team}
+      />
+      <AccrualSection {...common} key={`accrual-${String(seeds.accrual)}`} onSave={saveAccrual} />
       <RiskSection {...common} key={`risk-${String(seeds.risk)}`} onSave={saveRisk} />
 
       <Blockers blockers={payload.blockers} />
