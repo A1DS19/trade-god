@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useId } from 'react'
 
 /*
  * THE BROWSER NEVER CALLS Number().
@@ -31,19 +31,86 @@ export const textOf = (value: string | null): string => value ?? ''
  */
 export const numberOf = (value: number | null): string => (value === null ? '' : String(value))
 
+/**
+ * A field's description, in the shape the API serves in `bounds.fieldHelp`. Declared here rather
+ * than imported because apps/web reaches apps/api only through `import type { AppType }`; the
+ * served entries are passed straight into it, so a change to their shape is a compile error.
+ */
+export interface Help {
+  text: readonly string[]
+  source: string
+  details?: { summary: string; lines: readonly string[] }
+}
+
+/** 'framework/02-product-exclusivity.md' -> 'framework/02' */
+const lessonTag = (source: string): string => source.replace(/^(framework\/\d+).*$/, '$1')
+
+/**
+ * A field's description, under its label.
+ *
+ * A lesson quote is shown in quotation marks beside the lesson it comes from -- field-help.test.ts
+ * holds every such line to that file verbatim -- and help this editor wrote is shown plain, so the
+ * two are never mistaken for each other. A scale, the rungs or a how-to fold under a native
+ * <details>. `id` is on the one-line text only: that is what `aria-describedby` reads out.
+ */
+export function FieldHelp({ help, id }: { help: Help; id: string }) {
+  const quoted = help.source !== 'editor'
+  const text = help.text.join(' ')
+  return (
+    <div className="text-xs text-neutral-500">
+      <p id={id}>
+        {quoted ? `“${text}”` : text}
+        {quoted ? <span className="ml-1 text-neutral-400">{lessonTag(help.source)}</span> : null}
+      </p>
+      {help.details === undefined ? null : (
+        <details>
+          <summary className="cursor-pointer">
+            {quoted ? `${help.details.summary} · ${lessonTag(help.source)}` : help.details.summary}
+          </summary>
+          <ul className="ml-4 list-disc">
+            {help.details.lines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  )
+}
+
+/** A field's description and the id its control points at, or neither. */
+export function useHelp(help: Help | undefined): {
+  describedBy: string | undefined
+  note: ReactNode
+} {
+  const id = useId()
+  if (help === undefined) return { describedBy: undefined, note: null }
+  return { describedBy: id, note: <FieldHelp help={help} id={id} /> }
+}
+
 /** A labelled row. A <div> with an aria-label on the control, not a <label> wrapping
  *  {children}: biome's noLabelWithoutControl cannot see through children and fails the build. */
-export function Row({ children, label }: { children: ReactNode; label: string }) {
+export function Row({
+  children,
+  label,
+  note,
+}: {
+  children: ReactNode
+  label: string
+  note: ReactNode
+}) {
   return (
-    <div className="flex flex-wrap items-baseline gap-3 py-1 text-sm">
+    <div className="flex flex-wrap items-baseline gap-x-3 py-1 text-sm">
       <span className="w-72 shrink-0 text-neutral-700">{label}</span>
       {children}
+      {note === null ? null : <div className="basis-full pt-0.5">{note}</div>}
     </div>
   )
 }
 
 export function TextField({
   disabled,
+  help,
   label,
   onChange,
   placeholder,
@@ -51,15 +118,18 @@ export function TextField({
   width = 'w-96',
 }: {
   disabled: boolean
+  help?: Help
   label: string
   onChange: (value: string) => void
   placeholder?: string
   value: string
   width?: string
 }) {
+  const { describedBy, note } = useHelp(help)
   return (
-    <Row label={label}>
+    <Row label={label} note={note}>
       <input
+        aria-describedby={describedBy}
         aria-label={label}
         className={`${width} border border-neutral-400 px-2 py-1 disabled:bg-neutral-100`}
         disabled={disabled}
@@ -78,20 +148,24 @@ export function TextField({
  */
 export function WholeNumberField({
   disabled,
+  help,
   label,
   max,
   onChange,
   value,
 }: {
   disabled: boolean
+  help?: Help
   label: string
   max: number
   onChange: (value: string) => void
   value: string
 }) {
+  const { describedBy, note } = useHelp(help)
   return (
-    <Row label={label}>
+    <Row label={label} note={note}>
       <input
+        aria-describedby={describedBy}
         aria-label={label}
         className="w-20 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
         disabled={disabled}
@@ -107,19 +181,23 @@ export function WholeNumberField({
 export function AmountField({
   caption,
   disabled,
+  help,
   label,
   onChange,
   value,
 }: {
   caption: string
   disabled: boolean
+  help?: Help
   label: string
   onChange: (value: string) => void
   value: string
 }) {
+  const { describedBy, note } = useHelp(help)
   return (
-    <Row label={label}>
+    <Row label={label} note={note}>
       <input
+        aria-describedby={describedBy}
         aria-label={label}
         className="w-48 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
         disabled={disabled}
@@ -134,45 +212,56 @@ export function AmountField({
 
 export function ProseField({
   disabled,
+  help,
   label,
   onChange,
   value,
 }: {
   disabled: boolean
+  help?: Help
   label: string
   onChange: (value: string) => void
   value: string
 }) {
+  const { describedBy, note } = useHelp(help)
   return (
-    <label className="flex flex-col gap-1 py-1 text-sm">
-      <span className="text-neutral-700">{label}</span>
-      <textarea
-        className="border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        rows={2}
-        value={value}
-      />
-    </label>
+    <div className="py-1 text-sm">
+      <label className="flex flex-col gap-1">
+        <span className="text-neutral-700">{label}</span>
+        <textarea
+          aria-describedby={describedBy}
+          className="border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          rows={2}
+          value={value}
+        />
+      </label>
+      {note}
+    </div>
   )
 }
 
 export function ChoiceField({
   disabled,
+  help,
   label,
   onChange,
   options,
   value,
 }: {
   disabled: boolean
+  help?: Help
   label: string
   onChange: (value: string) => void
   options: readonly string[]
   value: string
 }) {
+  const { describedBy, note } = useHelp(help)
   return (
-    <Row label={label}>
+    <Row label={label} note={note}>
       <select
+        aria-describedby={describedBy}
         aria-label={label}
         className="border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
         disabled={disabled}
@@ -193,24 +282,31 @@ export function ChoiceField({
 export function CheckField({
   checked,
   disabled,
+  help,
   label,
   onChange,
 }: {
   checked: boolean
   disabled: boolean
+  help?: Help
   label: string
   onChange: (checked: boolean) => void
 }) {
+  const { describedBy, note } = useHelp(help)
   return (
-    <label className="flex items-center gap-2 py-1 text-sm">
-      <input
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-        type="checkbox"
-      />
-      <span>{label}</span>
-    </label>
+    <div className="py-1 text-sm">
+      <label className="flex items-center gap-2">
+        <input
+          aria-describedby={describedBy}
+          checked={checked}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.checked)}
+          type="checkbox"
+        />
+        <span>{label}</span>
+      </label>
+      {note}
+    </div>
   )
 }
 
@@ -238,33 +334,40 @@ export const isMeasuredEmpty = (form: MeasuredForm): boolean =>
  */
 export function MeasuredFields({
   disabled,
-  floor,
   form,
+  help,
   label,
   onChange,
+  parts,
   provenanceLabels,
 }: {
   disabled: boolean
-  /** The earliest measured-at the API accepts, served in `bounds`. */
-  floor: string
   form: MeasuredForm
+  /** What this figure is. */
+  help: Help
   label: string
   onChange: (form: MeasuredForm) => void
+  /** What each of the five boxes is -- the same for every measured figure. */
+  parts: Record<keyof MeasuredForm, Help>
   provenanceLabels: readonly string[]
 }) {
+  const { describedBy, note } = useHelp(help)
   const set = (key: keyof MeasuredForm) => (next: string) => onChange({ ...form, [key]: next })
   return (
-    <fieldset className="my-2 border border-neutral-300 p-3">
+    <fieldset aria-describedby={describedBy} className="my-2 border border-neutral-300 p-3">
       <legend className="px-1 text-sm text-neutral-700">{label}</legend>
+      <div className="mb-2">{note}</div>
       <AmountField
         caption="plain digits, like 1250000.5 — no commas"
         disabled={disabled}
+        help={parts.value}
         label="Figure (USD)"
         onChange={set('value')}
         value={form.value}
       />
       <TextField
         disabled={disabled}
+        help={parts.source}
         label="Source"
         onChange={set('source')}
         placeholder="CoinGecko, DefiLlama, ..."
@@ -272,6 +375,7 @@ export function MeasuredFields({
       />
       <TextField
         disabled={disabled}
+        help={parts.url}
         label="Source URL"
         onChange={set('url')}
         placeholder="https://"
@@ -279,6 +383,7 @@ export function MeasuredFields({
       />
       <ChoiceField
         disabled={disabled}
+        help={parts.label}
         label="Provenance"
         onChange={set('label')}
         options={provenanceLabels}
@@ -286,6 +391,7 @@ export function MeasuredFields({
       />
       <TextField
         disabled={disabled}
+        help={parts.measuredAt}
         label="Measured at"
         onChange={set('measuredAt')}
         placeholder="2026-09-21T14:32:00+02:00"
@@ -294,9 +400,6 @@ export function MeasuredFields({
       />
       <p className="mt-1 text-xs text-neutral-600">
         All five, or leave all five blank — the database refuses a figure without its provenance.
-        Measured-at is ISO 8601 with seconds and an offset, like 2026-09-21T14:32:00+02:00 or
-        2026-09-21T12:32:00Z; it cannot be in the future or before {floor.slice(0, 10)}. After a
-        save it is shown back in UTC — the same instant.
       </p>
     </fieldset>
   )

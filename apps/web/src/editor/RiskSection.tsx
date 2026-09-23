@@ -3,6 +3,7 @@ import { type Save, type SectionProps, SectionShell, useSection } from './common
 import { blankToNull, ProseField, textOf } from './fields.tsx'
 
 export function RiskSection({
+  bounds,
   disabled,
   error,
   onSave,
@@ -34,6 +35,7 @@ export function RiskSection({
       </p>
       <ProseField
         disabled={disabled}
+        help={bounds.fieldHelp.riskNotes}
         label="Risk notes"
         onChange={(riskNotes) => update({ ...form, riskNotes })}
         value={form.riskNotes}

@@ -1,5 +1,13 @@
+import { useId } from 'react'
 import type { NarrativeBody } from '../lib/client.ts'
-import { Citations, type Save, type SectionProps, SectionShell, useSection } from './common.tsx'
+import {
+  Citations,
+  EvidenceRule,
+  type Save,
+  type SectionProps,
+  SectionShell,
+  useSection,
+} from './common.tsx'
 import { blankToNull, numberOf, ProseField, textOf, WholeNumberField } from './fields.tsx'
 
 const NARRATIVE_ROWS = [
@@ -68,6 +76,7 @@ export function NarrativeSection({
     onSave,
   )
   const { form, update } = section
+  const evidenceId = useId()
 
   return (
     <SectionShell
@@ -83,10 +92,12 @@ export function NarrativeSection({
         least one citation. The total is written by the commit route from narrativeTotal(); it is
         not computed here.
       </p>
+      <EvidenceRule help={bounds.fieldHelp.evidence} id={evidenceId} />
       {NARRATIVE_ROWS.map(([scoreKey, rationaleKey, maxKey, label]) => (
         <div key={scoreKey}>
           <WholeNumberField
             disabled={disabled}
+            help={bounds.fieldHelp[scoreKey]}
             label={label}
             max={bounds.narrativeMax[maxKey]}
             onChange={(value) => update({ ...form, [scoreKey]: value })}
@@ -94,12 +105,14 @@ export function NarrativeSection({
           />
           <ProseField
             disabled={disabled}
+            help={bounds.fieldHelp.narrativeRationale}
             label={`${label} rationale`}
             onChange={(value) => update({ ...form, [rationaleKey]: value })}
             value={form[rationaleKey]}
           />
           <Citations
             citations={citations}
+            describedBy={evidenceId}
             disabled={disabled}
             field={bounds.citableFields[scoreKey]}
             label={`Evidence for ${label}`}

@@ -1,5 +1,28 @@
+import { Fragment, useId } from 'react'
 import type { TeamBody, TeamRow } from '../lib/client.ts'
-import { Citations, type Save, type SectionProps, SectionShell, useSection } from './common.tsx'
+import {
+  Citations,
+  EvidenceRule,
+  type Save,
+  type SectionProps,
+  SectionShell,
+  useSection,
+} from './common.tsx'
+import { FieldHelp } from './fields.tsx'
+
+/** Every row repeats the same controls, so their descriptions are listed once, above the rows. */
+/** The legend spells the rungs as the lesson does; the wire and the bounds use lower case. */
+const RUNG_KEY = { H: 'h', M: 'm', L: 'l' } as const
+
+const LEGEND = [
+  ['teamName', 'Name'],
+  ['teamRoles', 'Roles'],
+  ['teamFounder', 'Founder'],
+  ['teamH', 'H'],
+  ['teamM', 'M'],
+  ['teamL', 'L'],
+  ['teamSummary', 'Summary'],
+] as const
 
 type MemberWire = TeamBody['members'][number]
 
@@ -67,6 +90,9 @@ export function TeamSection({
     onSave,
   )
   const { form, update } = section
+  const legendId = useId()
+  const evidenceId = useId()
+  const describedBy = (key: (typeof LEGEND)[number][0]) => `${legendId}-${key}`
 
   const patch = (index: number, next: Partial<MemberForm>) =>
     update(form.map((person, at) => (at === index ? { ...person, ...next } : person)))
@@ -98,6 +124,16 @@ export function TeamSection({
         Saving replaces the whole set in one transaction, and the order on screen is the order
         stored.
       </p>
+      <dl className="mb-3 grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1 text-sm">
+        {LEGEND.map(([key, term]) => (
+          <Fragment key={key}>
+            <dt className="text-neutral-700">{term}</dt>
+            <dd>
+              <FieldHelp help={bounds.fieldHelp[key]} id={describedBy(key)} />
+            </dd>
+          </Fragment>
+        ))}
+      </dl>
       <ul className="space-y-2">
         {form.map((person, index) => (
           <li
@@ -107,6 +143,7 @@ export function TeamSection({
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="w-6 text-neutral-500">{index + 1}</span>
               <input
+                aria-describedby={describedBy('teamName')}
                 aria-label={personLabel(index, 'name')}
                 className="w-40 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
                 disabled={disabled}
@@ -115,6 +152,7 @@ export function TeamSection({
                 value={person.name}
               />
               <input
+                aria-describedby={describedBy('teamRoles')}
                 aria-label={personLabel(index, 'roles, comma separated')}
                 className="w-56 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
                 disabled={disabled}
@@ -124,6 +162,7 @@ export function TeamSection({
               />
               <label className="flex items-center gap-1">
                 <input
+                  aria-describedby={describedBy('teamFounder')}
                   aria-label={personLabel(index, 'founder')}
                   checked={person.isFounder}
                   disabled={disabled}
@@ -135,19 +174,20 @@ export function TeamSection({
                 />
                 founder
               </label>
-              {(['h', 'm', 'l'] as const).map((rung) => (
+              {(['H', 'M', 'L'] as const).map((rung) => (
                 <label className="flex items-center gap-1 text-xs" key={rung}>
-                  {rung.toUpperCase()} 0–{bounds.teamRungMax[rung]}
+                  {rung} 0–{bounds.teamRungMax[RUNG_KEY[rung]]}
                   <input
+                    aria-describedby={describedBy(`team${rung}`)}
                     aria-label={personLabel(
                       index,
-                      `${rung.toUpperCase()}, whole number 0 to ${String(bounds.teamRungMax[rung])}`,
+                      `${rung}, whole number 0 to ${String(bounds.teamRungMax[RUNG_KEY[rung]])}`,
                     )}
                     className="w-12 border border-neutral-400 px-1 py-1 disabled:bg-neutral-100"
                     disabled={disabled}
                     inputMode="numeric"
-                    onChange={(event) => patch(index, { [rung]: event.target.value })}
-                    value={person[rung]}
+                    onChange={(event) => patch(index, { [RUNG_KEY[rung]]: event.target.value })}
+                    value={person[RUNG_KEY[rung]]}
                   />
                 </label>
               ))}
@@ -180,6 +220,7 @@ export function TeamSection({
               </button>
             </div>
             <input
+              aria-describedby={describedBy('teamSummary')}
               aria-label={personLabel(index, 'prior-experience summary')}
               className="mt-2 w-full border border-neutral-400 px-2 py-1 text-sm disabled:bg-neutral-100"
               disabled={disabled}
@@ -207,6 +248,7 @@ export function TeamSection({
         counted it.
       */}
       <div className="mt-4">
+        <EvidenceRule help={bounds.fieldHelp.evidence} id={evidenceId} />
         {team.length === 0 ? (
           <p className="text-sm text-neutral-600">
             Save the team before attaching evidence — a citation can only name a person the database
@@ -216,6 +258,7 @@ export function TeamSection({
         {team.map((person) => (
           <Citations
             citations={citations}
+            describedBy={evidenceId}
             disabled={disabled}
             field={`${bounds.teamFieldPrefix}${person.id}`}
             key={person.id}

@@ -1,5 +1,13 @@
+import { useId } from 'react'
 import type { ProductBody } from '../lib/client.ts'
-import { Citations, type Save, type SectionProps, SectionShell, useSection } from './common.tsx'
+import {
+  Citations,
+  EvidenceRule,
+  type Save,
+  type SectionProps,
+  SectionShell,
+  useSection,
+} from './common.tsx'
 import { blankToNull, numberOf, ProseField, textOf, WholeNumberField } from './fields.tsx'
 
 interface ProductForm {
@@ -47,6 +55,7 @@ export function ProductSection({
     onSave,
   )
   const { form, update } = section
+  const evidenceId = useId()
 
   return (
     <SectionShell
@@ -62,14 +71,17 @@ export function ProductSection({
         {bounds.productGateThreshold}+, decided inside the commit transaction (build-order step 6) —
         nothing on this page adds them up.
       </p>
+      <EvidenceRule help={bounds.fieldHelp.evidence} id={evidenceId} />
       <ProseField
         disabled={disabled}
+        help={bounds.fieldHelp.overviewSentence}
         label="One-sentence overview"
         onChange={(value) => update({ ...form, overviewSentence: value })}
         value={form.overviewSentence}
       />
       <WholeNumberField
         disabled={disabled}
+        help={bounds.fieldHelp.productEase}
         label="Ease of Use"
         max={bounds.productSubScoreMax}
         onChange={(value) => update({ ...form, productEase: value })}
@@ -77,12 +89,14 @@ export function ProductSection({
       />
       <ProseField
         disabled={disabled}
+        help={bounds.fieldHelp.productRationale}
         label="Ease of Use rationale"
         onChange={(value) => update({ ...form, productEaseRationale: value })}
         value={form.productEaseRationale}
       />
       <Citations
         citations={citations}
+        describedBy={evidenceId}
         disabled={disabled}
         field={bounds.citableFields.productEase}
         label="Evidence for Ease of Use"
@@ -91,6 +105,7 @@ export function ProductSection({
       />
       <WholeNumberField
         disabled={disabled}
+        help={bounds.fieldHelp.productHairFire}
         label="Hair-on-Fire (gate field)"
         max={bounds.productSubScoreMax}
         onChange={(value) => update({ ...form, productHairFire: value })}
@@ -98,12 +113,14 @@ export function ProductSection({
       />
       <ProseField
         disabled={disabled}
+        help={bounds.fieldHelp.productRationale}
         label="Hair-on-Fire rationale"
         onChange={(value) => update({ ...form, productHairFireRationale: value })}
         value={form.productHairFireRationale}
       />
       <Citations
         citations={citations}
+        describedBy={evidenceId}
         disabled={disabled}
         field={bounds.citableFields.productHairFire}
         label="Evidence for Hair-on-Fire"
@@ -112,6 +129,7 @@ export function ProductSection({
       />
       <WholeNumberField
         disabled={disabled}
+        help={bounds.fieldHelp.productExclusivity}
         label="Exclusivity Factor"
         max={bounds.productSubScoreMax}
         onChange={(value) => update({ ...form, productExclusivity: value })}
@@ -119,12 +137,14 @@ export function ProductSection({
       />
       <ProseField
         disabled={disabled}
+        help={bounds.fieldHelp.productRationale}
         label="Exclusivity Factor rationale"
         onChange={(value) => update({ ...form, productExclusivityRationale: value })}
         value={form.productExclusivityRationale}
       />
       <Citations
         citations={citations}
+        describedBy={evidenceId}
         disabled={disabled}
         field={bounds.citableFields.productExclusivity}
         label="Evidence for Exclusivity"

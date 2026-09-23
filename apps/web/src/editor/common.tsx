@@ -8,7 +8,14 @@ import type {
   LiquidityBody,
   Scores,
 } from '../lib/client.ts'
-import { isMeasuredEmpty, type MeasuredForm, numberOf, textOf } from './fields.tsx'
+import {
+  FieldHelp,
+  type Help,
+  isMeasuredEmpty,
+  type MeasuredForm,
+  numberOf,
+  textOf,
+} from './fields.tsx'
 
 export type Save<B> = (fields: Fields<B>) => Promise<ApiError | null>
 
@@ -183,8 +190,22 @@ const STATUS_CLASS: Record<string, string> = {
  * transcribed exactly, and an unconditional clear meant a refused add silently ate it. For the
  * same reason nothing above this component remounts it: useSection re-seeds its form in place.
  */
+/**
+ * The framework's evidence rule, once per section. Every <Citations> in the section points its
+ * boxes at this id rather than repeating the same sentence under each of up to six blocks.
+ */
+export function EvidenceRule({ help, id }: { help: Help; id: string }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-baseline gap-x-2 text-sm">
+      <span className="text-neutral-700">Evidence</span>
+      <FieldHelp help={help} id={id} />
+    </div>
+  )
+}
+
 export function Citations({
   citations,
+  describedBy,
   disabled,
   field,
   label,
@@ -192,6 +213,8 @@ export function Citations({
   onRemove,
 }: {
   citations: Citation[]
+  /** The section's <EvidenceRule> id. */
+  describedBy: string
   disabled: boolean
   field: string
   label: string
@@ -263,6 +286,7 @@ export function Citations({
       </ul>
       <div className="mt-1 flex flex-wrap gap-2">
         <input
+          aria-describedby={describedBy}
           aria-label={`${label}: source URL`}
           className="w-72 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
           disabled={disabled || busy}
@@ -274,6 +298,7 @@ export function Citations({
           value={url}
         />
         <input
+          aria-describedby={describedBy}
           aria-label={`${label}: exact quote`}
           className="w-96 border border-neutral-400 px-2 py-1 disabled:bg-neutral-100"
           disabled={disabled || busy}
@@ -307,6 +332,15 @@ export function Citations({
 // ---------------------------------------------------------------------------
 // Measured figures, shared by liquidity and accrual
 // ---------------------------------------------------------------------------
+
+/** What each of a measured figure's five boxes is; the same for every figure. */
+export const measuredHelp = (bounds: Bounds): Record<keyof MeasuredForm, Help> => ({
+  value: bounds.fieldHelp.measuredValue,
+  source: bounds.fieldHelp.measuredSource,
+  url: bounds.fieldHelp.measuredUrl,
+  label: bounds.fieldHelp.measuredLabel,
+  measuredAt: bounds.fieldHelp.measuredAt,
+})
 
 export function seedMeasured(
   value: number | null,

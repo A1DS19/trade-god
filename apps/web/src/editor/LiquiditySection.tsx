@@ -1,5 +1,6 @@
 import type { Fields, LiquidityBody } from '../lib/client.ts'
 import {
+  measuredHelp,
   type Save,
   type SectionProps,
   SectionShell,
@@ -82,28 +83,32 @@ export function LiquiditySection({
       </p>
       <MeasuredFields
         disabled={disabled}
-        floor={bounds.measuredAtFloor}
         form={form.depth}
+        help={bounds.fieldHelp.liquidityDepth2pctUsd}
         label="±2% depth across CEXs"
         onChange={(depth) => update({ ...form, depth })}
+        parts={measuredHelp(bounds)}
         provenanceLabels={bounds.provenanceLabels}
       />
       <MeasuredFields
         disabled={disabled}
-        floor={bounds.measuredAtFloor}
         form={form.topPool}
+        help={bounds.fieldHelp.liquidityTopPoolTvlUsd}
         label="Largest DEX pool TVL"
         onChange={(topPool) => update({ ...form, topPool })}
+        parts={measuredHelp(bounds)}
         provenanceLabels={bounds.provenanceLabels}
       />
       <CheckField
         checked={form.liquidityNoDexPool}
         disabled={disabled}
+        help={bounds.fieldHelp.liquidityNoDexPool}
         label="No DEX pool exists (different from 'not measured') — leave the pool figure's five boxes blank"
         onChange={(liquidityNoDexPool) => update({ ...form, liquidityNoDexPool })}
       />
       <ChoiceField
         disabled={disabled}
+        help={bounds.fieldHelp.liquidityTier}
         label="Liquidity tier"
         onChange={(liquidityTier) => update({ ...form, liquidityTier })}
         options={bounds.liquidityTiers}
@@ -111,6 +116,7 @@ export function LiquiditySection({
       />
       <ProseField
         disabled={disabled}
+        help={bounds.fieldHelp.liquidityJustification}
         label="Why that tier"
         onChange={(liquidityJustification) => update({ ...form, liquidityJustification })}
         value={form.liquidityJustification}

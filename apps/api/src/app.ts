@@ -21,13 +21,13 @@ import {
   sqlstateOf,
   UnknownTeamMemberError,
 } from './reports/errors.ts'
+import { FIELD_HELP } from './reports/field-help.ts'
 import {
   accrualPatch,
   citationParam,
   citationPost,
   coinPost,
   liquidityPatch,
-  MEASURED_AT_FLOOR,
   narrativePatch,
   productPatch,
   reportParam,
@@ -67,7 +67,7 @@ const BOUNDS = {
   teamMaxPeople: TEAM_MAX_PEOPLE,
   liquidityTiers: ['low', 'medium', 'high'],
   provenanceLabels: ['verified', 'vendor_claim'],
-  measuredAtFloor: MEASURED_AT_FLOOR,
+  fieldHelp: FIELD_HELP,
   citableFields: CITABLE_FIELDS,
   teamFieldPrefix: TEAM_FIELD_PREFIX,
   scoringVersion: SCORING_VERSION,
