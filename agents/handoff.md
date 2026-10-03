@@ -65,8 +65,9 @@ trading with a trained model instead, and asked for a ruling on keeping or delet
 
 ## State
 
-- **Git:** branch `main`, pushed through `85da876`. Four newer commits are local:
-  `3387d37`, `93314a8`, `ea52245`, `c045b56`.
+- **Git:** branch `main`, pushed through `85da876`. Six newer commits are local and not pushed:
+  `3387d37`, `93314a8`, `ea52245`, `c045b56`, `cc9fbe2` and this handoff. The owner has not yet
+  said whether to push them.
 - **Tests:** pytest, 111 passing.
 - **Postgres:** the `coinpicks-db` container is stopped, and its volume `coinpicks_data` is kept.
 - **Deletions blocked by permissions:** these untracked folders are gitignored, regenerable and
@@ -78,7 +79,10 @@ trading with a trained model instead, and asked for a ruling on keeping or delet
 
 ## Next session
 
-1. **The owner reviews the spec.** Any change is made before any real-data run.
+Three answers from the owner are pending: the spec review, whether to push, and the TypeSafe key.
+
+1. **The owner reviews the spec.** Any change is made before any real-data run. Ask about pushing
+   the local commits at the same time.
 2. **`writing-plans` for phase 1: the TypeSafe recorder and its two paper books.**
    - It needs `TYPESAFE_API_KEY` and confirmed access (the site mentioned a waitlist while the
      console showed billing).
