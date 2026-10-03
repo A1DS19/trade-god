@@ -1,117 +1,74 @@
 # Roadmap
 
 ## Goal
-A research tool that makes the deterministic parts of the CoinPicks framework deterministic, makes
-its citation requirement mechanical, and accumulates enough point-in-time reports to test whether
-the framework's scores predict anything. The honest possible answer is "no". That is a result worth
-having, and the system is built so that answer would be legible rather than deniable.
 
-**Phase A has exactly two sub-phases**, and the spec's Decisions table is the normative statement of
-them: **A.1** = frozen scoring, editor, verifier, commit gate, ledger. **A.2** = the viem chain
-layer. There is no A.3 — the spec's Decisions table scopes Phase A as A.1 and A.2 only. An earlier
-draft of this file invented one for the forward-return join, the
-`research` GRANT and `rescore.ts`; those are not a phase, they are how A.1's ledger step (6) gets
-finished, and they are folded back into it below.
+A model lab: train models on the warehouse, and judge each one under pre-registration against
+holding BTC, after costs.
+- The honest possible answer is "no edge". That is a result worth having, and every experiment is
+  built so that answer would be legible rather than deniable.
+- Real money waits for a forward record. Even then, it is a slice of under $1,000.
+
+Ruling of 2026-10-02 (`agents/decisions.md`): CoinPicks is archived, there is no seconds-scale
+trading, and the first experiment runs at daily-to-weekly horizons.
 
 ---
 
-## Phase A.1 — report #1
+## Experiment 1 — the daily model lab
 
-The eight steps, in order. Nothing here is parallelisable in a useful way; each step is the next
-one's floor.
+The question: can a model trained on this warehouse beat holding BTC after costs, at
+daily-to-weekly horizons?
 
-- [x] **1. Archive the trading stack.** `app/{intraday,api,db,config.py}`, `alembic/` (six
-      migrations, 001–006), the two root entrypoints `api_main.py` and `intraday_main.py`
-      (`main.py` and `swing_main.py` went in July), `docker-compose.yml`, `Dockerfile` and
-      `tests/{intraday,api}/` to `legacy/`. `app/intraday/strategy.py` went to
-      `research/signals/intraday/strategy_core.py` instead — it is the one module `research/` still
-      imports — and its test moved with it to `tests/research/test_strategy_core.py`.
-      `research/v2_eval/` went to `legacy/` too; it had been broken since 2026-07-16 (it imports
-      `app.swing.backtest_replay`) and nothing tested it, so the suite stayed green over a dead
-      module. Suite after the move: **111 passed**, and `tests/` now holds only `tests/research/`
-      and `conftest.py`.
-- [x] **2. Frozen scoring core.** — DONE 2026-09-21. `apps/api/src/scoring/{ranges,product,narrative,team,accrual}.ts`
-      — pure functions, no imports from the rest of the app, reject out-of-range instead of
-      clamping, integer sub-scores. Built in a bare `typescript` + `vitest`
-      package before any Hono, Drizzle or Postgres exists (Plan 1, Tasks 5 and 6). Tested first and
-      hardest; this is a money path. The framework's two worked examples are the acceptance test:
-      team → 7.25, ARB narrative → 26.5. **Shipped:** 24 vitest tests green, `tsc --noEmit` and Biome clean; commits `fe01add` (scaffold), `cb4b6cd` (product + narrative), `b85be59` (team + accrual).
-      - [x] **Prerequisite, done 2026-09-21:** the seven framework lessons are vendored into
-            `framework/` with a provenance README. A frozen formula with no checked-in provenance
-            is a formula that stops being auditable the first time someone cleans out Downloads.
-- [x] **3. Schema, migrations, and the trigger.** `apps/api/src/db/schema.ts`; `drizzle-kit
-      generate` output committed under `apps/api/drizzle/` with `meta/_journal.json`; applied at
-      boot from `server.ts` before the port is taken. Then `--custom` for the hand-written
-      `BEFORE UPDATE OR DELETE` trigger on `reports`, `report_scores`, `report_team`, `citations`.
-      **The trigger gets written on day 2 or it never gets written.** The other four non-negotiable
-      schema rules travel with it: `pgEnum` rather than `$type<>()`, `report_scores.scoring_version`,
-      `reports.version` compare-and-swap, and `timestamptz` + `jsonb`.
-- [x] **4. Minimal editor.** `apps/web` — enough UI to type a coin, its scores and its citations,
-      with compare-and-swap saves against `reports.version` (409 on a stale write). Minimal means
-      minimal; the UI is the disposable layer.
-- [ ] **5. Citation verifier.** Deterministic quote-at-URL check producing `verified` /
-      `near_miss` / `failed` / `unverifiable_js`. This is the gate's teeth and it runs before a
-      human ever sees a candidate.
-- [ ] **6. Commit gate and ledger view.** `POST /reports/:id/commit`: one transaction that
-      re-checks every precondition, evaluates the frozen formulas, writes `report_scores` with its
-      `scoring_version`, and flips `status`. Its e2e test gets **real Postgres or it does not
-      run** — a memory store has no transactions, no CHECK constraints and no triggers, so a green
-      run against one proves nothing about atomicity or immutability.
-
-      The ledger is what the gate is for, so the join is part of this step rather than a later
-      phase:
-      - [ ] `research/forward_returns.py` — **does not exist yet.** psycopg 3.2.13, select
-            committed reports, compute 30/90/180/365-day returns from the parquet warehouse,
-            `INSERT ... ON CONFLICT (report_id, horizon_days) DO UPDATE`. Horizons are frozen.
-      - [ ] The `research` Postgres role: `SELECT` on
-            `coins`/`reports`/`report_scores`/`report_team`/`citations`, `INSERT, UPDATE` on
-            `forward_returns`, nothing else. Python owns no table's shape, and that is enforced by
-            a GRANT rather than by good manners.
-      - [ ] `node apps/api/scripts/rescore.ts` — re-deriving a committed number runs the
-            authoritative TypeScript. Python never recomputes a score.
-      - [ ] Refresh the warehouse before the first join. OI and long/short are trailing-30-day
-            only; nothing earlier in A.1 needs them, this does.
-
-      The join is worth running long before it is worth *believing*. One report tells you the
-      plumbing works; the verdict needs a cohort.
-- [ ] **7. Bench three models on one real coin section.** `kimi-k3`, `deepseek-v4.1-flash`,
-      `qwen3.8-max` through the DashScope international endpoint. Record the result and only then
-      pin `DEFAULT_PROVIDER` — the in-code constant in `apps/api/src/evidence/providers.ts`, whose
-      environment override is `COINPICKS_MODEL_PROVIDER`. Never pin a default on price or on vibes.
-- [ ] **8. Wire the EvidenceFinder.** Candidates only: `{url, quote, why}`, verified before
-      display, `selected_at` set by the human, `origin='model'`. Plus the test asserting that no
-      LLM-reachable path writes to `report_scores`.
-
-**Honest sizing: 9–10 working days to report #1**, chain layer excluded.
-
----
-
-## Phase A.2 — the chain layer
-
-- [ ] `apps/api/src/chain/`, viem 2.56.8, **same Node process — no sidecar**: pool census, safety
-      checks, issuance, holder distribution, accrual-contract discovery, Multicall3 batching, and
-      the poison-pair drop (discard any pool priced more than 5% from the TVL-weighted median).
-
-Deliberately after report #1. A report can be written with vendor liquidity figures and a note;
-it cannot be written without scores, citations and a commit gate.
-
----
-
-## Phase B — market direction (recorded, not built)
-
-Pillar reports and the `Signal = ((P − 50) ÷ 50) × Quality × Impact` machinery over five locked
-windows (1M / 3M / 6M / 1Y / 3Y), aggregating by pillar weight into a per-window call.
-
-Written down so the schema does not accidentally foreclose it. Not designed, not scheduled, and
-not to be started before A.1's ledger has produced a cohort worth aggregating.
+- [ ] **1. Pre-registration spec.**
+      - File: `docs/superpowers/specs/2026-10-02-daily-model-lab-design.md`.
+      - Fixes, before any real-data run: universe, features, target, model, trial budget, costs,
+        gates, the sealed OOS window, and the stop conditions.
+      - The owner reviews it before any plan is written.
+- [ ] **2. Point-in-time universe.**
+      - Closes Phase C's open gap: today's top 100 is survivorship bias.
+      - Backfill every USDT perp, including delisted ones, from Binance's public archive.
+      - Rank by trailing quote volume and apply eligibility from the next day.
+- [ ] **3. Features and labels,** as frozen in the spec. Every one is tested against look-ahead the
+      way `siglib`'s contract tests already are.
+- [ ] **4. Train-only search.**
+      - Purged and embargoed walk-forward.
+      - Every trial counted.
+      - Costs from `research/siglib/costs.py`.
+- [ ] **5. Freeze, then unseal.**
+      - Commit `frozen_params.json` first; the OOS evaluation is a separate, later commit.
+      - The unseal is one-shot and judged mechanically against the gates, with BTC buy-and-hold
+        and a slow trend rule as baselines.
+- [ ] **6. Verdict.**
+      - If it fails, it is recorded like Phases C, 2a and 2b, and the lab picks its next question.
+      - If it passes, a forward paper record starts. Its length and pass rule are fixed in the spec.
 
 ---
 
 ## Explicitly not planned
 
-Trade execution of any kind. Alerting, or any deployed service. Auth or multi-user anything.
-Solana. Wallet clustering.
+- Seconds-scale or intraday trading (ruled out 2026-10-02).
+- Trade execution of any kind before a forward record exists.
+- CoinPicks, archived in `legacy/coinpicks/`.
+- Any deployed service.
+
+---
+
+## Archived: CoinPicks (2026-09-21 → 2026-10-02)
+
+A fundamental-scoring research tool, built through build-order step 4 and then retired:
+- the frozen scoring core;
+- the schema with immutability triggers and the role split;
+- the minimal editor, after four adversarial review rounds.
+
+Steps 5–8 (verifier, commit gate and ledger, model bench, EvidenceFinder) were never built. The
+automated-research reframe (`docs/superpowers/specs/2026-09-22-automated-research-design.md`) was
+never approved. The code and its vocabulary are in `legacy/coinpicks/`, and the database volume
+`coinpicks_data` is kept.
+
+---
+
+## Log
 
 - 2026-09-21 — build-order step 3 complete: schema, three migrations, twelve ENABLE ALWAYS triggers, the role split, CAS. Next: step 4, the minimal editor.
 - 2026-09-22 — step 4 complete: the minimal editor (Plan 3 Tasks 1–7), four adversarial review rounds, a description under every label. Plan 3 Task 8 (docs/CI) folds into Phase 0 of the automated-research plan.
 - 2026-09-22 — reframed to automated research. Spec `docs/superpowers/specs/2026-09-22-automated-research-design.md` (`c55cf73`) awaits the owner's review; once approved, its Phases 0–5 replace steps 5–8 above and this roadmap is rewritten.
+- 2026-10-02 — CoinPicks archived to `legacy/coinpicks/` (`3387d37`) after a three-track research pass (`docs/superpowers/specs/2026-10-02-trading-model-research-findings.md`). The repo becomes a model lab; Experiment 1 is the daily model lab.
