@@ -15,7 +15,7 @@ downloads/
 eggs/
 .eggs/
 # Anchored: a bare `lib/` matches that name at ANY depth and would silently
-# swallow apps/api/src/lib/ and apps/web/src/lib/.
+# swallow legacy/coinpicks/apps/api/src/lib/ and legacy/coinpicks/apps/web/src/lib/.
 /lib/
 /lib64/
 parts/
@@ -225,7 +225,7 @@ research/warehouse/
 # Playwright MCP session scratch
 .playwright-mcp/
 
-# JavaScript / pnpm workspace (apps/api, apps/web).
+# JavaScript / pnpm workspace (archived in legacy/coinpicks/apps/).
 # .env, dist/ and build/ are already covered by the Python template above.
 node_modules/
 .output/

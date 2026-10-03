@@ -9,7 +9,60 @@ morning, against an Electron design that the afternoon replaced.
 
 ---
 
-## 2026-09-22 — Reframed: automated research of the top 100, with signals the owner trades by hand
+## 2026-10-02 — CoinPicks retired; no seconds-scale trading; the repo becomes a daily-horizon model lab
+
+The owner asked three things:
+- was CoinPicks really the best way to invest;
+- could high-frequency trading with a trained model work instead;
+- should the repo be kept or deleted.
+
+The answer rests on three research tracks plus numbers from this warehouse (findings:
+`docs/superpowers/specs/2026-10-02-trading-model-research-findings.md`). The owner's own answers:
+the goal is to build a trading model, and "no edge found" is acceptable; capital is under $1,000;
+"high frequency" means seconds or less.
+
+- **The repo is kept.** A model lab needs exactly what is here:
+  - the warehouse (1.1 GB, 18.3M rows, refreshed by a daily cron);
+  - `research/siglib`;
+  - the pre-register-then-unseal discipline.
+
+  Deleting the repo would have destroyed all three. The 41 unpushed commits were pushed first.
+- **CoinPicks is retired and archived to `legacy/coinpicks/`, not deleted.** The archive holds the
+  apps, the vendored lessons, the workspace config and the compose file. Three reasons:
+  - In this warehouse, about 9 in 10 surviving altcoins lagged BTC from every start year
+    2022–2025, with the median altcoin at −11% to −82%. Survivor bias flatters them.
+  - The course framework carries no performance evidence, and it targets the segment with the
+    worst base rates.
+  - The automated build needed four paid APIs and a new stack, and could only be validated
+    forward, at 30–365 days.
+
+  The stopped `coinpicks-db` container and its `coinpicks_data` volume are kept.
+- **No seconds-scale trading, built or measured.** HFT profit comes from fee tier, rebates,
+  co-location and order flow, and a model buys none of them.
+  - At VIP-0, a BTC round trip costs 9–11 bp taker or 3–4 bp maker. The predictable component of a
+    move is about 0.25 bp at 1 second and at most 1.3 bp at 15 minutes.
+  - Resting maker orders on Binance BTCUSDT lose about 0.8 bp per fill to adverse selection, even
+    at zero latency.
+  - Rebates need about $40–110M a day of maker volume.
+  - This repo's own 15-minute result hit the same wall: a 0.08% edge against a 0.16% hurdle,
+    which became −15.19% out-of-sample.
+
+  Re-open this only on new evidence that changes the cost side, never on a better model.
+- **The first experiment is a daily-to-weekly model on this warehouse.** At that horizon costs stop
+  deciding the answer, and published after-cost results exist, though they are small, decaying and
+  contested. It is pre-registered before the first real run and paper-only. Real money comes only
+  after a forward record, and then only a slice of the under-$1k.
+- **The owner's own investing stays out of the lab.** The evidence-backed approach needs no code:
+  hold BTC long term, buy on a cheap schedule, use no leverage, and size the position to survive
+  a 77–93% drawdown.
+- The CoinPicks entries below (2026-09-21 and 2026-09-22) stay as written. They now describe
+  archived code.
+
+**Reversal cost:**
+- CoinPicks: low. `git mv` it back; the database volume is intact.
+- The HFT ruling: costs nothing to reverse, but needs new evidence to reverse.
+
+## 2026-09-22 — Reframed: automated research of the top 100, with signals the owner trades by hand **[SUPERSEDED 2026-10-02 — CoinPicks retired]**
 
 The owner's ruling: the point of this tool is to **automate** researching coins with the
 `framework/` rules — not to be a form a human fills in. Decided in one session, question by
@@ -46,7 +99,7 @@ question:
 **Reversal cost:** high once reports accumulate — the ledger's rows are only comparable within one
 research version, one signal-rule version and one pinned Jev version.
 
-## 2026-09-22 — How a Jev answer becomes a sub-score, and the data plan
+## 2026-09-22 — How a Jev answer becomes a sub-score, and the data plan **[SUPERSEDED 2026-10-02, except the daily warehouse refresh]**
 
 Rulings made after a feasibility pass (five research tracks, each fact-checked; results in the
 session record, not the repo):
@@ -73,7 +126,7 @@ session record, not the repo):
   were in it. Backfilled today; a cron now runs `python -m research.backfill --top 100` at 05:30
   local, which also snapshots the day's top-100 universe.
 
-## 2026-09-22 — Elysia on Bun; shadcn with the Spectral theme
+## 2026-09-22 — Elysia on Bun; shadcn with the Spectral theme **[SUPERSEDED 2026-10-02 — nothing left to build it for]**
 
 - **Hono → Elysia, Node → Bun.** The owner's ruling. The recommendation had been to keep Hono,
   because Elysia's advantage is Bun and this repo ran Node; moving to Bun removes that objection.
@@ -442,7 +495,7 @@ weight and nobody can tell which rows came before".
 **Reversal cost:** low mechanically, total epistemically — retuning invalidates every prior
 committed report as comparable evidence.
 
-## 2026-09-21 — Retire automated trading; pivot to fundamental research tooling
+## 2026-09-21 — Retire automated trading; pivot to fundamental research tooling **[pivot SUPERSEDED 2026-10-02; the retirement of automated trading stands]**
 
 The pre-registered OOS run (`research/signals/intraday/output/2b/oos_results.csv`) measured the
 surviving strategy at **−15.19% return, profit factor 0.986, Sharpe −0.29 over 2,791 trades**

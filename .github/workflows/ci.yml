@@ -34,95 +34,12 @@ jobs:
         run: python -c "import pandas, pyarrow, numpy, binance, psycopg"
 
       - name: Check for syntax errors
-        # research/ is the only Python this repo still ships. Its CLI entry
+        # research/ is the only code this repo still ships. Its CLI entry
         # points (backfill, check) are not all import-covered by the suite, so a
-        # syntax check still earns its place. research/forward_returns.py is
-        # build-order step 6 and does not exist yet; compileall walks the package, so
-        # it will be covered automatically the moment it lands.
+        # syntax check still earns its place. compileall walks the package, so a
+        # new module is covered the moment it lands.
         run: python -m compileall -q research
 
       - name: Run tests
         run: python -m pytest -q
 
-  detect:
-    name: detect javascript
-    runs-on: ubuntu-latest
-    outputs:
-      has_js: ${{ steps.check.outputs.has_js }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - id: check
-        # The TypeScript side (apps/api, apps/web) is not in the repo yet. This
-        # gate makes the job below SKIP rather than fail, and makes it start
-        # running by itself the moment the workspace lands — no workflow edit.
-        run: |
-          if [ -f pnpm-workspace.yaml ]; then
-            echo "has_js=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_js=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  typescript:
-    name: apps (typescript)
-    runs-on: ubuntu-latest
-    needs: detect
-    if: needs.detect.outputs.has_js == 'true'
-
-    services:
-      # The commit gate's e2e gets REAL Postgres or it does not run: a memory
-      # store has no transactions, no CHECK constraints and no triggers, so a
-      # green e2e against one proves nothing about atomicity or immutability.
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: coinpicks
-          POSTGRES_PASSWORD: coinpicks
-          POSTGRES_DB: coinpicks
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U coinpicks -d coinpicks"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      DATABASE_URL_OWNER: postgresql://coinpicks_owner:coinpicks_owner@localhost:5433/coinpicks
-      DATABASE_URL: postgresql://coinpicks_app:coinpicks_app@localhost:5433/coinpicks
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "26"
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Bootstrap the database roles
-        # Not a Drizzle migration: CREATE ROLE is cluster-scoped while a migration applies
-        # once per database, and coinpicks_test would have no roles. psql is preinstalled on
-        # ubuntu-latest. This is the only superuser connection in the pipeline.
-        run: psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 -f apps/api/scripts/bootstrap-roles.sql
-        env:
-          SUPERUSER_URL: postgresql://coinpicks:coinpicks@localhost:5433/postgres
-
-      # --if-present so this job survives the workspace landing one script at a
-      # time; it does NOT excuse a script that exists and fails.
-      - name: Lint
-        # Biome's script is `check` everywhere in this repo — never `lint`. With
-        # --if-present a wrong name exits 0 having run nothing.
-        run: pnpm -r --if-present run check
-
-      - name: Typecheck
-        run: pnpm -r --if-present run typecheck
-
-      - name: Test
-        run: pnpm -r --if-present run test
