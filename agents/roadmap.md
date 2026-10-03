@@ -15,31 +15,33 @@ trading, and the first experiment runs at daily-to-weekly horizons.
 
 ## Experiment 1 — the daily model lab
 
-The question: can a model trained on this warehouse beat holding BTC after costs, at
+The question: can a model trained on this warehouse beat holding spot BTC after costs, at
 daily-to-weekly horizons?
+- **Three arms** race on identical, pre-registered rules: BTC timing, ETH timing, and a
+  cross-sectional ranker over a point-in-time top 50 that includes delisted coins.
+- **Alongside them,** a forward-only test of TypeSafe's Jev as a decision-time veto.
+- **Spec:** `docs/superpowers/specs/2026-10-02-daily-model-lab-design.md`. Each phase below gets
+  its own plan.
 
-- [ ] **1. Pre-registration spec.**
-      - File: `docs/superpowers/specs/2026-10-02-daily-model-lab-design.md`.
-      - Fixes, before any real-data run: universe, features, target, model, trial budget, costs,
-        gates, the sealed OOS window, and the stop conditions.
-      - The owner reviews it before any plan is written.
-- [ ] **2. Point-in-time universe.**
-      - Closes Phase C's open gap: today's top 100 is survivorship bias.
-      - Backfill every USDT perp, including delisted ones, from Binance's public archive.
-      - Rank by trailing quote volume and apply eligibility from the next day.
-- [ ] **3. Features and labels,** as frozen in the spec. Every one is tested against look-ahead the
-      way `siglib`'s contract tests already are.
-- [ ] **4. Train-only search.**
-      - Purged and embargoed walk-forward.
-      - Every trial counted.
-      - Costs from `research/siglib/costs.py`.
-- [ ] **5. Freeze, then unseal.**
-      - Commit `frozen_params.json` first; the OOS evaluation is a separate, later commit.
-      - The unseal is one-shot and judged mechanically against the gates, with BTC buy-and-hold
-        and a slow trend rule as baselines.
-- [ ] **6. Verdict.**
-      - If it fails, it is recorded like Phases C, 2a and 2b, and the lab picks its next question.
-      - If it passes, a forward paper record starts. Its length and pass rule are fixed in the spec.
+- [x] **0. Design.** Approved in conversation (2026-10-02); the written spec is committed for the
+      owner's review.
+- [ ] **1. TypeSafe recorder and the two paper books** ("hold BTC" and "hold BTC with veto").
+      - Starts the forward record.
+      - Needs `TYPESAFE_API_KEY` and confirmed access.
+- [ ] **2. Data.**
+      - Archive datasets (spot BTC/ETH since 2017-08; every USDT perp, live and delisted).
+      - Reconciliation against the existing warehouse.
+      - The exclusion list, which the owner reviews.
+      - The point-in-time universe, and `siglib/stats.py`.
+- [ ] **3. BTC and ETH arms:** features, HAR volatility, LightGBM, walk-forward, validation study,
+      freeze.
+- [ ] **4. Ranker:** features, model, validation study, freeze.
+- [ ] **5. Joint unseal.**
+      - One run of `oos_eval.py` for all three frozen arms.
+      - Gates G1–G6; the verdict and a findings document.
+- [ ] **6. After the verdict.**
+      - A 26-week paper record for any passing arm.
+      - The TypeSafe 26-week readout.
 
 ---
 
