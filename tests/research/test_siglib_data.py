@@ -130,3 +130,11 @@ def test_eligible_mask_60_day_rule():
     assert not mask.loc[BASE, "NEW"]
     assert not mask.loc[BASE + HOUR, "NEW"]
     assert mask.loc[BASE + 50 * DAY, "NEW"]
+
+
+def test_week_start_is_monday_midnight_utc():
+    assert data.week_start(BASE) == BASE  # 2024-01-01 was a Monday
+    assert data.week_start(BASE + 6 * DAY + 23 * HOUR) == BASE  # Sunday 23:00
+    assert data.week_start(BASE + 7 * DAY) == BASE + 7 * DAY
+    assert data.week_start(BASE - 1) == BASE - 7 * DAY
+    assert list(data.week_start(np.array([BASE + DAY, BASE + 8 * DAY]))) == [BASE, BASE + 7 * DAY]

@@ -119,3 +119,11 @@ def eligible_mask(df_1h: pd.DataFrame) -> pd.DataFrame:
 def to_panel(df: pd.DataFrame, col: str, time_col: str = "open_time") -> pd.DataFrame:
     """Pivot a long frame to wide: index=time_col, columns=symbol, values=col."""
     return df.pivot(index=time_col, columns="symbol", values=col).sort_index()
+
+
+def week_start(t_ms):
+    """Monday 00:00 UTC of the week holding t_ms (epoch ms); works elementwise on int arrays.
+
+    Day 0 of the epoch, 1970-01-01, was a Thursday: three days after a Monday."""
+    days = t_ms // config.DAY_MS
+    return (days - (days + 3) % 7) * config.DAY_MS
