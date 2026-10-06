@@ -10,7 +10,9 @@ Conventions, pinned by tests/research/test_siglib_stats.py against hand-computed
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
+from statistics import NormalDist
 
 import numpy as np
 import pandas as pd
@@ -82,3 +84,37 @@ def nw_alpha(arm: pd.Series, bench: pd.Series, lags: int = 4) -> AlphaFit:
     if abs(alpha) < ALPHA_NOISE:
         return AlphaFit(alpha=0.0, beta=float(coef[1]), se_alpha=se, t_alpha=0.0, n=len(both))
     return AlphaFit(alpha=alpha, beta=float(coef[1]), se_alpha=se, t_alpha=alpha / se, n=len(both))
+
+
+EULER_GAMMA = 0.5772156649015329
+
+
+def expected_max_sharpe(n_trials: int, trial_sharpe_variance: float) -> float:
+    """The Sharpe ratio the best of n_trials skill-less trials is expected to reach, given the
+    variance of their Sharpe ratios (Bailey & López de Prado 2014, the benchmark SR0)."""
+    nd = NormalDist()
+    return math.sqrt(trial_sharpe_variance) * (
+        (1 - EULER_GAMMA) * nd.inv_cdf(1 - 1 / n_trials)
+        + EULER_GAMMA * nd.inv_cdf(1 - 1 / (n_trials * math.e))
+    )
+
+
+def deflated_sharpe(returns: pd.Series, trial_sharpes: Sequence[float],
+                    n_trials: int | None = None) -> float:
+    """Probability that the true Sharpe ratio of `returns` beats the best skill-less trial.
+
+    Sharpe ratios are per period, not annualised. The trials' variance is the sample variance
+    (ddof=1), the conservative choice. n_trials defaults to len(trial_sharpes); the spec's
+    sensitivity value passes 60. NaN when `returns` has no Sharpe ratio."""
+    sr = sharpe(returns, periods_per_year=1)
+    if math.isnan(sr):
+        return float("nan")
+    x = returns.to_numpy(dtype=float)
+    dev = x - x.mean()
+    m2 = float(np.mean(dev**2))
+    skew = float(np.mean(dev**3)) / m2**1.5
+    kurt = float(np.mean(dev**4)) / m2**2
+    sr0 = expected_max_sharpe(n_trials if n_trials is not None else len(trial_sharpes),
+                              float(np.var(trial_sharpes, ddof=1)))
+    z = (sr - sr0) * math.sqrt(len(x) - 1) / math.sqrt(1 - skew * sr + (kurt - 1) / 4 * sr**2)
+    return NormalDist().cdf(z)

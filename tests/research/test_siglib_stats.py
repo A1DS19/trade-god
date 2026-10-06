@@ -88,3 +88,29 @@ def test_an_exact_multiple_of_btc_has_zero_alpha():  # constant exposure and no 
 
 def test_weeks_align_on_the_index():
     assert stats.nw_alpha(_weekly(ARM), _weekly(BENCH + [0.05])).n == 12
+
+
+DSR_WEEKLY = [0.012, -0.020, 0.031, 0.004, -0.008, 0.017, 0.025, -0.013, 0.009, 0.002,
+              0.019, -0.027, 0.014, 0.006, -0.003, 0.022, 0.011, -0.016, 0.028, 0.001]
+TRIAL_SHARPES = [0.05, 0.12, 0.08, 0.15, 0.02, 0.10]  # sample variance 0.0022266666666666667
+
+
+def test_expected_max_sharpe_of_six_unskilled_trials():
+    assert stats.expected_max_sharpe(6, 0.0022266666666666667) == pytest.approx(
+        0.061350483116021814, rel=1e-9)
+
+
+def test_deflated_sharpe_matches_the_reference():
+    # sr = 0.34858705162657744, skew = -0.35176553477902145, kurt = 2.236838711880152, T = 20
+    # z = (sr - sr0) * sqrt(T - 1) / sqrt(1 - skew*sr + (kurt - 1)/4 * sr^2) = 1.1623883379537419
+    assert stats.deflated_sharpe(_weekly(DSR_WEEKLY), TRIAL_SHARPES) == pytest.approx(
+        0.8774611208839094, rel=1e-9)
+
+
+def test_sixty_trials_deflate_further():  # spec §3.3: the N = 60 value is reported, not gated
+    assert stats.deflated_sharpe(_weekly(DSR_WEEKLY), TRIAL_SHARPES, n_trials=60) == pytest.approx(
+        0.8321758103627532, rel=1e-9)
+
+
+def test_returns_that_do_not_vary_have_no_deflated_sharpe():
+    assert math.isnan(stats.deflated_sharpe(_weekly([0.0] * 20), TRIAL_SHARPES))
