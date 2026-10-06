@@ -4,6 +4,7 @@
 **Status:** Design approved by the owner one section at a time, in conversation on 2026-10-02.
 This written spec is awaiting the owner's review. Every constant below is fixed before any
 real-data run; a change after that run is a new experiment, not an edit.
+**Amended 2026-10-05** (owner's ruling): phase 1 no longer gates phases 2–6; see Phases.
 
 ## Context
 
@@ -446,9 +447,11 @@ fixtures.
 
 ---
 
-## Phases (each gated on the one before)
+## Phases
 
-Each phase gets its own implementation plan, written when the phase before it is done.
+Phases 2–6 run in order, each gated on the one before, and each gets its own implementation plan
+when the phase before it is done. Phase 1 runs alongside them: it starts when the key arrives, and
+no other phase waits for it (owner's ruling, 2026-10-05).
 
 1. **TypeSafe recorder and the two paper books.** These start recording; the phase needs the key.
 2. **Archive datasets, reconciliation, exclusions, point-in-time universe and `siglib/stats.py`.**
@@ -456,7 +459,8 @@ Each phase gets its own implementation plan, written when the phase before it is
 3. **BTC and ETH arms:** features, HAR, LightGBM, walk-forward, validation study, then freeze.
 4. **Ranker:** features, model, validation study, then freeze.
 5. **Joint unseal** with `oos_eval.py`, the verdict, and the findings document.
-6. **Paper phase** for any passing arms, plus the TypeSafe 26-week readout.
+6. **Paper phase** for any passing arms. The TypeSafe readout falls 26 weeks after phase 1 ships,
+   whenever that is.
 
 ## Accepted limits
 

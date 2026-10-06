@@ -28,6 +28,7 @@ daily-to-weekly horizons?
 - [ ] **1. TypeSafe recorder and the two paper books** ("hold BTC" and "hold BTC with veto").
       - Starts the forward record.
       - Needs `TYPESAFE_API_KEY` and confirmed access.
+      - Runs alongside phases 2–6; none of them waits for it (2026-10-05).
 - [ ] **2. Data.**
       - Archive datasets (spot BTC/ETH since 2017-08; every USDT perp, live and delisted).
       - Reconciliation against the existing warehouse.
@@ -74,3 +75,4 @@ never approved. The code and its vocabulary are in `legacy/coinpicks/`, and the 
 - 2026-09-22 — step 4 complete: the minimal editor (Plan 3 Tasks 1–7), four adversarial review rounds, a description under every label. Plan 3 Task 8 (docs/CI) folds into Phase 0 of the automated-research plan.
 - 2026-09-22 — reframed to automated research. Spec `docs/superpowers/specs/2026-09-22-automated-research-design.md` (`c55cf73`) awaits the owner's review; once approved, its Phases 0–5 replace steps 5–8 above and this roadmap is rewritten.
 - 2026-10-02 — CoinPicks archived to `legacy/coinpicks/` (`3387d37`) after a three-track research pass (`docs/superpowers/specs/2026-10-02-trading-model-research-findings.md`). The repo becomes a model lab; Experiment 1 is the daily model lab.
+- 2026-10-05 — phase 1 no longer gates the others (owner's ruling): phase 2 starts while the TypeSafe key is still pending.
