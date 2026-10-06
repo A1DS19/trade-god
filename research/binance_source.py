@@ -31,7 +31,7 @@ def _drop_unclosed(rows: list[list], now_ms: int) -> list[list]:
     return rows
 
 
-def _kline_row(k: list) -> dict:
+def kline_row(k: list) -> dict:
     return {
         "open_time": int(k[0]),
         "open": float(k[1]),
@@ -45,6 +45,12 @@ def _kline_row(k: list) -> dict:
         "taker_buy_volume": float(k[9]),
         "taker_buy_quote_volume": float(k[10]),
     }
+
+
+def premium_row(k: list) -> dict:
+    """Premium-index klines carry no volume or trade data, so keep OHLC and times only."""
+    return {"open_time": int(k[0]), "open": float(k[1]), "high": float(k[2]),
+            "low": float(k[3]), "close": float(k[4]), "close_time": int(k[6])}
 
 
 def _paginate(fetch_page, start_ms: int, *, step_ms: int, page_size: int, delay: float,
@@ -76,7 +82,7 @@ def fetch_klines(client, symbol: str, interval: str, start_ms: int, *, delay: fl
         lambda c: client.futures_klines(symbol=symbol, interval=interval, startTime=c, limit=KLINES_PAGE),
         start_ms, step_ms=step, page_size=KLINES_PAGE, delay=delay, row_time=lambda k: int(k[0]),
     )
-    return [_kline_row(k) for k in _drop_unclosed(raw, _now_ms())]
+    return [kline_row(k) for k in _drop_unclosed(raw, _now_ms())]
 
 
 def fetch_premium_index(client, symbol: str, start_ms: int, *, delay: float) -> list[dict]:
@@ -87,12 +93,7 @@ def fetch_premium_index(client, symbol: str, start_ms: int, *, delay: float) -> 
         ),
         start_ms, step_ms=HOUR_MS, page_size=KLINES_PAGE, delay=delay, row_time=lambda k: int(k[0]),
     )
-    # Premium-index klines carry no volume/trades data — keep OHLC + times only.
-    return [
-        {"open_time": int(k[0]), "open": float(k[1]), "high": float(k[2]),
-         "low": float(k[3]), "close": float(k[4]), "close_time": int(k[6])}
-        for k in _drop_unclosed(raw, _now_ms())
-    ]
+    return [premium_row(k) for k in _drop_unclosed(raw, _now_ms())]
 
 
 def fetch_funding(client, symbol: str, start_ms: int, *, delay: float) -> list[dict]:
