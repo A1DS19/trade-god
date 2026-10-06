@@ -10,6 +10,7 @@ Conventions, pinned by tests/research/test_siglib_stats.py against hand-computed
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -45,3 +46,39 @@ def max_drawdown(returns: pd.Series) -> float:
     The starting equity of 1.0 counts as a peak, so a loss on the first bar is a drawdown."""
     equity = np.concatenate([[1.0], np.cumprod(1.0 + returns.to_numpy(dtype=float))])
     return float((1.0 - equity / np.maximum.accumulate(equity)).max())
+
+
+# An exact multiple of BTC (constant exposure, no trades) leaves OLS an alpha of about 1e-19
+# with a standard error just as small, so its t-statistic is noise that could pass a gate.
+ALPHA_NOISE = 1e-12
+
+
+@dataclass(frozen=True)
+class AlphaFit:
+    alpha: float
+    beta: float
+    se_alpha: float
+    t_alpha: float
+    n: int
+
+
+def nw_alpha(arm: pd.Series, bench: pd.Series, lags: int = 4) -> AlphaFit:
+    """OLS arm = α + β·bench + ε on index-aligned rows, with Newey-West standard errors.
+
+    Bartlett weights 1 - lag/(lags + 1), no small-sample correction: statsmodels' HAC with
+    use_correction=False. An |α| under ALPHA_NOISE is reported as α = 0, t = 0."""
+    both = pd.concat([arm, bench], axis=1, join="inner").dropna()
+    y = both.iloc[:, 0].to_numpy(dtype=float)
+    x = np.column_stack([np.ones(len(both)), both.iloc[:, 1].to_numpy(dtype=float)])
+    coef, *_ = np.linalg.lstsq(x, y, rcond=None)
+    scores = x * (y - x @ coef)[:, None]
+    meat = scores.T @ scores
+    for lag in range(1, lags + 1):
+        gamma = scores[lag:].T @ scores[:-lag]
+        meat += (1.0 - lag / (lags + 1)) * (gamma + gamma.T)
+    bread = np.linalg.inv(x.T @ x)
+    se = math.sqrt((bread @ meat @ bread)[0, 0])
+    alpha = float(coef[0])
+    if abs(alpha) < ALPHA_NOISE:
+        return AlphaFit(alpha=0.0, beta=float(coef[1]), se_alpha=se, t_alpha=0.0, n=len(both))
+    return AlphaFit(alpha=alpha, beta=float(coef[1]), se_alpha=se, t_alpha=alpha / se, n=len(both))

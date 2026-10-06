@@ -60,3 +60,31 @@ def test_max_drawdown_counts_a_loss_on_the_first_day():
 def test_max_drawdown_edges():
     assert stats.max_drawdown(pd.Series([], dtype=float)) == 0.0
     assert stats.max_drawdown(pd.Series([0.01, 0.02])) == 0.0
+
+
+BENCH = [0.021, -0.034, 0.015, 0.042, -0.011, 0.008, -0.027, 0.033, 0.012, -0.019, 0.026, -0.004]
+ARM = [0.015, -0.012, 0.010, 0.030, -0.002, 0.009, -0.010, 0.020, 0.011, -0.006, 0.018, 0.001]
+
+
+def test_nw_alpha_matches_the_reference():
+    fit = stats.nw_alpha(_weekly(ARM), _weekly(BENCH))
+    assert fit.alpha == pytest.approx(0.004256714955921019, rel=1e-9)
+    assert fit.beta == pytest.approx(0.5309583956281898, rel=1e-9)
+    assert fit.se_alpha == pytest.approx(0.00022645201261195535, rel=1e-9)
+    assert fit.t_alpha == pytest.approx(18.797426027805987, rel=1e-9)
+    assert fit.n == 12
+
+
+def test_zero_lags_gives_the_white_standard_error():
+    fit = stats.nw_alpha(_weekly(ARM), _weekly(BENCH), lags=0)
+    assert fit.se_alpha == pytest.approx(0.0003640714004282908, rel=1e-9)
+
+
+def test_an_exact_multiple_of_btc_has_zero_alpha():  # constant exposure and no trades
+    fit = stats.nw_alpha(_weekly([0.5 * b for b in BENCH]), _weekly(BENCH))
+    assert fit.alpha == 0.0 and fit.t_alpha == 0.0
+    assert fit.beta == pytest.approx(0.5, rel=1e-12)
+
+
+def test_weeks_align_on_the_index():
+    assert stats.nw_alpha(_weekly(ARM), _weekly(BENCH + [0.05])).n == 12
