@@ -23,7 +23,16 @@ _Avoid_: "historical" when PIT is meant.
 **Eligibility** — the rule that admits a symbol to the universe on a date, by listing age and
 liquidity rank.
 - It is evaluated PIT and takes effect from the next day.
-- In code: `eligible_mask`, `pit_top30_mask`.
+- In code: `eligible_mask`, `pit_top30_mask`, `model_lab.universe.build_universe`.
+
+**Listing** — one contract's tradable life under a ticker: a run of traded daily bars that ends
+at a settlement or a missing day.
+- A relisted ticker is a new listing. Earlier listings are named `TICKER@YYYY-MM-DD`, after their
+  first day.
+- Eligibility, age and features are per listing.
+- In code: `model_lab.listings.split_listings`.
+
+_Avoid_: "symbol" or "coin" when a listing is meant.
 
 ## The experiment
 

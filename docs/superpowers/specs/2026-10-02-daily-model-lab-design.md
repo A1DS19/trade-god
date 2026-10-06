@@ -5,6 +5,9 @@
 This written spec is awaiting the owner's review. Every constant below is fixed before any
 real-data run; a change after that run is a new experiment, not an edit.
 **Amended 2026-10-05** (owner's ruling): phase 1 no longer gates phases 2–6; see Phases.
+**Amended 2026-10-05** (owner's approval of the phase 2 plan): §1.1, §1.2, §3.2, §3.3, §4.1 and
+§4.4 take in what the archive probe found: settled folders, zero-trade days, listings, TradFi
+exclusions, reconciliation coverage, complete weeks, and noise-level alpha.
 
 ## Context
 
@@ -76,25 +79,56 @@ checked against the archive's published `.CHECKSUM` before it is stored.
   `data/futures/um/monthly/klines/`. Keep USDT-quoted names and drop dated delivery contracts
   (any name containing `_`). On 2026-10-02 this gave 900 symbols, against 219 in the existing
   warehouse.
+- **Settled folders.** The same listing holds 17 folders named `{SYMBOL}SETTLED`,
+  `{SYMBOL}SETTLEDSETTLED` or `{SYMBOL}_SETTLED`, for perps Binance settled and later relisted
+  under the same name. They exist for klines only and are stored in `archive_um_klines_1d` under
+  their own names. Most of their rows duplicate the live folder. The rest are an old contract's
+  last days, some of which only these folders hold: BNX's last 11 trading days before its 2023-02
+  redenomination are there and nowhere else.
 - **Fetching.** The fetcher waits at least 0.2 s between requests, skips months already stored,
   and is resumable.
 - **No interference.** The existing REST warehouse, its datasets and the 05:30 cron are not
   touched.
 - **Reconciliation.** On every symbol and day where both the existing warehouse and the archive
-  hold a perp daily close, the closes must match to within 1e-9 relative. A mismatch fails the
-  data step.
+  hold a perp daily close, the closes must match to within 1e-9 relative. Every REST daily bar
+  between the archive's first and last day for that symbol must also be in the archive, because a
+  missing day ends a listing (§1.2). The UM archive starts in 2020-01, so REST's 2019 days fall
+  outside that span. A mismatch or a missing day fails the data step.
 
 **Exclusions** (`research/signals/model_lab/exclusions.py`):
 - stablecoin and pegged-asset perps;
-- index or composite contracts (for example `BTCDOMUSDT`).
+- index or composite contracts (for example `BTCDOMUSDT`);
+- perps on traditional assets: stocks, ETFs, commodities, currencies and pre-IPO company
+  valuations. Binance labels them `TRADIFI_PERPETUAL`; 212 of them appeared from 2025-12 on
+  (`XAUUSDT`, `NVDAUSDT`, `OPENAIUSDT`).
 
-The list is built from symbol names only, never from outcomes. It is committed and reviewed by
-the owner in the data step, before any model run.
+The list is built from what each ticker is, never from outcomes: its name, plus Binance's own
+`TRADIFI_PERPETUAL` label, since names like `CATUSDT` (Caterpillar) and `WENUSDT` (Wendy's) read
+like coins. It is committed and reviewed by the owner in the data step, before any model run.
 
 ### 1.2 Point-in-time universe (ranker)
 
 **Decision time** is Monday 00:00 UTC. Decisions use daily bars that closed by then, meaning
 `open_time` ≤ the preceding Sunday 00:00.
+
+**Listings.** A ticker can outlive its contract, so the universe is built from listings:
+- **A zero-trade day is not a trading day.** A settled contract gets a flat bar at its settlement
+  price, with no trades, every day until Binance relists the ticker, and otherwise indefinitely.
+  On 2026-10-05 all 133 settled perps still had such bars: BLZ had sat at 0.06836 since
+  2024-12-23. Their data never ends, so without this rule they would never delist. None of the
+  219 live symbols in the REST warehouse has a single zero-trade day.
+- **A settled folder's last bar ends a contract.** Its rows, and the live folder's rows before
+  that day, belong to the contract that ended there. The live rows from that day on belong to the
+  next contract. MINA's old contract traded on 2023-02-06 and the new one opened on 2023-02-07,
+  so no gap would have marked the switch.
+- **Within a contract, every missing day starts a new listing.**
+
+A relisted ticker is therefore a new listing. Its 60-bar count and its age start again, and no
+feature or return crosses from one listing to the next. Without this rule, PUMPUSDT would step
+from the old token's 0.0471 to the new token's 0.0052, a −89% day that never happened.
+
+The latest listing keeps the ticker's name, and earlier ones are named `{SYMBOL}@{first day}`.
+From here on, "symbol" means a listing.
 
 A symbol is **eligible** on decision date *d* when all three hold:
 - it has at least 60 daily bars before *d* (`siglib`'s `ELIGIBILITY_DAYS`);
@@ -105,8 +139,10 @@ A symbol is **eligible** on decision date *d* when all three hold:
 **top 50** form that week's universe. If fewer than 20 symbols are eligible, the book holds
 nothing that week (a breadth guard for early history).
 
-**Delisting.** When a held symbol's data ends, `siglib.run_backtest` forces its weight to zero.
-The last close is Binance's settlement price, so a crash into delisting counts in full.
+**Delisting.** A listing ends at its last traded bar, and `siglib.run_backtest` then forces its
+weight to zero. That last traded close is Binance's settlement price: PUMP's 0.0471 and BLZ's
+0.06836 are the prices they then sat at, and the data step checks every halt. So a crash into
+delisting counts in full.
 
 ### 1.3 TypeSafe recorder inputs
 
@@ -266,16 +302,21 @@ gate.
 ### 3.2 Measurement
 
 - **Weekly returns.** Daily net returns are compounded from Monday 00:00 to Monday 00:00 UTC, for
-  every arm and for the benchmark.
+  every arm and for the benchmark. Only complete weeks count. A window's leftover days at either
+  end enter its daily drawdown, but no weekly statistic.
 - **Benchmark.** Spot `BTCUSDT` buy-and-hold: one entry cost, no funding.
 - **Costs.**
   - Baseline: `CostModel()`, 10 bp per side. On spot this assumes the 7.5 bp BNB-discounted fee
     plus 2.5 bp slippage.
   - Stress: `STRESS`, 15 bp per side.
-- **Sharpe.** Mean ÷ standard deviation of weekly returns, × √52. The risk-free rate is 0.
+- **Sharpe.** Mean ÷ sample standard deviation (ddof = 1) of weekly returns, × √52. The
+  risk-free rate is 0. An arm whose returns do not vary has no Sharpe ratio, and it fails every
+  gate that uses one.
 - **Max drawdown.** Taken on the daily equity curve, for both the arm and the benchmark.
 - **Alpha.** An OLS regression `r_arm = α + β·r_BTC + ε` on weekly returns, with Newey-West
-  standard errors at 4 lags.
+  standard errors at 4 lags (Bartlett weights, no small-sample correction). An |α| below 1e-12 per
+  week is floating-point noise, for example an arm that is an exact multiple of BTC over a window,
+  and counts as α = 0 with t = 0.
 
 ### 3.3 Gates
 
@@ -293,8 +334,8 @@ An arm passes only if all six gates hold on the pooled window. They are computed
 
 **How G6 is computed** (Bailey & López de Prado, 2014):
 - **N = 6**, the trials in §2.4.
-- **The benchmark Sharpe** comes from the variance of those 6 trials' validation Sharpe ratios,
-  in weekly units.
+- **The benchmark Sharpe** comes from the sample variance (ddof = 1, the conservative choice) of
+  those 6 trials' validation Sharpe ratios, in weekly units.
 - **The tested Sharpe, skewness, kurtosis and T** come from the arm's pooled weekly returns.
 - **A sensitivity value** with N = 60 (adding Phase C's 54 combinations) is reported alongside,
   but not gated.
@@ -389,9 +430,11 @@ The layout follows the repo's existing shape. All P&L goes through `siglib`.
 ```
 research/archive_source.py            # archive listing, download, checksum, parse → store.upsert
 research/archive_backfill.py          # CLI: python -m research.archive_backfill [--symbols ...]
+research/archive_reconcile.py         # CLI: REST vs archive daily closes and coverage; exit 1 on any miss
 research/siglib/stats.py              # sharpe, max_drawdown, nw_alpha, deflated_sharpe (reusable)
 research/signals/model_lab/
 ├── exclusions.py                     # frozen exclusion list
+├── listings.py                       # settled folders, zero-trade days, relistings → listings
 ├── universe.py                       # point-in-time top-50 panel
 ├── features.py                       # timing and ranker feature builders
 ├── labels.py                         # 7-day labels, percentile labels
@@ -444,6 +487,9 @@ fixtures.
   no veto and is logged.
 - **Recorder.** Deduplication works, and storage is append-only, so a rerun on the same day adds
   nothing.
+- **Listings.** A relisted ticker splits at its halt. A settled folder fills only the days its
+  live folder lacks. A settled folder's last bar separates two contracts even when no day is
+  missing between them.
 
 ---
 
