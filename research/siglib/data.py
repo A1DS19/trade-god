@@ -76,11 +76,14 @@ def _load_dataset(dataset, symbols, time_col, cols, start, end) -> pd.DataFrame:
     )
 
 
-def load_klines(symbols="all", interval: str = "1h", start=None, end=None) -> pd.DataFrame:
-    """Long klines frame: [symbol, open_time, open, high, low, close, volume, quote_volume]."""
-    dataset = f"klines_{interval}"
+def load_klines(symbols="all", interval: str = "1h", start=None, end=None,
+                source: str = "klines") -> pd.DataFrame:
+    """Long klines frame: [symbol, open_time, open, high, low, close, volume, quote_volume, …].
+
+    source: "klines" (the REST warehouse), "archive_um_klines" or "archive_spot_klines"."""
+    dataset = f"{source}_{interval}"
     if dataset not in config.DATASETS:
-        raise ValueError(f"unknown interval {interval!r}")
+        raise ValueError(f"unknown dataset {dataset!r}")
     return _load_dataset(dataset, symbols, "open_time", KLINE_COLS, start, end)
 
 

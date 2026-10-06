@@ -138,3 +138,10 @@ def test_week_start_is_monday_midnight_utc():
     assert data.week_start(BASE + 7 * DAY) == BASE + 7 * DAY
     assert data.week_start(BASE - 1) == BASE - 7 * DAY
     assert list(data.week_start(np.array([BASE + DAY, BASE + 8 * DAY]))) == [BASE, BASE + 7 * DAY]
+
+
+def test_load_klines_reads_the_archive_datasets(tmp_warehouse):
+    times = [BASE, BASE + DAY]
+    _write(tmp_warehouse, "archive_um_klines_1d", "BNXUSDTSETTLED", _klines(times, [1.0, 2.0]))
+    df = data.load_klines("all", "1d", source="archive_um_klines")
+    assert df["symbol"].tolist() == ["BNXUSDTSETTLED", "BNXUSDTSETTLED"]
