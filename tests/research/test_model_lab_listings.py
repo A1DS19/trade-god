@@ -93,3 +93,30 @@ def test_the_last_traded_close_is_the_halt_price():  # spec §1.2 delisting
     planted = pd.DataFrame(_bars("XUSDT", 0, 3, close=2.0) + _bars("XUSDT", 3, 2, close=1.5, trades=0))
     [row] = listings.settlement_mismatches(planted).itertuples()
     assert row.close == 2.0 and row.halt_close == 1.5
+
+
+def test_data_holes_are_missing_days_not_halts():
+    daily = pd.DataFrame(
+        _bars("XUSDT", 0, 5) + _bars("XUSDT", 7, 4)  # days 5 and 6 are absent
+        + _bars("PUMPUSDT", 0, 3) + _bars("PUMPUSDT", 3, 4, trades=0) + _bars("PUMPUSDT", 7, 3)  # a halt
+        + [r for r in _bars("BNXUSDT", 0, 6) if r["open_time"] != BASE + 2 * DAY]
+        + _bars("BNXUSDTSETTLED", 2, 1) + _bars("BNXUSDTSETTLED", 6, 1, trades=0))  # the folder fills day 2
+    holes = listings.data_holes(daily)
+    assert holes.to_dict("records") == [{"ticker": "XUSDT", "after": BASE + 4 * DAY, "missing_days": 2}]
+
+
+def test_settled_conflicts_flag_a_traded_last_bar_the_live_folder_also_holds():
+    clean = _bars("AERGOUSDT", 0, 5) + _bars("AERGOUSDTSETTLED", 6, 1)  # live lacks the folder's last day
+    risky = _bars("MINAUSDT", 0, 10) + _bars("MINAUSDTSETTLED", 9, 1)  # live holds it: whose bar is it?
+    out = listings.settled_conflicts(pd.DataFrame(clean + risky))
+    assert out[["symbol", "kind"]].values.tolist() == [["MINAUSDTSETTLED", "traded last bar"]]
+    assert out["open_time"].tolist() == [BASE + 9 * DAY]
+
+
+def test_settled_conflicts_flag_a_duplicate_day_whose_closes_disagree():
+    live = _bars("TLMUSDT", 0, 10, close=0.10)
+    folder = (_bars("TLMUSDTSETTLED", 0, 3, close=0.10) + _bars("TLMUSDTSETTLED", 3, 1, close=0.25)
+              + _bars("TLMUSDTSETTLED", 12, 1, trades=0))  # settles on day 12
+    out = listings.settled_conflicts(pd.DataFrame(live + folder))
+    assert out[["symbol", "kind"]].values.tolist() == [["TLMUSDTSETTLED", "close disagrees"]]
+    assert out["open_time"].tolist() == [BASE + 3 * DAY]

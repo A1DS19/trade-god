@@ -20,7 +20,12 @@ import pandas as pd
 from research.config import DAY_MS
 from research.siglib.data import ELIGIBILITY_DAYS, load_klines, to_ms, week_start
 from research.signals.model_lab.exclusions import EXCLUDED
-from research.signals.model_lab.listings import settlement_mismatches, split_listings
+from research.signals.model_lab.listings import (
+    data_holes,
+    settled_conflicts,
+    settlement_mismatches,
+    split_listings,
+)
 
 TOP_N = 50
 MIN_BREADTH = 20
@@ -76,6 +81,15 @@ def main() -> None:
     print(f"settlement check: {len(mismatched)} halts where the last traded close is not the halt price")
     for row in mismatched.head(20).itertuples():
         print(f"  {row.symbol:<24} last close {row.close} vs halt price {row.halt_close}")
+    holes = data_holes(daily)
+    print(f"data holes: {len(holes)} runs of missing days inside a contract, each splitting a listing")
+    for row in holes.head(20).itertuples():
+        print(f"  {row.ticker:<24} after {pd.to_datetime(row.after, unit='ms'):%Y-%m-%d}: "
+              f"{row.missing_days} days missing")
+    conflicts = settled_conflicts(daily)
+    print(f"settled-folder conflicts: {len(conflicts)}")
+    for row in conflicts.head(20).itertuples():
+        print(f"  {row.symbol:<24} {pd.to_datetime(row.open_time, unit='ms'):%Y-%m-%d} {row.kind}")
 
     end = int(listed["open_time"].max()) + DAY_MS
     members = build_universe(listed, mondays(int(listed["open_time"].min()), end))

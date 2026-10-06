@@ -2393,23 +2393,35 @@ the survivorship fix Phase C lacked; a look-ahead test pins it."
 - [ ] **Step 1: Confirm that the backfill finished** (Task 4, Step 7):
   `tail -3 research/warehouse/archive-backfill.log` ends with `0 failures`.
 - [ ] **Step 2: Reconcile.** `python -m research.archive_reconcile` exits 0, as in Task 5, Step 6.
-- [ ] **Step 3: Gap report.** Run `python -m research.check`. Expect gaps in
-  `archive_um_klines_1d` for the relisted tickers, which are the halts the listings rule handles.
-  Phase 3 needs BTC and ETH spot bars without holes, so list any gap in `archive_spot_klines_1d`
-  or `archive_spot_klines_1h` for the owner. Copy the report's summary line into the roadmap log
-  entry in Step 7.
+- [ ] **Step 3: Gap report.** Run `python -m research.check`.
+  - **UM klines.** A halted or settled contract gets a zero-trade bar every day, so halts show up
+    as zero-trade bars, not gaps. A gap in `archive_um_klines_1d` is a missing day or month. Some
+    are filled by settled folders (BNX, MINA). Step 4's `data holes` line counts what remains, and
+    each remaining hole splits a listing.
+  - **Spot.** Phase 3 needs BTC and ETH spot bars without holes. List any gap in
+    `archive_spot_klines_1d` or `archive_spot_klines_1h` for the owner. The 1h dataset is known to
+    have 29 hourly gaps per symbol before 2020, and off-the-hour bars from 2018-02-09 09:28 to
+    2018-02-11 03:28, after a Binance restart.
+  - Copy the report's summary line into the roadmap log entry in Step 7.
 - [ ] **Step 4: The universe report.** Run `python -m research.signals.model_lab.universe`.
   Expect:
   - about 917 archive folders, a little over 900 listings, and 17 or more tickers with more than
     one listing;
   - a settlement check showing how many halts break the spec's assumption. Any non-zero count
     goes to the owner;
+  - `data holes`: every run of missing days inside a contract, after settled folders fill what
+    they can. Each one splits a listing and forces a held position out, so the full list goes to
+    the owner;
+  - `settled-folder conflicts: 0`. The hand probe of all 17 folders on 2026-10-05 found none. A
+    conflict means the contract rule may have put a bar in the wrong listing, so stop and show the
+    owner;
   - a yearly table from 2020 (the UM archive starts in 2020-01, and the first universe needs 60
     bars and 20 eligible listings) to 2026, where `of_which_ended_before_the_data` is non-zero in
     every year up to 2025. That is the survivorship fix showing itself: 164 crypto perps were
     delisted or settled.
 - [ ] **Step 5: The owner's review.** Show the owner `research/signals/model_lab/exclusions.py`
-  and the outputs of Steps 2–4. This is the review the spec requires "in the data step, before any
+  and the outputs of Steps 2–4: reconciliation, gaps, settlement check, data holes, settled-folder
+  conflicts and the yearly table. This is the review the spec requires "in the data step, before any
   model run". Phase 3 does not start until the owner has said yes, and any change the owner asks
   for lands in its own commit first.
 - [ ] **Step 6: Update `CLAUDE.md`.**
@@ -2443,6 +2455,16 @@ reviewed; phase 3 can now make its choices on train."
 ---
 
 ## Handed on to phases 3 and 4
+
+- **The ranker's price panel must be pivoted from `split_listings` output**, never from raw
+  `archive_um_klines_1d`. Only then are halt bars NaN, so `run_backtest` forces the weight to
+  zero. A raw pivot would hold settled contracts at a flat price for free, defeating §1.2's
+  delisting rule.
+- **Before phase 3's first real-data run, the owner rules on alpha for fractional exposure.** A
+  constant 50% BTC position with no skill shows weekly OLS α of +7.5e-5 per week (t = 1.37
+  pooled, 2.20 in W1). It passes G1, G2 and G4, and fails only G3. The cause: `run_backtest`
+  holds a constant weight with free daily rebalancing, and weekly compounding turns that into an
+  intercept.
 
 - **Funding and premium are not split into listings here.** Phase 4 assigns each `archive_um_funding`
   and `archive_um_premium_1d` row to the listing whose first-to-last days contain it.

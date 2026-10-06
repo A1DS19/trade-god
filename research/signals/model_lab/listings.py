@@ -38,14 +38,19 @@ def contract_numbers(daily: pd.DataFrame) -> np.ndarray:
     return contract
 
 
+def _tagged(daily: pd.DataFrame) -> pd.DataFrame:
+    """The rows with their ticker, their contract number, and whether a settled folder holds them."""
+    df = daily.assign(ticker=daily["symbol"].map(lambda s: settled_base(s) or s))
+    return df.assign(contract=contract_numbers(df), from_folder=df["symbol"] != df["ticker"])
+
+
 def split_listings(daily: pd.DataFrame) -> pd.DataFrame:
     """Archive daily klines (live and settled folders, long format) → listings.
 
     Keeps traded bars only, one row per listing and day. `symbol` becomes the listing's name and
     the raw ticker moves to `ticker`. The latest listing of a ticker keeps the ticker's name;
     earlier ones are TICKER@YYYY-MM-DD, after their first day."""
-    df = daily.assign(ticker=daily["symbol"].map(lambda s: settled_base(s) or s))
-    df = df.assign(contract=contract_numbers(df), from_folder=df["symbol"] != df["ticker"])
+    df = _tagged(daily)
     df = df[df["trades"] > 0]
     df = (df.sort_values(["ticker", "contract", "open_time", "from_folder"])
             .drop_duplicates(["ticker", "contract", "open_time"], keep="first"))  # live wins
@@ -70,3 +75,38 @@ def settlement_mismatches(daily: pd.DataFrame, rel_tol: float = 1e-9) -> pd.Data
     rel = (df["close"] - following["close"]).abs() / following["close"].abs()
     hits = df.loc[halts & (rel > rel_tol), ["symbol", "open_time", "close"]]
     return hits.assign(halt_close=following.loc[hits.index, "close"]).reset_index(drop=True)
+
+
+def data_holes(daily: pd.DataFrame) -> pd.DataFrame:
+    """Days missing inside a contract's span, after settled folders fill what they can.
+
+    A halt shows up as zero-trade bars, not as missing days, so every hole here is absent data:
+    it ends a listing and forces a held position out. Columns: ticker, after (the last day before
+    the hole) and missing_days."""
+    df = (_tagged(daily).sort_values(["ticker", "contract", "open_time"])
+            .drop_duplicates(["ticker", "contract", "open_time"]))
+    step = df.groupby(["ticker", "contract"])["open_time"].diff()
+    hole = step > DAY_MS
+    return pd.DataFrame({
+        "ticker": df.loc[hole, "ticker"],
+        "after": (df.loc[hole, "open_time"] - step[hole]).astype("int64"),
+        "missing_days": (step[hole] // DAY_MS - 1).astype("int64"),
+    }).reset_index(drop=True)
+
+
+def settled_conflicts(daily: pd.DataFrame, rel_tol: float = 1e-9) -> pd.DataFrame:
+    """Settled-folder rows that the contract rule could put in the wrong listing.
+
+    - "traded last bar": a folder's last bar has trades on a day its live folder also holds. The
+      rule gives that live bar to the next contract, though it may belong to the old one.
+    - "close disagrees": both folders hold a day for the same contract with different closes, and
+      split_listings keeps the live one.
+    None of the 17 folders did either on 2026-10-05. Columns: symbol (the folder), open_time, kind."""
+    df = _tagged(daily)
+    live, folders = df[~df["from_folder"]], df[df["from_folder"]]
+    last = folders.loc[folders.groupby("symbol")["open_time"].idxmax()]
+    traded = last[last["trades"] > 0].merge(live[["ticker", "open_time"]], on=["ticker", "open_time"])
+    both = folders.merge(live, on=["ticker", "contract", "open_time"], suffixes=("", "_live"))
+    disagree = both[(both["close"] - both["close_live"]).abs() > rel_tol * both["close_live"].abs()]
+    return pd.concat([traded.assign(kind="traded last bar"), disagree.assign(kind="close disagrees")],
+                     ignore_index=True)[["symbol", "open_time", "kind"]]
