@@ -86,3 +86,63 @@ def test_checksum_must_match():
 def test_a_zip_must_hold_exactly_one_csv():
     with pytest.raises(ValueError, match="one CSV"):
         src.read_csv_rows(_zip(FUTURES_2020, "a.csv", "b.csv"))
+
+
+UM = "data/futures/um/monthly/klines/"
+
+
+def test_list_keys_follows_every_page(archive):
+    archive.page_size = 2
+    for month in ("2026-07", "2026-08", "2026-09"):
+        archive.publish(f"{UM}BTCUSDT/1d/BTCUSDT-1d-{month}.zip", FUTURES_2026)
+    keys = src.list_keys(f"{UM}BTCUSDT/1d/", get=archive, delay=0)
+    assert len(keys) == 6  # three zips, three checksums
+    assert len(archive.urls) == 3  # pages of two
+
+
+@pytest.mark.parametrize("name, base", [
+    ("TLMUSDTSETTLED", "TLMUSDT"),
+    ("AERGOUSDTSETTLEDSETTLED", "AERGOUSDT"),
+    ("ICPUSDT_SETTLED", "ICPUSDT"),
+    ("BTCUSDT", None),
+])
+def test_settled_base(name, base):
+    assert src.settled_base(name) == base
+
+
+def test_um_symbols_are_usdt_perps_plus_their_settled_folders(archive):
+    archive.page_size = 3  # the delimited listing pages too
+    for name in ("BTCUSDT", "BTCUSDT_210326", "ETHBUSD", "TLMUSDT", "TLMUSDTSETTLED",
+                 "ICPUSDT", "ICPUSDT_SETTLED", "AERGOUSDT", "AERGOUSDTSETTLEDSETTLED",
+                 "GONEUSDTSETTLED", "币安人生USDT"):
+        archive.publish(f"{UM}{name}/1d/{name}-1d-2026-09.zip", FUTURES_2026)
+    perps, settled = src.list_um_symbols(get=archive, delay=0)
+    assert perps == ["AERGOUSDT", "BTCUSDT", "ICPUSDT", "TLMUSDT", "币安人生USDT"]
+    assert settled == ["AERGOUSDTSETTLEDSETTLED", "ICPUSDT_SETTLED", "TLMUSDTSETTLED"]
+
+
+def test_month_keys_cover_every_published_zip(archive):
+    folder = "data/futures/um/monthly/fundingRate/BTCUSDT/"
+    for month in ("2026-08", "2026-09"):
+        archive.publish(f"{folder}BTCUSDT-fundingRate-{month}.zip", FUNDING)
+    assert src.list_month_keys("archive_um_funding", "BTCUSDT", get=archive, delay=0) == {
+        "2026-08": f"{folder}BTCUSDT-fundingRate-2026-08.zip",
+        "2026-09": f"{folder}BTCUSDT-fundingRate-2026-09.zip",
+    }
+
+
+def test_fetch_month_verifies_before_parsing(archive):
+    good, bad = (f"{UM}BTCUSDT/1d/BTCUSDT-1d-{m}.zip" for m in ("2026-09", "2026-08"))
+    archive.publish(good, FUTURES_2026)
+    archive.publish(bad, FUTURES_2026, corrupt=True)
+    [row] = src.fetch_month("archive_um_klines_1d", good, get=archive, delay=0)
+    assert row["open_time"] == 1788220800000
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        src.fetch_month("archive_um_klines_1d", bad, get=archive, delay=0)
+
+
+def test_non_ascii_tickers_are_percent_encoded(archive):
+    archive.publish(f"{UM}币安人生USDT/1d/币安人生USDT-1d-2026-09.zip", FUTURES_2026)
+    months = src.list_month_keys("archive_um_klines_1d", "币安人生USDT", get=archive, delay=0)
+    src.fetch_month("archive_um_klines_1d", months["2026-09"], get=archive, delay=0)
+    assert archive.urls and all(url.isascii() for url in archive.urls)

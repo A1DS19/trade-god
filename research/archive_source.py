@@ -12,7 +12,14 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
+import time
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 import zipfile
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from research.binance_source import kline_row, premium_row
 
@@ -63,3 +70,97 @@ def parse_funding(rows: list[list[str]]) -> list[dict]:
          "funding_rate": float(c[2])}
         for c in rows
     ]
+
+
+ARCHIVE_URL = "https://data.binance.vision/"
+LISTING_URL = "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+S3_NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
+UM_KLINES_ROOT = "data/futures/um/monthly/klines/"
+MONTH_RE = re.compile(r"-(\d{4}-\d{2})\.zip$")
+SPOT_SYMBOLS = ("BTCUSDT", "ETHUSDT")
+
+
+@dataclass(frozen=True)
+class Source:
+    folder: str  # S3 prefix holding one symbol's monthly files; {symbol} is filled in
+    parse: Callable[[list[list[str]]], list[dict]]
+
+
+SOURCES: dict[str, Source] = {
+    "archive_spot_klines_1d": Source("data/spot/monthly/klines/{symbol}/1d/", parse_klines),
+    "archive_spot_klines_1h": Source("data/spot/monthly/klines/{symbol}/1h/", parse_klines),
+    "archive_um_klines_1d": Source("data/futures/um/monthly/klines/{symbol}/1d/", parse_klines),
+    "archive_um_funding": Source("data/futures/um/monthly/fundingRate/{symbol}/", parse_funding),
+    "archive_um_premium_1d": Source(
+        "data/futures/um/monthly/premiumIndexKlines/{symbol}/1d/", parse_premium),
+}
+
+
+def http_get(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=30) as resp:
+        return resp.read()
+
+
+def _paced(get, url: str, delay: float) -> bytes:
+    """The spec's pacing: wait at least `delay` seconds before every request."""
+    if delay > 0:
+        time.sleep(delay)
+    return get(url)
+
+
+def list_keys(prefix: str, *, get, delay: float, delimiter: str | None = None) -> list[str]:
+    """Every key under `prefix` (or, given a delimiter, every sub-folder), across S3's pages."""
+    found: list[str] = []
+    marker = ""
+    while True:
+        query = {"prefix": prefix, "marker": marker}
+        if delimiter:
+            query["delimiter"] = delimiter
+        root = ET.fromstring(_paced(get, f"{LISTING_URL}?{urllib.parse.urlencode(query)}", delay))
+        path = "s3:CommonPrefixes/s3:Prefix" if delimiter else "s3:Contents/s3:Key"
+        page = [el.text for el in root.iterfind(path, S3_NS)]
+        found += page
+        if root.findtext("s3:IsTruncated", namespaces=S3_NS) != "true":
+            return found
+        # S3 names the next marker only for delimited listings; otherwise it is the last key.
+        marker = root.findtext("s3:NextMarker", namespaces=S3_NS) or page[-1]
+
+
+def settled_base(name: str) -> str | None:
+    """The ticker a settled folder belongs to (TLMUSDTSETTLED, AERGOUSDTSETTLEDSETTLED and
+    ICPUSDT_SETTLED → TLMUSDT, AERGOUSDT and ICPUSDT), or None for an ordinary folder."""
+    if "SETTLED" not in name:
+        return None
+    return name.split("SETTLED")[0].rstrip("_")
+
+
+def list_um_symbols(*, get, delay: float) -> tuple[list[str], list[str]]:
+    """(USDT perps, their settled folders) from the archive's UM klines listing (spec §1.1).
+
+    A perp is a USDT-quoted name without `_`, which marks dated delivery contracts."""
+    names = [p[len(UM_KLINES_ROOT):].rstrip("/")
+             for p in list_keys(UM_KLINES_ROOT, get=get, delay=delay, delimiter="/")]
+    perps = sorted(n for n in names if n.endswith("USDT") and "_" not in n)
+    known = set(perps)
+    settled = sorted(n for n in names if settled_base(n) in known)
+    return perps, settled
+
+
+def list_month_keys(dataset: str, symbol: str, *, get, delay: float) -> dict[str, str]:
+    """month ('YYYY-MM') → zip key, for every monthly zip published for this dataset and symbol."""
+    months = {}
+    for key in list_keys(SOURCES[dataset].folder.format(symbol=symbol), get=get, delay=delay):
+        match = MONTH_RE.search(key)
+        if match:
+            months[match.group(1)] = key
+    return dict(sorted(months.items()))
+
+
+def fetch_month(dataset: str, key: str, *, get, delay: float) -> list[dict]:
+    """Download one monthly zip and its checksum, verify, parse. Nothing unverified is returned.
+
+    Keys are percent-encoded: five tickers are Chinese characters (币安人生USDT …)."""
+    checksum = _paced(get, ARCHIVE_URL + urllib.parse.quote(key + ".CHECKSUM"), delay).decode()
+    payload = _paced(get, ARCHIVE_URL + urllib.parse.quote(key), delay)
+    verify_checksum(payload, checksum)
+    return SOURCES[dataset].parse(read_csv_rows(payload))
