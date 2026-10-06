@@ -7,6 +7,7 @@ from pathlib import Path
 WAREHOUSE_DIR = Path(os.environ.get("RESEARCH_WAREHOUSE_DIR", str(Path(__file__).parent / "warehouse")))
 
 RATE_LIMIT_DELAY = 0.5  # seconds between REST requests; never run from the prod IP
+ARCHIVE_DELAY = 0.2  # seconds between data.binance.vision requests (spec 2026-10-02 §1.1)
 
 HOUR_MS = 3_600_000
 DAY_MS = 24 * HOUR_MS
@@ -25,6 +26,12 @@ DATASETS: dict[str, tuple[str, int | None]] = {
     "long_short_1h": ("timestamp", HOUR_MS),
     "universe": ("snapshot_key", None),
     "intraday_universe": ("snapshot_key", None),
+    # Binance public archive (data.binance.vision), monthly files: spec 2026-10-02 §1.1
+    "archive_spot_klines_1d": ("open_time", DAY_MS),
+    "archive_spot_klines_1h": ("open_time", HOUR_MS),
+    "archive_um_klines_1d": ("open_time", DAY_MS),
+    "archive_um_funding": ("funding_time", 8 * HOUR_MS),
+    "archive_um_premium_1d": ("open_time", DAY_MS),
 }
 
 # OI / long-short endpoints only serve the trailing ~30 days; clamp with margin.
