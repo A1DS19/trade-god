@@ -2429,7 +2429,7 @@ the survivorship fix Phase C lacked; a look-ahead test pins it."
     2017-08), and `archive_um_klines_1d`, `archive_um_funding` and `archive_um_premium_1d` for
     every USDT perp in Binance's public archive, live or delisted, including 17 settled folders.
     These are monthly files, so they end at the last complete month. Refresh them with
-    `python -m research.archive_backfill`; the daily cron does not touch them."
+    `python -m research.archive_backfill`; the daily timer does not touch them."
   - Under `### Commands`, add the commands `python -m research.archive_backfill`,
     `python -m research.archive_reconcile` and `python -m research.signals.model_lab.universe`.
   - Under `### Known data quirks`, add five bullets: settled folders and relisted tickers (point

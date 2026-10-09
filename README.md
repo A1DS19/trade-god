@@ -73,7 +73,7 @@ The research trail for all of it is under [`docs/superpowers/`](docs/superpowers
 Requirements: Python 3.14 and the packages in `requirements.txt` + `requirements-research.txt`.
 
 ```bash
-python -m research.backfill --top 100    # resumable; a 05:30 cron runs this daily
+python -m research.backfill --top 100    # resumable; a daily systemd timer runs this
 python -m research.check                 # gap / staleness report
 python -m pytest -q                      # the research suite
 ```

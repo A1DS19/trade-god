@@ -8,7 +8,7 @@ at `legacy/coinpicks/CONTEXT.md`.
 
 **Warehouse** — the gitignored parquet store under `research/warehouse/`.
 - One file per dataset per symbol: Binance USDⓈ-M perpetuals, each since its listing.
-- A daily cron refreshes it.
+- A daily systemd timer refreshes it.
 - It is the only market data an experiment may read.
 
 _Avoid_: "database", "the DB".

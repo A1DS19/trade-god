@@ -136,17 +136,20 @@ python -m research.intraday_universe --top 30 --save   # print + snapshot intrad
 **Rules:** run backfills from the DEV machine only, never from a hosted IP (the 2026-06-05 −1003
 ban). Every endpoint is unsigned, so no API keys are needed.
 
-### The daily cron
+### The daily refresh
 
-Installed 2026-09-22, after the warehouse had silently stopped in mid-July. `crontab -l` shows:
-
-```
-30 5 * * * cd /home/dev/projects/trade-god && /usr/bin/python -m research.backfill --top 100 >> /tmp/research-backfill.log 2>&1
-```
-
+A systemd user timer runs `python -m research.backfill --top 100` every day at 05:30.
+- **History.** On 2026-10-08 it replaced a cron job that had been installed on 2026-09-22, after
+  the warehouse silently stopped in mid-July. The cron refreshed the warehouse on only 3 of 16
+  mornings: the machine is usually off at 05:30, and one run failed because `/tmp` was full.
+- **Missed runs.** The timer sets `Persistent=true`, so a run missed while the machine was off
+  happens at the next boot, once `nm-online` sees the network. Lingering is on, so no login is
+  needed.
 - **Each run** resolves the day's top-100 USDT perps, saves that universe snapshot, and resumes
   every dataset from its high-water mark.
-- **The log:** `/tmp` is tmpfs here, so it empties at every reboot.
+- **Units:** `~/.config/systemd/user/research-backfill.{service,timer}`.
+  `systemctl --user list-timers` shows the last and next run.
+- **The log** is the journal, which survives reboots: `journalctl --user -u research-backfill`.
 
 ### Survivorship
 
