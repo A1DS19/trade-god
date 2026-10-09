@@ -9,6 +9,37 @@ morning, against an Electron design that the afternoon replaced.
 
 ---
 
+## 2026-10-08 — A passing arm's paper record is 13 weeks, not 26
+
+The owner asked what Experiment 1 could deliver in the short term, and chose a shorter live paper
+record over the 26 weeks set on 2026-10-02.
+
+- **What changes.** An arm that passes the joint unseal trades on paper for 13 weeks before any
+  real money. The pass rule is unchanged: α > 0, Sharpe(arm) ≥ Sharpe(BTC), and a logged cause
+  for every operational gap. If the verdict lands in November, real money could start around late
+  February 2027 instead of late May.
+- **What it costs in proof is small.** No record shorter than a year separates skill from luck.
+  - An arm with no skill shows α > 0 about half the time, over 13 weeks or 26.
+  - An arm with a true information ratio of 1.3 a year shows α ≤ 0 about 1 time in 5 over 26
+    weeks, and about 1 in 4 over 13.
+  - The record's real job is to catch a broken live pipeline, a leak the backtest missed, or an
+    edge that has vanished. Thirteen weeks is about one quarter, so the record normally includes
+    one of the quarterly refits as well.
+- **What it gives up.**
+  - The research findings recommended at least 12 months of forward record before real money,
+    so 26 weeks was already a compromise.
+  - The paper gate is also the spec's declared answer to contamination (§3.1). At 13 weeks it is
+    a thinner answer.
+  - Real money stays a slice of the under-$1,000 account.
+- **Timing.** The change was made before any real-data run, so it amends the pre-registration
+  rather than re-tuning against results. The TypeSafe readout stays at 26 weeks, because it is a
+  separate test.
+
+**Reversal cost:** free until a passing arm's record starts. After that, any change to its length
+is optional stopping.
+
+---
+
 ## 2026-10-02 — CoinPicks retired; no seconds-scale trading; the repo becomes a daily-horizon model lab
 
 The owner asked three things:

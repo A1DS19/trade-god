@@ -8,6 +8,8 @@ real-data run; a change after that run is a new experiment, not an edit.
 **Amended 2026-10-05** (owner's approval of the phase 2 plan): §1.1, §1.2, §3.2, §3.3, §4.1 and
 §4.4 take in what the archive probe found: settled folders, zero-trade days, listings, TradFi
 exclusions, reconciliation coverage, complete weeks, and noise-level alpha.
+**Amended 2026-10-08** (owner's ruling): a passing arm's live paper record lasts 13 weeks, not 26;
+see §3.6 and Accepted limits.
 
 ## Context
 
@@ -52,7 +54,7 @@ false "no" over a false "yes".
 | Topic | Decision |
 |---|---|
 | Win rule | **Risk-adjusted plus alpha:** a higher Sharpe than BTC, a drawdown no deeper, and positive alpha once BTC's own move is removed |
-| Out-of-sample test | A one-shot historical walk-forward (contamination declared), then a 26-week live paper record before any money |
+| Out-of-sample test | A one-shot historical walk-forward (contamination declared), then a 13-week live paper record before any money (26 weeks until 2026-10-08) |
 | Arms | BTC timing, ETH timing, cross-sectional ranker |
 | Ranker universe | Top 50 by trailing 30-day quote volume, point-in-time |
 | TypeSafe | Start recording now; tested forward-only as a veto |
@@ -368,11 +370,11 @@ turnover, trade count, cost and funding totals:
 **Failing arms** get a findings document, like Phase 2b's, plus an entry in
 `agents/decisions.md` and `agents/roadmap.md`.
 
-**Passing arms** start a **26-week live paper record** on the first Monday after the verdict
-commit.
+**Passing arms** start a **13-week live paper record** on the first Monday after the verdict
+commit (owner's ruling, 2026-10-08; it was 26 weeks).
 - The same frozen code runs on fresh data.
 - Decisions are stored append-only, with their timestamps.
-- The record passes when, over those 26 weeks, α > 0, Sharpe(arm) ≥ Sharpe(BTC), and every
+- The record passes when, over those 13 weeks, α > 0, Sharpe(arm) ≥ Sharpe(BTC), and every
   operational gap has a logged cause.
 
 Real money comes only after that, as a slice of the under-$1,000 account. That is outside this
@@ -513,6 +515,11 @@ no other phase waits for it (owner's ruling, 2026-10-05).
 - **Power.** About 3.25 years of weekly returns pin a Sharpe ratio only to about ±0.55. A real but
   modest edge can fail these gates, and that is deliberate.
 - **Contamination.** It is declared in §3.1 and handled by the paper gate.
+- **A short paper record.** Thirteen weeks cannot separate skill from luck: an arm with no skill
+  shows α > 0 about half the time, and an arm with a true information ratio of 1.3 a year shows
+  α ≤ 0 about a quarter of the time. The record catches a broken live pipeline, a leak the
+  backtest missed, or an edge that has vanished. That makes it a thinner answer to contamination
+  than 26 weeks were, and the owner accepted that for an earlier start (2026-10-08).
 - **Jev.** Its answers can change between runs, so raw answers are stored. Its training cutoff
   makes it forward-only. Text written to persuade can steer it.
 - **This machine must be on** for the daily job. Gaps are logged, never filled.

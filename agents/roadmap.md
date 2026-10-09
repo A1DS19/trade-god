@@ -41,7 +41,7 @@ daily-to-weekly horizons?
       - One run of `oos_eval.py` for all three frozen arms.
       - Gates G1–G6; the verdict and a findings document.
 - [ ] **6. After the verdict.**
-      - A 26-week paper record for any passing arm.
+      - A 13-week paper record for any passing arm (26 weeks until 2026-10-08).
       - The TypeSafe 26-week readout.
 
 ---
@@ -76,3 +76,4 @@ never approved. The code and its vocabulary are in `legacy/coinpicks/`, and the 
 - 2026-09-22 — reframed to automated research. Spec `docs/superpowers/specs/2026-09-22-automated-research-design.md` (`c55cf73`) awaits the owner's review; once approved, its Phases 0–5 replace steps 5–8 above and this roadmap is rewritten.
 - 2026-10-02 — CoinPicks archived to `legacy/coinpicks/` (`3387d37`) after a three-track research pass (`docs/superpowers/specs/2026-10-02-trading-model-research-findings.md`). The repo becomes a model lab; Experiment 1 is the daily model lab.
 - 2026-10-05 — phase 1 no longer gates the others (owner's ruling): phase 2 starts while the TypeSafe key is still pending.
+- 2026-10-08 — a passing arm's paper record is 13 weeks, not 26 (owner's ruling), set before any real-data run so it stays pre-registered. The TypeSafe readout stays at 26 weeks.
