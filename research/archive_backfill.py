@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial
@@ -29,7 +30,7 @@ from research import config, store
 @dataclass
 class Summary:
     new_rows: dict = field(default_factory=dict)  # (dataset, symbol) -> int
-    failures: list = field(default_factory=list)  # [(dataset, symbol, month or None)]
+    failures: list = field(default_factory=list)  # [(dataset, symbol, month/day/None=listing)]
 
 
 def stored_months(dataset: str, symbol: str) -> set[str]:
@@ -39,6 +40,17 @@ def stored_months(dataset: str, symbol: str) -> set[str]:
     if df.empty:
         return set()
     return set(pd.to_datetime(df[time_col], unit="ms", utc=True).dt.strftime("%Y-%m"))
+
+
+def missing_days(dataset: str, symbol: str) -> list[str]:
+    """Days ('YYYY-MM-DD') between the first and last stored bar that have no row."""
+    time_col, _ = config.DATASETS[dataset]
+    df = store.load(dataset, symbol)
+    if df.empty:
+        return []
+    days = pd.DatetimeIndex(pd.to_datetime(df[time_col], unit="ms", utc=True).dt.normalize())
+    expected = pd.date_range(days.min(), days.max(), freq="D")
+    return list(expected.difference(days).strftime("%Y-%m-%d"))
 
 
 def work_list(perps: list[str], settled: list[str]) -> dict[str, list[str]]:
@@ -53,7 +65,7 @@ def work_list(perps: list[str], settled: list[str]) -> dict[str, list[str]]:
 
 
 def _backfill_one(dataset: str, symbol: str, *, get, delay: float) -> tuple[int | None, list]:
-    """(new rows, or None if the listing failed; [(month or None, error)]) for one symbol.
+    """(new rows, or None if the listing failed; [(month/day/None, error)]) for one symbol.
 
     It touches only this symbol's file and reports nothing itself, so symbols can run side by
     side."""
@@ -72,6 +84,29 @@ def _backfill_one(dataset: str, symbol: str, *, get, delay: float) -> tuple[int 
             added += store.upsert(dataset, symbol, rows, time_col)
         except Exception as e:
             errors.append((month, e))
+    filled, fill_errors = _fill_days(dataset, symbol, get=get, delay=delay)
+    return added + filled, errors + fill_errors
+
+
+def _fill_days(dataset: str, symbol: str, *, get, delay: float) -> tuple[int, list]:
+    """Fetch the days a monthly file skipped from Binance's daily files (spec §1.1).
+
+    A day with no daily file is a real hole and stays one; any other error is reported."""
+    template = src.SOURCES[dataset].daily
+    if template is None:
+        return 0, []
+    time_col, _ = config.DATASETS[dataset]
+    added, errors = 0, []
+    for day in missing_days(dataset, symbol):
+        try:
+            rows = src.fetch_month(dataset, template.format(symbol=symbol, day=day), get=get,
+                                   delay=delay)
+            added += store.upsert(dataset, symbol, rows, time_col)
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                errors.append((day, e))
+        except Exception as e:
+            errors.append((day, e))
     return added, errors
 
 

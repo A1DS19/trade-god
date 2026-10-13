@@ -23,10 +23,23 @@ SEPTEMBER = (
 )
 FUNDING = "calc_time,funding_interval_hours,last_funding_rate\n1788220800000,8,0.00010000\n"
 KLINES = {"archive_um_klines_1d": ["BTCUSDT"]}
+DAY = 86_400_000
+SEP1 = 1_788_220_800_000  # 2026-09-01 00:00 UTC
 
 
 def _publish(archive, symbol, month, text, corrupt=False):
     archive.publish(f"{UM}{symbol}/1d/{symbol}-1d-{month}.zip", text, corrupt=corrupt)
+
+
+def _publish_day(archive, symbol, day, text, corrupt=False):
+    archive.publish(f"data/futures/um/daily/klines/{symbol}/1d/{symbol}-1d-{day}.zip", text,
+                    corrupt=corrupt)
+
+
+def _bars(*days):
+    """Kline CSV rows for the given days of September 2026."""
+    return "".join(f"{SEP1 + (d - 1) * DAY},1,1,1,1,1,{SEP1 + d * DAY - 1},1,1,1,1,0\n"
+                   for d in days)
 
 
 def test_first_run_stores_every_published_month(warehouse, archive):
@@ -40,7 +53,8 @@ def test_first_run_stores_every_published_month(warehouse, archive):
 
 
 def test_rerun_downloads_only_what_is_missing(warehouse, archive):
-    _publish(archive, "BTCUSDT", "2026-08", AUGUST)
+    # August's bar is its last day, so no day is missing between it and September's.
+    _publish(archive, "BTCUSDT", "2026-08", f"{SEP1 - DAY},1,1,1,1,1,{SEP1 - 1},1,1,1,1,0\n")
     backfill.run(KLINES, get=archive, delay=0)
     _publish(archive, "BTCUSDT", "2026-09", SEPTEMBER)  # a month published later
     archive.urls.clear()
@@ -133,3 +147,36 @@ def test_stored_months_come_from_the_time_column(warehouse):
     store.upsert("archive_um_funding", "BTCUSDT", rows, "funding_time")
     assert backfill.stored_months("archive_um_funding", "BTCUSDT") == {"2026-08", "2026-09"}
     assert backfill.stored_months("archive_um_funding", "ETHUSDT") == set()
+
+
+def test_missing_days_are_the_gaps_inside_the_stored_history(warehouse):
+    rows = [{"open_time": SEP1 + d * DAY, "close": 1.0} for d in (0, 1, 4)]  # Sep 1, 2 and 5
+    store.upsert("archive_um_klines_1d", "BTCUSDT", rows, "open_time")
+    assert backfill.missing_days("archive_um_klines_1d", "BTCUSDT") == ["2026-09-03", "2026-09-04"]
+    assert backfill.missing_days("archive_um_klines_1d", "ETHUSDT") == []
+
+
+def test_a_day_the_monthly_file_skips_is_filled_from_the_daily_file(warehouse, archive):
+    # Binance's 2022-02 monthly files for 49 perps end on the 25th; its daily files hold the rest.
+    _publish(archive, "BTCUSDT", "2026-09", _bars(1, 3))
+    _publish_day(archive, "BTCUSDT", "2026-09-02", _bars(2))
+    summary = backfill.run(KLINES, get=archive, delay=0)
+    assert summary.failures == []
+    assert summary.new_rows[("archive_um_klines_1d", "BTCUSDT")] == 3
+    stored = store.load("archive_um_klines_1d", "BTCUSDT")
+    assert list(stored["open_time"]) == [SEP1, SEP1 + DAY, SEP1 + 2 * DAY]
+
+
+def test_a_day_with_no_daily_file_stays_a_hole(warehouse, archive):
+    _publish(archive, "BTCUSDT", "2026-09", _bars(1, 3))
+    summary = backfill.run(KLINES, get=archive, delay=0)
+    assert summary.failures == []
+    assert list(store.load("archive_um_klines_1d", "BTCUSDT")["open_time"]) == [SEP1, SEP1 + 2 * DAY]
+
+
+def test_a_corrupt_daily_file_is_reported_and_never_stored(warehouse, archive):
+    _publish(archive, "BTCUSDT", "2026-09", _bars(1, 3))
+    _publish_day(archive, "BTCUSDT", "2026-09-02", _bars(2), corrupt=True)
+    summary = backfill.run(KLINES, get=archive, delay=0)
+    assert summary.failures == [("archive_um_klines_1d", "BTCUSDT", "2026-09-02")]
+    assert len(store.load("archive_um_klines_1d", "BTCUSDT")) == 2

@@ -1,10 +1,12 @@
 """Binance's public archive (data.binance.vision): listing, checksummed downloads, parsing.
 
-Every archive file is a monthly zip holding one CSV, published beside a `.CHECKSUM` in sha256sum
-format (`<hex>  <file name>`). Quirks seen in real files on 2026-10-05:
+Every archive file is a monthly or daily zip holding one CSV, published beside a `.CHECKSUM` in
+sha256sum format (`<hex>  <file name>`). Quirks seen in real files on 2026-10-05 and 2026-10-12:
 - futures CSVs have a header row from about 2022 on; older ones have none;
 - spot klines switch from millisecond to microsecond timestamps in 2025-01;
-- funding files are `calc_time,funding_interval_hours,last_funding_rate`, with ms jitter.
+- funding files are `calc_time,funding_interval_hours,last_funding_rate`, with ms jitter;
+- some monthly files skip days their daily files hold: 49 perps' 1d klines for 2022-02 end on
+  the 25th, and for 2022-04 start on the 3rd.
 Nothing here writes to the warehouse; research.archive_backfill does.
 """
 
@@ -84,15 +86,23 @@ SPOT_SYMBOLS = ("BTCUSDT", "ETHUSDT")
 class Source:
     folder: str  # S3 prefix holding one symbol's monthly files; {symbol} is filled in
     parse: Callable[[list[list[str]]], list[dict]]
+    # One day's zip, for daily-bar datasets; {symbol} and {day} ('YYYY-MM-DD') are filled in.
+    # Funding has no daily files, and spot 1h gaps are real outages, so neither has one.
+    daily: str | None = None
 
 
 SOURCES: dict[str, Source] = {
-    "archive_spot_klines_1d": Source("data/spot/monthly/klines/{symbol}/1d/", parse_klines),
+    "archive_spot_klines_1d": Source(
+        "data/spot/monthly/klines/{symbol}/1d/", parse_klines,
+        "data/spot/daily/klines/{symbol}/1d/{symbol}-1d-{day}.zip"),
     "archive_spot_klines_1h": Source("data/spot/monthly/klines/{symbol}/1h/", parse_klines),
-    "archive_um_klines_1d": Source("data/futures/um/monthly/klines/{symbol}/1d/", parse_klines),
+    "archive_um_klines_1d": Source(
+        "data/futures/um/monthly/klines/{symbol}/1d/", parse_klines,
+        "data/futures/um/daily/klines/{symbol}/1d/{symbol}-1d-{day}.zip"),
     "archive_um_funding": Source("data/futures/um/monthly/fundingRate/{symbol}/", parse_funding),
     "archive_um_premium_1d": Source(
-        "data/futures/um/monthly/premiumIndexKlines/{symbol}/1d/", parse_premium),
+        "data/futures/um/monthly/premiumIndexKlines/{symbol}/1d/", parse_premium,
+        "data/futures/um/daily/premiumIndexKlines/{symbol}/1d/{symbol}-1d-{day}.zip"),
 }
 
 
@@ -157,7 +167,8 @@ def list_month_keys(dataset: str, symbol: str, *, get, delay: float) -> dict[str
 
 
 def fetch_month(dataset: str, key: str, *, get, delay: float) -> list[dict]:
-    """Download one monthly zip and its checksum, verify, parse. Nothing unverified is returned.
+    """Download one zip (a month's, or a day's) and its checksum, verify, parse. Nothing
+    unverified is returned.
 
     Keys are percent-encoded: five tickers are Chinese characters (币安人生USDT …)."""
     checksum = _paced(get, ARCHIVE_URL + urllib.parse.quote(key + ".CHECKSUM"), delay).decode()
