@@ -6,16 +6,19 @@
 
 Run from the DEV machine only. Each run re-lists the archive and downloads only months not yet
 stored, so an interrupted run resumes where it stopped. The first full run makes about 137,000
-requests, about 22,000 monthly files per UM dataset each with a checksum, and takes roughly a day
-at the 0.2 s pacing. The REST warehouse, its datasets and the 05:30 cron are untouched: every
-archive dataset has its own folder.
+requests, about 22,000 monthly files per UM dataset each with a checksum. With 8 workers, each
+pacing its own requests at 0.2 s, that takes about 3½ hours; one at a time it took about 29. The
+REST warehouse, its datasets and the 05:30 cron are untouched: every archive dataset has its own
+folder.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 
 import pandas as pd
 
@@ -49,16 +52,18 @@ def work_list(perps: list[str], settled: list[str]) -> dict[str, list[str]]:
     }
 
 
-def _backfill_one(dataset: str, symbol: str, *, get, delay: float, summary: Summary) -> None:
+def _backfill_one(dataset: str, symbol: str, *, get, delay: float) -> tuple[int | None, list]:
+    """(new rows, or None if the listing failed; [(month or None, error)]) for one symbol.
+
+    It touches only this symbol's file and reports nothing itself, so symbols can run side by
+    side."""
     try:
         months = src.list_month_keys(dataset, symbol, get=get, delay=delay)
     except Exception as e:
-        summary.failures.append((dataset, symbol, None))
-        print(f"{symbol:<24} {dataset:<24} listing FAILED: {e}", file=sys.stderr)
-        return
+        return None, [(None, e)]
     time_col, _ = config.DATASETS[dataset]
     have = stored_months(dataset, symbol)
-    added = 0
+    added, errors = 0, []
     for month, key in months.items():
         if month in have:
             continue
@@ -66,17 +71,26 @@ def _backfill_one(dataset: str, symbol: str, *, get, delay: float, summary: Summ
             rows = src.fetch_month(dataset, key, get=get, delay=delay)
             added += store.upsert(dataset, symbol, rows, time_col)
         except Exception as e:
-            summary.failures.append((dataset, symbol, month))
-            print(f"{symbol:<24} {dataset:<24} {month} FAILED: {e}", file=sys.stderr)
-    summary.new_rows[(dataset, symbol)] = added
-    print(f"{symbol:<24} {dataset:<24} +{added} rows")
+            errors.append((month, e))
+    return added, errors
 
 
-def run(work: dict[str, list[str]], *, get, delay: float) -> Summary:
+def run(work: dict[str, list[str]], *, get, delay: float, workers: int = 1) -> Summary:
+    """Datasets in order; within one, up to `workers` symbols download side by side, each paced.
+
+    Results are reported in symbol order, and a dataset finishes before the next one starts."""
     summary = Summary()
-    for dataset, symbols in work.items():
-        for symbol in symbols:
-            _backfill_one(dataset, symbol, get=get, delay=delay, summary=summary)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for dataset, symbols in work.items():
+            one = partial(_backfill_one, dataset, get=get, delay=delay)
+            for symbol, (added, errors) in zip(symbols, pool.map(one, symbols)):
+                for month, e in errors:
+                    summary.failures.append((dataset, symbol, month))
+                    print(f"{symbol:<24} {dataset:<24} {month or 'listing'} FAILED: {e}",
+                          file=sys.stderr)
+                if added is not None:
+                    summary.new_rows[(dataset, symbol)] = added
+                    print(f"{symbol:<24} {dataset:<24} +{added} rows")
     return summary
 
 
@@ -87,6 +101,8 @@ def main() -> None:
                         help=f"subset of: {','.join(src.SOURCES)}")
     parser.add_argument("--symbols", help="comma-separated override, applied to every dataset")
     parser.add_argument("--dry-run", action="store_true", help="list the work, fetch no data")
+    parser.add_argument("--workers", type=int, default=config.ARCHIVE_WORKERS,
+                        help="symbols downloaded side by side (default %(default)s)")
     args = parser.parse_args()
 
     datasets = [d.strip() for d in args.datasets.split(",") if d.strip()]
@@ -108,7 +124,7 @@ def main() -> None:
             print(f"{dataset:<24} {len(symbols)} symbols")
         return
 
-    summary = run(work, get=src.http_get, delay=config.ARCHIVE_DELAY)
+    summary = run(work, get=src.http_get, delay=config.ARCHIVE_DELAY, workers=args.workers)
     total = sum(summary.new_rows.values())
     print(f"\nDone: +{total} rows across {len(summary.new_rows)} tasks; "
           f"{len(summary.failures)} failures")

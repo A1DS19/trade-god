@@ -7,7 +7,8 @@ from pathlib import Path
 WAREHOUSE_DIR = Path(os.environ.get("RESEARCH_WAREHOUSE_DIR", str(Path(__file__).parent / "warehouse")))
 
 RATE_LIMIT_DELAY = 0.5  # seconds between REST requests; never run from the prod IP
-ARCHIVE_DELAY = 0.2  # seconds between data.binance.vision requests (spec 2026-10-02 §1.1)
+ARCHIVE_DELAY = 0.2  # seconds between one worker's data.binance.vision requests (spec 2026-10-02 §1.1)
+ARCHIVE_WORKERS = 8  # symbols downloaded side by side, each paced by ARCHIVE_DELAY (spec §1.1)
 
 HOUR_MS = 3_600_000
 DAY_MS = 24 * HOUR_MS
