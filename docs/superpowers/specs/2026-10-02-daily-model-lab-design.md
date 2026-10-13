@@ -16,6 +16,8 @@ side, each still pacing its own requests at 0.2 s. One at a time, the full archi
 **Amended 2026-10-12** (owner's rulings on the first reconciliation): days a monthly file skips are
 fetched from Binance's daily files, and three close mismatches on 2025-01-28 are reviewed
 exceptions that keep the archive's value; see §1.1.
+**Amended 2026-10-12** (owner's ruling at the data review): a settled contract's last month,
+which Binance publishes only as daily files, is fetched from them too; see §1.1.
 
 ## Context
 
@@ -103,6 +105,14 @@ daily ones for days a monthly file skips (below), each checked against the archi
   `archive_um_premium_1d`), any day missing between a symbol's first and last stored bar is
   fetched from its daily file (`…/daily/…/{SYM}-1d-{YYYY-MM-DD}.zip`). A day with no daily file
   stays a hole. Funding has no daily files.
+- **A settled contract's last month.** When a contract settles mid-month, Binance moves it to a
+  settled folder and never writes that month's monthly file for the live folder; the month's days
+  exist only as daily files there. On 2026-10-12 this hid AERGOUSDT's last 23 trading days
+  (2026-07-01 to 07-23), which split its listing, and halted days of BDXNUSDT, BTCSTUSDT and
+  SXPUSDT. So the daily files after a symbol's last stored bar are fetched too, for days before
+  the first of the previous month (through 2026-08-31 on a run on 2026-10-12). By then Binance has
+  had a full month to publish a trading symbol's monthly file, so only a stopped folder takes this
+  path. Funding has no daily files, so its last month stays missing.
 - **No interference.** The existing REST warehouse, its datasets and the 05:30 cron are not
   touched.
 - **Reconciliation.** On every symbol and day where both the existing warehouse and the archive
