@@ -13,6 +13,9 @@ see §3.6 and Accepted limits.
 **Amended 2026-10-12** (owner's ruling): §1.1's fetcher downloads up to eight symbols side by
 side, each still pacing its own requests at 0.2 s. One at a time, the full archive took about
 29 hours.
+**Amended 2026-10-12** (owner's rulings on the first reconciliation): days a monthly file skips are
+fetched from Binance's daily files, and three close mismatches on 2025-01-28 are reviewed
+exceptions that keep the archive's value; see §1.1.
 
 ## Context
 
@@ -69,8 +72,9 @@ false "no" over a false "yes".
 
 ### 1.1 Sources and new datasets
 
-All data comes from Binance's public archive (`data.binance.vision`): monthly zip files, each
-checked against the archive's published `.CHECKSUM` before it is stored.
+All data comes from Binance's public archive (`data.binance.vision`): monthly zip files, plus
+daily ones for days a monthly file skips (below), each checked against the archive's published
+`.CHECKSUM` before it is stored.
 
 | Dataset (new) | Archive path | Coverage |
 |---|---|---|
@@ -92,6 +96,13 @@ checked against the archive's published `.CHECKSUM` before it is stored.
   redenomination are there and nowhere else.
 - **Fetching.** Up to eight symbols download side by side, and each download waits at least
   0.2 s between its requests. The fetcher skips months already stored and is resumable.
+- **Days a monthly file skips.** Some monthly files lack days that Binance's daily files hold. The
+  first reconciliation (2026-10-12) found 49 perps whose 1d klines for 2022-02 end on the 25th
+  and for 2022-04 start on the 3rd; for FILUSDT the daily files match REST exactly. For the
+  daily-bar datasets (`archive_spot_klines_1d`, `archive_um_klines_1d`,
+  `archive_um_premium_1d`), any day missing between a symbol's first and last stored bar is
+  fetched from its daily file (`…/daily/…/{SYM}-1d-{YYYY-MM-DD}.zip`). A day with no daily file
+  stays a hole. Funding has no daily files.
 - **No interference.** The existing REST warehouse, its datasets and the 05:30 cron are not
   touched.
 - **Reconciliation.** On every symbol and day where both the existing warehouse and the archive
@@ -99,6 +110,12 @@ checked against the archive's published `.CHECKSUM` before it is stored.
   between the archive's first and last day for that symbol must also be in the archive, because a
   missing day ends a listing (§1.2). The UM archive starts in 2020-01, so REST's 2019 days fall
   outside that span. A mismatch or a missing day fails the data step.
+  - **Reviewed exceptions** (owner's ruling, 2026-10-12). ACEUSDT, TUSDT and TRUMPUSDT on
+    2025-01-28 (0.62%, 0.26% and 0.018% apart). The archive's monthly and daily files agree with
+    each other, and REST agrees with itself and its own hourly bars, so the archive is probably
+    wrong on that day. Its value is kept anyway: every coin stays on one source, and coins only
+    the archive holds cannot be checked. These three are reported apart; the tolerance is
+    unchanged, and any other mismatch still fails.
 
 **Exclusions** (`research/signals/model_lab/exclusions.py`):
 - stablecoin and pegged-asset perps;
