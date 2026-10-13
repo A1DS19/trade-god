@@ -7,7 +7,7 @@ informed any entry. A ticker excluded here is excluded in every listing it has. 
 listed after 2026-10-05 have no bars inside Experiment 1's windows, so the list is complete for
 this experiment; the paper phase amends it.
 
-Kept on purpose, for the owner to confirm:
+Kept on purpose, and confirmed by the owner at the data review on 2026-10-12:
 - USTCUSDT, a stablecoin that lost its peg in 2022 and now trades like any token;
 - FRAXUSDT, STABLEUSDT, STBLUSDT and USUALUSDT, tokens of stablecoin projects rather than
   stablecoins;

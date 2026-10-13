@@ -29,7 +29,7 @@ daily-to-weekly horizons?
       - Starts the forward record.
       - Needs `TYPESAFE_API_KEY` and confirmed access.
       - Runs alongside phases 2–6; none of them waits for it (2026-10-05).
-- [ ] **2. Data.**
+- [x] **2. Data.**
       - Archive datasets (spot BTC/ETH since 2017-08; every USDT perp, live and delisted).
       - Reconciliation against the existing warehouse.
       - The exclusion list, which the owner reviews.
@@ -77,3 +77,4 @@ never approved. The code and its vocabulary are in `legacy/coinpicks/`, and the 
 - 2026-10-02 — CoinPicks archived to `legacy/coinpicks/` (`3387d37`) after a three-track research pass (`docs/superpowers/specs/2026-10-02-trading-model-research-findings.md`). The repo becomes a model lab; Experiment 1 is the daily model lab.
 - 2026-10-05 — phase 1 no longer gates the others (owner's ruling): phase 2 starts while the TypeSafe key is still pending.
 - 2026-10-08 — a passing arm's paper record is 13 weeks, not 26 (owner's ruling), set before any real-data run so it stays pre-registered. The TypeSafe readout stays at 26 weeks.
+- 2026-10-12 — phase 2 (data) complete: archive backfilled (4,193,700 rows), reconciled against REST (259 symbols, 253,392 shared days, 0 mismatches beyond 3 reviewed exceptions), 913 listings over 900 tickers with 0 data holes, exclusions reviewed by the owner and approved as drafted. Owner's ruling at the review: a settled contract's last month comes from its daily files. Next: phase 3's plan (BTC and ETH arms).

@@ -77,7 +77,7 @@ research/             # the live code: warehouse fetch/store/check, siglib, sign
 ├── siglib/           # backtest engine, cost models, data loading, event studies — ALL P&L here
 ├── signals/          # finished studies (carry, xs_momentum, basis_mr, intraday)
 └── warehouse/        # gitignored parquet, one file per dataset per symbol
-tests/research/       # the Python suite (111 tests)
+tests/research/       # the Python suite (195 tests)
 agents/               # paper trail: handoff.md, CONTEXT.md, decisions.md, roadmap.md
 docs/superpowers/     # specs/ (designs + findings) and plans/
 legacy/               # every retired system. Not imported, not collected, not deployed.
@@ -123,6 +123,12 @@ Point-in-time market data for experiments.
     fetches minute data for 100 symbols.
   - As a result they stop at 2026-07-15. Refresh them explicitly if an experiment needs them.
 - `intraday_universe` (top-30 by 30-day median quote volume, as snapshots).
+- **Archive datasets**, from Binance's public archive (`data.binance.vision`):
+  - `archive_spot_klines_1d/1h`: BTC and ETH since 2017-08.
+  - `archive_um_klines_1d`, `archive_um_funding` and `archive_um_premium_1d`: every USDT perp in
+    the archive, live or delisted, including 17 settled folders.
+  - These are monthly files, so they end at the last complete month. Refresh them with
+    `python -m research.archive_backfill`; the daily timer does not touch them.
 
 ### Commands
 
@@ -131,6 +137,9 @@ python -m research.backfill --top 100          # resumable (per symbol×dataset 
 python -m research.backfill --symbols DOGEUSDT --datasets funding
 python -m research.check                       # gap/staleness report
 python -m research.intraday_universe --top 30 --save   # print + snapshot intraday top-30
+python -m research.archive_backfill            # the public archive; resumable, 8 symbols at a time
+python -m research.archive_reconcile           # archive daily closes vs REST; exits 1 on a mismatch
+python -m research.signals.model_lab.universe  # listings, data holes, the yearly universe table
 ```
 
 **Rules:** run backfills from the DEV machine only, never from a hosted IP (the 2026-06-05 −1003
@@ -167,6 +176,25 @@ anything long-biased.
 - **`oi_1h` and `long_short_1h` have a permanent hole** from 2026-06-12 to about 2026-08-24.
 - **Binance's archive** has tick-level futures `bookTicker` only through about March 2024.
   `aggTrades` and `bookDepth` are current.
+- **Settled folders and relisted tickers.** In the archive, a settled perp gets a flat, zero-trade
+  bar every day until its ticker is relisted. A relisted ticker continues the old contract's file
+  at an unrelated price. 17 settled folders (`…SETTLED`, `…SETTLEDSETTLED`, `ICPUSDT_SETTLED`)
+  hold old contracts' last days. `research/signals/model_lab/listings.py` turns all of this into
+  listings, so build price panels from its output, never from raw `archive_um_klines_1d`.
+- **Spot archive timestamps** are in microseconds from 2025-01; the parser converts them to ms.
+- **Futures archive CSVs** have a header row only from about 2022.
+- **Five tickers are Chinese characters** (币安人生USDT, 龙虾USDT …), so archive URLs are
+  percent-encoded. The archive has no premium index for any of them.
+- **212 TradFi perps** (stocks, ETFs, commodities, FX, pre-IPO) share the UM archive since
+  2025-12. `research/signals/model_lab/exclusions.py` keeps them out of the ranker, along with a
+  stablecoin, gold tokens and indexes.
+- **Some monthly archive files lack days** that daily files hold. 49 perps' 1d klines skip the end
+  of 2022-02 and the start of 2022-04. The month a contract settles in gets only daily files in
+  its live folder (AERGO's 2026-07). `archive_backfill` fetches both from the daily files, the
+  second once a month has passed. A day with no daily file stays a hole; funding has no daily
+  files.
+- **Three archive closes differ from REST** on 2025-01-28 (ACE, T and TRUMP). The owner ruled
+  that the archive's value stands, and `archive_reconcile` reports them apart.
 
 ### Signal code
 
@@ -202,7 +230,7 @@ Notes on the archive:
 ## How to run
 
 ```bash
-python -m pytest -q          # the research suite (111 tests)
+python -m pytest -q          # the research suite (195 tests)
 python -m compileall -q research
 ```
 
