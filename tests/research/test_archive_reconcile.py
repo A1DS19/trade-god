@@ -61,3 +61,16 @@ def test_symbols_in_only_one_store_are_skipped(warehouse):
     _days(rec.REST, "ETHUSDT", [1.0])
     _days(rec.ARCHIVE, "DEADUSDT", [1.0])
     assert rec.reconcile()["symbols"] == 0
+
+
+ACE_DAY = 1_738_022_400_000  # 2025-01-28 00:00 UTC
+
+
+def test_a_reviewed_mismatch_is_reported_apart_and_others_still_fail(warehouse):
+    # ACEUSDT on 2025-01-28 is on the owner's reviewed list (spec §1.1); BTCUSDT is not.
+    for symbol in ("ACEUSDT", "BTCUSDT"):
+        store.upsert(rec.REST, symbol, [{"open_time": ACE_DAY, "close": 1.3453}], "open_time")
+        store.upsert(rec.ARCHIVE, symbol, [{"open_time": ACE_DAY, "close": 1.337}], "open_time")
+    report = rec.reconcile()
+    assert [m["symbol"] for m in report["reviewed"]] == ["ACEUSDT"]
+    assert [m["symbol"] for m in report["mismatches"]] == ["BTCUSDT"]
