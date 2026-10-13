@@ -131,6 +131,16 @@ def test_month_keys_cover_every_published_zip(archive):
     }
 
 
+def test_day_keys_cover_every_published_daily_zip(archive):
+    folder = "data/futures/um/daily/klines/AERGOUSDT/1d/"
+    for day in ("2026-07-01", "2026-07-02"):
+        archive.publish(f"{folder}AERGOUSDT-1d-{day}.zip", FUTURES_2026)
+    assert src.list_day_keys("archive_um_klines_1d", "AERGOUSDT", get=archive, delay=0) == {
+        "2026-07-01": f"{folder}AERGOUSDT-1d-2026-07-01.zip",
+        "2026-07-02": f"{folder}AERGOUSDT-1d-2026-07-02.zip",
+    }
+
+
 def test_fetch_month_verifies_before_parsing(archive):
     good, bad = (f"{UM}BTCUSDT/1d/BTCUSDT-1d-{m}.zip" for m in ("2026-09", "2026-08"))
     archive.publish(good, FUTURES_2026)

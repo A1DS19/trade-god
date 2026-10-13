@@ -6,7 +6,9 @@ sha256sum format (`<hex>  <file name>`). Quirks seen in real files on 2026-10-05
 - spot klines switch from millisecond to microsecond timestamps in 2025-01;
 - funding files are `calc_time,funding_interval_hours,last_funding_rate`, with ms jitter;
 - some monthly files skip days their daily files hold: 49 perps' 1d klines for 2022-02 end on
-  the 25th, and for 2022-04 start on the 3rd.
+  the 25th, and for 2022-04 start on the 3rd;
+- the month a contract settles in gets no monthly file in its live folder, only daily ones:
+  AERGOUSDT's 2026-07.
 Nothing here writes to the warehouse; research.archive_backfill does.
 """
 
@@ -79,6 +81,7 @@ LISTING_URL = "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
 S3_NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
 UM_KLINES_ROOT = "data/futures/um/monthly/klines/"
 MONTH_RE = re.compile(r"-(\d{4}-\d{2})\.zip$")
+DAY_RE = re.compile(r"-(\d{4}-\d{2}-\d{2})\.zip$")
 SPOT_SYMBOLS = ("BTCUSDT", "ETHUSDT")
 
 
@@ -156,14 +159,26 @@ def list_um_symbols(*, get, delay: float) -> tuple[list[str], list[str]]:
     return perps, settled
 
 
+def _keys_by_date(folder: str, date_re: re.Pattern, *, get, delay: float) -> dict[str, str]:
+    """date → zip key, for every zip under `folder` whose name ends in a date `date_re` matches."""
+    found = {}
+    for key in list_keys(folder, get=get, delay=delay):
+        match = date_re.search(key)
+        if match:
+            found[match.group(1)] = key
+    return dict(sorted(found.items()))
+
+
 def list_month_keys(dataset: str, symbol: str, *, get, delay: float) -> dict[str, str]:
     """month ('YYYY-MM') → zip key, for every monthly zip published for this dataset and symbol."""
-    months = {}
-    for key in list_keys(SOURCES[dataset].folder.format(symbol=symbol), get=get, delay=delay):
-        match = MONTH_RE.search(key)
-        if match:
-            months[match.group(1)] = key
-    return dict(sorted(months.items()))
+    return _keys_by_date(SOURCES[dataset].folder.format(symbol=symbol), MONTH_RE, get=get,
+                         delay=delay)
+
+
+def list_day_keys(dataset: str, symbol: str, *, get, delay: float) -> dict[str, str]:
+    """day ('YYYY-MM-DD') → zip key, for every daily zip published for this dataset and symbol."""
+    folder = SOURCES[dataset].daily.format(symbol=symbol, day="").rsplit("/", 1)[0] + "/"
+    return _keys_by_date(folder, DAY_RE, get=get, delay=delay)
 
 
 def fetch_month(dataset: str, key: str, *, get, delay: float) -> list[dict]:

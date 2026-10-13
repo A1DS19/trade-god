@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import date
 import urllib.error
 import urllib.parse
 
@@ -180,3 +181,48 @@ def test_a_corrupt_daily_file_is_reported_and_never_stored(warehouse, archive):
     summary = backfill.run(KLINES, get=archive, delay=0)
     assert summary.failures == [("archive_um_klines_1d", "BTCUSDT", "2026-09-02")]
     assert len(store.load("archive_um_klines_1d", "BTCUSDT")) == 2
+
+
+def test_days_after_the_last_monthly_file_come_from_the_daily_files(warehouse, archive):
+    # AERGOUSDT settled on 2026-07-24, and its live folder never got a monthly file for July.
+    _publish(archive, "BTCUSDT", "2026-09", _bars(1))
+    _publish_day(archive, "BTCUSDT", "2026-09-02", _bars(2))
+    _publish_day(archive, "BTCUSDT", "2026-09-03", _bars(3))
+    summary = backfill.run(KLINES, get=archive, delay=0, tail_before="2026-10-01")
+    assert summary.failures == []
+    assert summary.new_rows[("archive_um_klines_1d", "BTCUSDT")] == 3
+    stored = store.load("archive_um_klines_1d", "BTCUSDT")
+    assert list(stored["open_time"]) == [SEP1, SEP1 + DAY, SEP1 + 2 * DAY]
+
+
+def test_days_from_the_cutoff_on_wait_for_their_monthly_file(warehouse, archive):
+    _publish(archive, "BTCUSDT", "2026-09", _bars(1))
+    _publish_day(archive, "BTCUSDT", "2026-09-02", _bars(2))
+    _publish_day(archive, "BTCUSDT", "2026-09-03", _bars(3))
+    backfill.run(KLINES, get=archive, delay=0, tail_before="2026-09-03")
+    assert list(store.load("archive_um_klines_1d", "BTCUSDT")["open_time"]) == [SEP1, SEP1 + DAY]
+
+
+def test_a_symbol_stored_up_to_the_cutoff_lists_no_daily_files(warehouse, archive):
+    _publish(archive, "BTCUSDT", "2026-09", _bars(1))
+    backfill.run(KLINES, get=archive, delay=0, tail_before="2026-09-02")
+    assert not any("/daily/" in urllib.parse.unquote(u) for u in archive.urls)
+
+
+def test_a_daily_listing_failure_is_reported_and_keeps_the_months(warehouse, archive):
+    _publish(archive, "BTCUSDT", "2026-09", _bars(1))
+
+    def flaky(url):
+        if "/daily/" in urllib.parse.unquote(url):
+            raise urllib.error.URLError("timed out")
+        return archive(url)
+
+    summary = backfill.run(KLINES, get=flaky, delay=0, tail_before="2026-10-01")
+    assert summary.failures == [("archive_um_klines_1d", "BTCUSDT", None)]
+    assert len(store.load("archive_um_klines_1d", "BTCUSDT")) == 1
+
+
+def test_the_cutoff_is_the_first_of_last_month():
+    assert backfill.first_of_last_month(date(2026, 10, 12)) == "2026-09-01"
+    assert backfill.first_of_last_month(date(2026, 10, 1)) == "2026-09-01"
+    assert backfill.first_of_last_month(date(2026, 1, 31)) == "2025-12-01"

@@ -5,11 +5,11 @@
     python -m research.archive_backfill --dry-run           # list the work, fetch no data
 
 Run from the DEV machine only. Each run re-lists the archive and downloads only months not yet
-stored, so an interrupted run resumes where it stopped. The first full run makes about 137,000
-requests, about 22,000 monthly files per UM dataset each with a checksum. With 8 workers, each
-pacing its own requests at 0.2 s, that takes about 3½ hours; one at a time it took about 29. The
-REST warehouse, its datasets and the 05:30 cron are untouched: every archive dataset has its own
-folder.
+stored, so an interrupted run resumes where it stopped; days the monthly files lack come from
+daily files (spec §1.1). The first full run makes about 137,000 requests, about 22,000 monthly
+files per UM dataset each with a checksum. With 8 workers, each pacing its own requests at 0.2 s,
+that takes about 3½ hours; one at a time it took about 29. The REST warehouse, its datasets and
+the 05:30 cron are untouched: every archive dataset has its own folder.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import sys
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, timezone
 from functools import partial
 
 import pandas as pd
@@ -53,6 +54,13 @@ def missing_days(dataset: str, symbol: str) -> list[str]:
     return list(expected.difference(days).strftime("%Y-%m-%d"))
 
 
+def first_of_last_month(today: date) -> str:
+    """The first day of the month before `today`'s: a symbol's daily files after its last stored
+    bar are fetched only for days before it (spec §1.1). By then Binance has had a full month to
+    publish a trading symbol's monthly file, so only a stopped folder reaches its daily files."""
+    return (today.replace(day=1) - timedelta(days=1)).replace(day=1).isoformat()
+
+
 def work_list(perps: list[str], settled: list[str]) -> dict[str, list[str]]:
     """Symbols per dataset: spot is BTC and ETH only, and settled folders exist for klines only."""
     return {
@@ -64,7 +72,8 @@ def work_list(perps: list[str], settled: list[str]) -> dict[str, list[str]]:
     }
 
 
-def _backfill_one(dataset: str, symbol: str, *, get, delay: float) -> tuple[int | None, list]:
+def _backfill_one(dataset: str, symbol: str, *, get, delay: float,
+                  tail_before: str | None) -> tuple[int | None, list]:
     """(new rows, or None if the listing failed; [(month/day/None, error)]) for one symbol.
 
     It touches only this symbol's file and reports nothing itself, so symbols can run side by
@@ -84,12 +93,30 @@ def _backfill_one(dataset: str, symbol: str, *, get, delay: float) -> tuple[int 
             added += store.upsert(dataset, symbol, rows, time_col)
         except Exception as e:
             errors.append((month, e))
-    filled, fill_errors = _fill_days(dataset, symbol, get=get, delay=delay)
+    filled, fill_errors = _fill_days(dataset, symbol, get=get, delay=delay, tail_before=tail_before)
     return added + filled, errors + fill_errors
 
 
-def _fill_days(dataset: str, symbol: str, *, get, delay: float) -> tuple[int, list]:
-    """Fetch the days a monthly file skipped from Binance's daily files (spec §1.1).
+def _tail_days(dataset: str, symbol: str, *, before: str, get, delay: float) -> list[str]:
+    """Days after the last stored bar and before `before` that a daily file holds.
+
+    The month a contract settles in gets only daily files in its live folder (spec §1.1). A symbol
+    stored up to `before` lists nothing, so a trading symbol costs no request."""
+    time_col, _ = config.DATASETS[dataset]
+    last = store.high_water_mark(dataset, symbol, time_col)
+    if last is None:
+        return []
+    first = (pd.Timestamp(last, unit="ms") + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    if first >= before:
+        return []
+    days = src.list_day_keys(dataset, symbol, get=get, delay=delay)
+    return [day for day in days if first <= day < before]
+
+
+def _fill_days(dataset: str, symbol: str, *, get, delay: float,
+               tail_before: str | None) -> tuple[int, list]:
+    """Fetch the days monthly files lack from Binance's daily files (spec §1.1): the gaps inside
+    the stored history and, given `tail_before`, the days after it.
 
     A day with no daily file is a real hole and stays one; any other error is reported."""
     template = src.SOURCES[dataset].daily
@@ -97,7 +124,13 @@ def _fill_days(dataset: str, symbol: str, *, get, delay: float) -> tuple[int, li
         return 0, []
     time_col, _ = config.DATASETS[dataset]
     added, errors = 0, []
-    for day in missing_days(dataset, symbol):
+    days = missing_days(dataset, symbol)
+    if tail_before is not None:
+        try:
+            days += _tail_days(dataset, symbol, before=tail_before, get=get, delay=delay)
+        except Exception as e:
+            errors.append((None, e))
+    for day in days:
         try:
             rows = src.fetch_month(dataset, template.format(symbol=symbol, day=day), get=get,
                                    delay=delay)
@@ -110,14 +143,17 @@ def _fill_days(dataset: str, symbol: str, *, get, delay: float) -> tuple[int, li
     return added, errors
 
 
-def run(work: dict[str, list[str]], *, get, delay: float, workers: int = 1) -> Summary:
+def run(work: dict[str, list[str]], *, get, delay: float, workers: int = 1,
+        tail_before: str | None = None) -> Summary:
     """Datasets in order; within one, up to `workers` symbols download side by side, each paced.
 
-    Results are reported in symbol order, and a dataset finishes before the next one starts."""
+    Results are reported in symbol order, and a dataset finishes before the next one starts.
+    Given `tail_before`, a symbol's daily files after its last stored bar and before that day are
+    fetched too."""
     summary = Summary()
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for dataset, symbols in work.items():
-            one = partial(_backfill_one, dataset, get=get, delay=delay)
+            one = partial(_backfill_one, dataset, get=get, delay=delay, tail_before=tail_before)
             for symbol, (added, errors) in zip(symbols, pool.map(one, symbols)):
                 for month, e in errors:
                     summary.failures.append((dataset, symbol, month))
@@ -159,7 +195,8 @@ def main() -> None:
             print(f"{dataset:<24} {len(symbols)} symbols")
         return
 
-    summary = run(work, get=src.http_get, delay=config.ARCHIVE_DELAY, workers=args.workers)
+    summary = run(work, get=src.http_get, delay=config.ARCHIVE_DELAY, workers=args.workers,
+                  tail_before=first_of_last_month(datetime.now(timezone.utc).date()))
     total = sum(summary.new_rows.values())
     print(f"\nDone: +{total} rows across {len(summary.new_rows)} tasks; "
           f"{len(summary.failures)} failures")
