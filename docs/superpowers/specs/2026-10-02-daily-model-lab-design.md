@@ -10,6 +10,9 @@ real-data run; a change after that run is a new experiment, not an edit.
 exclusions, reconciliation coverage, complete weeks, and noise-level alpha.
 **Amended 2026-10-08** (owner's ruling): a passing arm's live paper record lasts 13 weeks, not 26;
 see §3.6 and Accepted limits.
+**Amended 2026-10-12** (owner's ruling): §1.1's fetcher downloads up to eight symbols side by
+side, each still pacing its own requests at 0.2 s. One at a time, the full archive took about
+29 hours.
 
 ## Context
 
@@ -87,8 +90,8 @@ checked against the archive's published `.CHECKSUM` before it is stored.
   their own names. Most of their rows duplicate the live folder. The rest are an old contract's
   last days, some of which only these folders hold: BNX's last 11 trading days before its 2023-02
   redenomination are there and nowhere else.
-- **Fetching.** The fetcher waits at least 0.2 s between requests, skips months already stored,
-  and is resumable.
+- **Fetching.** Up to eight symbols download side by side, and each download waits at least
+  0.2 s between its requests. The fetcher skips months already stored and is resumable.
 - **No interference.** The existing REST warehouse, its datasets and the 05:30 cron are not
   touched.
 - **Reconciliation.** On every symbol and day where both the existing warehouse and the archive
