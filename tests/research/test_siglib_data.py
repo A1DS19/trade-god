@@ -36,6 +36,7 @@ def _klines(times, closes):
             "close_time": [t + HOUR - 1 for t in times],  # extra col, must be dropped
             "quote_volume": [2.0] * len(times),
             "taker_buy_volume": [1.2] * len(times),
+            "taker_buy_quote_volume": [0.9] * len(times),
             "trades": [3] * len(times),
         }
     )
@@ -145,3 +146,9 @@ def test_load_klines_reads_the_archive_datasets(tmp_warehouse):
     _write(tmp_warehouse, "archive_um_klines_1d", "BNXUSDTSETTLED", _klines(times, [1.0, 2.0]))
     df = data.load_klines("all", "1d", source="archive_um_klines")
     assert df["symbol"].tolist() == ["BNXUSDTSETTLED", "BNXUSDTSETTLED"]
+
+
+def test_klines_carry_the_taker_buy_quote_volume(tmp_warehouse):  # the timing arms' flow feature
+    _write(tmp_warehouse, "archive_spot_klines_1d", "BTCUSDT", _klines([BASE], [1.0]))
+    df = data.load_klines("BTCUSDT", "1d", source="archive_spot_klines")
+    assert df["taker_buy_quote_volume"].tolist() == [0.9]

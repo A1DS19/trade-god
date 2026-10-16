@@ -16,7 +16,7 @@ from research import config, store
 ELIGIBILITY_DAYS = 60
 
 KLINE_COLS = ["open_time", "open", "high", "low", "close", "volume",
-              "quote_volume", "taker_buy_volume", "trades"]
+              "quote_volume", "taker_buy_volume", "taker_buy_quote_volume", "trades"]
 FUNDING_COLS = ["funding_time", "funding_rate", "mark_price"]
 PREMIUM_COLS = ["open_time", "open", "high", "low", "close"]
 

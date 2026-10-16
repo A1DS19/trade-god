@@ -7,3 +7,7 @@
 pandas==3.0.3
 pyarrow==24.0.0
 duckdb==1.5.3
+# Experiment 1's arms (research/signals/model_lab/models.py), at the latest stable release when
+# phase 3's plan was written (2026-10-12). Each arm's frozen_params.json records the version. Its
+# native API needs no scikit-learn; it brings in scipy and narwhals.
+lightgbm==4.7.0
