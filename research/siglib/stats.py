@@ -2,7 +2,8 @@
 
 Conventions, pinned by tests/research/test_siglib_stats.py against hand-computed values:
 - returns are simple returns indexed by bar open_time in epoch ms, like BacktestResult.returns;
-- a week runs from Monday 00:00 to Monday 00:00 UTC, and only complete weeks count;
+- a week runs from Monday 00:00 to Monday 00:00 UTC, its return is the sum of its daily returns,
+  and only complete weeks count;
 - standard deviations are sample (ddof=1); skewness and kurtosis are population moments, with
   kurtosis not in excess form (a normal distribution has 3), as in Bailey & López de Prado (2014).
 """
@@ -23,14 +24,17 @@ WEEKS_PER_YEAR = 52
 
 
 def weekly_returns(daily: pd.Series) -> pd.Series:
-    """Compound daily returns into Monday-to-Monday weeks, indexed by each week's Monday (ms).
+    """Sum daily returns into Monday-to-Monday weeks, indexed by each week's Monday (ms).
 
-    A week missing any of its seven days is dropped, so a window's leftover days at either end
-    never form a partial week."""
+    Summed, not compounded (spec §3.2, as amended). run_backtest holds a decided weight at no cost
+    every day, and compounding such days turns a constant fraction of BTC into a higher Sharpe
+    ratio than BTC's and a positive alpha, with no skill. Summed, a book holding w of BTC is
+    exactly w times BTC's week. A week missing any of its seven days is dropped, so a window's
+    leftover days at either end never form a partial week."""
     weeks = week_start(daily.index.to_numpy(dtype="int64"))
-    grouped = (1.0 + daily).groupby(weeks)
+    grouped = daily.groupby(weeks)
     complete = grouped.size() == 7
-    return (grouped.prod() - 1.0)[complete]
+    return grouped.sum()[complete]
 
 
 def sharpe(returns: pd.Series, periods_per_year: int = WEEKS_PER_YEAR) -> float:

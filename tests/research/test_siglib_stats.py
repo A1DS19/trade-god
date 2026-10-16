@@ -26,14 +26,21 @@ def _weekly(returns: list[float]) -> pd.Series:
     return pd.Series(returns, index=[MONDAY + 7 * i * DAY_MS for i in range(len(returns))])
 
 
-def test_weekly_returns_compound_complete_monday_weeks_only():
+def test_weekly_returns_sum_complete_monday_weeks_only():
     # Saturday 2024-01-06 through Tuesday 2024-01-23: two complete weeks between partial ends.
     returns = [0.01] * 18
     returns[12] = -0.02  # Thursday 2024-01-18, inside the second week
     weekly = stats.weekly_returns(_daily(5, returns))
     assert list(weekly.index) == [MONDAY + 7 * DAY_MS, MONDAY + 14 * DAY_MS]
-    assert weekly.iloc[0] == pytest.approx(1.01**7 - 1, rel=1e-12)
-    assert weekly.iloc[1] == pytest.approx(1.01**6 * 0.98 - 1, rel=1e-12)
+    assert weekly.tolist() == pytest.approx([0.07, 0.04], rel=1e-12)
+
+
+def test_a_constant_fraction_of_btc_scores_exactly_like_btc():  # no skill, so nothing to find
+    btc = _daily(0, [0.03, -0.02, 0.05, -0.04, 0.01, 0.02, -0.03] * 6)
+    btc.iloc[::5] += 0.01  # weeks that differ, so the Sharpe ratio exists
+    half = stats.weekly_returns(0.5 * btc)
+    assert stats.sharpe(half) == pytest.approx(stats.sharpe(stats.weekly_returns(btc)), rel=1e-12)
+    assert stats.nw_alpha(half, stats.weekly_returns(btc)).alpha == 0.0
 
 
 def test_sharpe_is_mean_over_sample_std_times_root_52():
