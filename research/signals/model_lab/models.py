@@ -25,7 +25,10 @@ SETTINGS = {
 FIXED_PARAMS = {"random_state": 20261002, "deterministic": True, "force_row_wise": True,
                 "num_threads": 1, "verbose": -1}
 THRESHOLD = 0.5
-HAR_TERMS = ["rv_d", "rv_w", "rv_m"]
+# The days of RV each HAR regressor averages (§2.2): RV_t itself, the week and the month. The
+# spec names these windows among its fixed constants, so the freeze records them.
+HAR_WINDOWS = {"rv_d": 1, "rv_w": 7, "rv_m": 30}
+HAR_TERMS = list(HAR_WINDOWS)
 SIGMA_STAR_DAYS = 365
 
 
@@ -43,7 +46,7 @@ def fit_direction(X: pd.DataFrame, y: pd.Series, setting: str) -> lgb.Booster:
 
 def har_terms(rv: pd.Series) -> pd.DataFrame:
     """The HAR regressors at each day: RV_t, mean(RV[t−6..t]) and mean(RV[t−29..t])."""
-    return pd.DataFrame({"rv_d": rv, "rv_w": rv.rolling(7).mean(), "rv_m": rv.rolling(30).mean()})
+    return pd.DataFrame({name: rv.rolling(days).mean() for name, days in HAR_WINDOWS.items()})
 
 
 def har_target(rv: pd.Series) -> pd.Series:

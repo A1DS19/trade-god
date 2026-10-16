@@ -52,6 +52,8 @@ def test_the_study_logs_four_trials_and_freezes_both_arms(market, fast_trees):
                                     and frozen["validation"]["G2"] else "failed_on_validation")
         assert frozen["lightgbm_params"]["random_state"] == 20261002
         assert len(frozen["features"]) == 21
+        assert frozen["data"] == {"source": "archive_spot_klines", "daily": "1d", "hourly": "1h"}
+        assert frozen["constants"]["har_windows"] == {"rv_d": 1, "rv_w": 7, "rv_m": 30}
 
 
 def test_the_study_never_reads_the_sealed_windows(market, fast_trees):  # spec §2.4

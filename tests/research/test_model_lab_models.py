@@ -52,6 +52,12 @@ def test_har_target_is_the_next_seven_days_mean():
     assert models.har_target(rv).iloc[13:].isna().all()  # day 19 is the last known
 
 
+def test_har_terms_average_rv_over_one_seven_and_thirty_days():  # §2.2's HAR windows
+    terms = models.har_terms(pd.Series(np.arange(40.0)))
+    assert terms.iloc[29].tolist() == [29.0, 26.0, 14.5]  # RV_29, mean(RV 23..29), mean(RV 0..29)
+    assert terms["rv_m"].iloc[:29].isna().all()
+
+
 def test_har_recovers_known_coefficients():
     rng = np.random.default_rng(1)
     rv = pd.Series(rng.uniform(1e-4, 4e-4, 400))

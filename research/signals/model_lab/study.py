@@ -33,12 +33,15 @@ VALIDATION_END = "2023-07-01"  # where the sealed windows begin
 OUTPUT = Path(__file__).parent / "output"
 COSTS = CostModel()  # baseline: 10 bp per side
 SPOT = tuple(asset for asset, _ in arms.TIMING_ARMS.values())
+# The arms' bars: the archive's spot klines (the warehouse's default "klines" are perps), daily
+# for the features, labels and book, hourly for RV. The freeze records this.
+DATA = {"source": "archive_spot_klines", "daily": "1d", "hourly": "1h"}
 
 
 def load_spot(end=VALIDATION_END) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     """(daily, hourly) archive spot klines of both assets: every bar that opened before `end`."""
-    daily = {s: load_klines(s, "1d", end=end, source="archive_spot_klines") for s in SPOT}
-    hourly = {s: load_klines(s, "1h", end=end, source="archive_spot_klines") for s in SPOT}
+    daily = {s: load_klines(s, DATA["daily"], end=end, source=DATA["source"]) for s in SPOT}
+    hourly = {s: load_klines(s, DATA["hourly"], end=end, source=DATA["source"]) for s in SPOT}
     for bars in [*daily.values(), *hourly.values()]:
         if len(bars) and bars["open_time"].max() >= to_ms(end):
             raise RuntimeError("the study loaded a bar from the sealed windows")
@@ -78,7 +81,7 @@ def frozen_params(arm: str, setting: str, rows: pd.DataFrame, stop: dict[str, bo
     asset, other = arms.TIMING_ARMS[arm]
     by_setting = rows.set_index("setting")
     return {
-        "arm": arm, "asset": asset, "other_asset": other,
+        "arm": arm, "asset": asset, "other_asset": other, "data": DATA,
         "status": "frozen" if all(stop.values()) else "failed_on_validation",
         "setting": setting,
         "lightgbm_params": models.lightgbm_params(setting),
@@ -87,6 +90,7 @@ def frozen_params(arm: str, setting: str, rows: pd.DataFrame, stop: dict[str, bo
         "constants": {"threshold": models.THRESHOLD, "band": arms.BAND,
                       "horizon_days": HORIZON_DAYS, "embargo_days": EMBARGO_DAYS,
                       "refits": "first day of each calendar quarter", "har_start": arms.HAR_START,
+                      "har_windows": models.HAR_WINDOWS,
                       "sigma_star_days": models.SIGMA_STAR_DAYS, "annual_days": ANNUAL_DAYS},
         "costs": asdict(COSTS),
         "validation": {
