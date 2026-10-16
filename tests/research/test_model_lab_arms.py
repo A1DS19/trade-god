@@ -99,7 +99,18 @@ def _scrambled_from(frames, cut, rng):
     return out
 
 
-def test_future_data_never_changes_a_past_decision(spot_market, fast_trees):  # spec §4.4
+def test_future_data_never_changes_a_past_feature_or_decision(spot_market, fast_trees,
+                                                              monkeypatch):  # spec §4.4
+    # Every feature frame timing_decisions builds, so that the RV (hourly) and cross-asset inputs
+    # are checked as wired; ten-round trees can miss a leak in a single feature.
+    features = []
+    build = arms.feat.timing_features
+
+    def record(*args):
+        features.append(build(*args))
+        return features[-1]
+
+    monkeypatch.setattr(arms.feat, "timing_features", record)
     daily, hourly = spot_market(2)
     before = _decide(daily, hourly)
     # 3 days after the 2022-07-01 refit: a leaked label would reach past it
@@ -108,6 +119,8 @@ def test_future_data_never_changes_a_past_decision(spot_market, fast_trees):  # 
     after = _decide(_scrambled_from(daily, cut, rng), _scrambled_from(hourly, cut, rng))
     pd.testing.assert_frame_equal(before[before.index < cut], after[after.index < cut])
     assert not before[before.index >= cut].equals(after[after.index >= cut])
+    X_before, X_after = features
+    pd.testing.assert_frame_equal(X_before[X_before.index < cut], X_after[X_after.index < cut])
 
 
 def test_a_decision_without_every_feature_stops_the_run(spot_market, fast_trees):
