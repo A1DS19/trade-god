@@ -68,6 +68,14 @@ def test_the_study_never_reads_the_sealed_windows(market, fast_trees):  # spec Â
     assert (study.OUTPUT / "combo_log.csv").read_text() == first
 
 
+def test_a_missing_last_bar_stops_the_study(market, fast_trees):  # Review Focus 2, at the edge
+    write, daily, hourly = market
+    last = SEALED - 86_400_000  # 2023-06-30, the last day the books earn
+    write({"1d": {symbol: bars[bars["open_time"] != last] for symbol, bars in daily.items()}})
+    with pytest.raises(ValueError, match="no close on 2023-06-30"):
+        study.main()
+
+
 def test_a_sealed_bar_stops_the_study(monkeypatch):
     late = pd.DataFrame({"open_time": [SEALED]})
     monkeypatch.setattr(study, "load_klines", lambda *args, **kwargs: late)

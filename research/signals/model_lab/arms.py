@@ -95,8 +95,15 @@ def timing_decisions(daily: dict[str, pd.DataFrame], hourly: pd.DataFrame, arm: 
 def run_book(close: pd.Series, weights: pd.Series, start, end,
              cost_model: CostModel = CostModel()) -> BacktestResult:
     """The book over [start, end) through siglib.run_backtest: the weight decided at bar t earns
-    bar t + 1 (§2.1). `close` and `weights` are indexed by bar open_time."""
+    bar t + 1 (§2.1). `close` and `weights` are indexed by bar open_time.
+
+    A day without a close stops the run, like a decision without its features: at the window's
+    end, where no decision row exists to fail, it would otherwise silently shorten the book."""
     first, end_ms = to_ms(start) - DAY_MS, to_ms(end)
-    prices = close[(close.index >= first) & (close.index < end_ms)].to_frame("asset")
+    prices = close.reindex(np.arange(first, end_ms, DAY_MS)).to_frame("asset")
+    missing = prices.index[prices["asset"].isna().to_numpy()]
+    if len(missing):
+        day = pd.Timestamp(missing[0], unit="ms")
+        raise ValueError(f"the book over [{start}, {end}) has no close on {day:%Y-%m-%d}")
     held = weights.reindex(prices.index).fillna(0.0).to_frame("asset")
     return run_backtest(prices, held, cost_model).window(start, end)

@@ -60,6 +60,13 @@ def test_buy_and_hold_pays_one_entry():
     assert book.n_trades == 1 and book.trade_costs.sum() == pytest.approx(0.001)
 
 
+def test_a_book_without_every_close_stops():  # at the window's end it would silently shorten
+    idx = BASE + np.arange(3) * DAY
+    close = pd.Series([100.0, 110.0, 99.0], index=idx)  # no bar on the window's last day
+    with pytest.raises(ValueError, match="no close on 2024-01-04"):
+        arms.run_book(close, pd.Series(1.0, index=idx), BASE + DAY, BASE + 4 * DAY)
+
+
 @pytest.fixture
 def fast_trees(monkeypatch):
     """Ten rounds instead of hundreds: the pipeline's plumbing, not the model, is under test."""
