@@ -1,0 +1,89 @@
+{
+  "arm": "eth",
+  "asset": "ETHUSDT",
+  "other_asset": "BTCUSDT",
+  "data": {
+    "source": "archive_spot_klines",
+    "daily": "1d",
+    "hourly": "1h"
+  },
+  "status": "failed_on_validation",
+  "setting": "S1",
+  "lightgbm_params": {
+    "objective": "binary",
+    "num_leaves": 7,
+    "max_depth": 3,
+    "learning_rate": 0.03,
+    "n_estimators": 300,
+    "min_child_samples": 100,
+    "subsample": 0.8,
+    "subsample_freq": 1,
+    "colsample_bytree": 0.8,
+    "reg_lambda": 1.0,
+    "random_state": 20261002,
+    "deterministic": true,
+    "force_row_wise": true,
+    "num_threads": 1,
+    "verbose": -1
+  },
+  "versions": {
+    "lightgbm": "4.7.0",
+    "numpy": "2.4.4",
+    "pandas": "3.0.3"
+  },
+  "features": [
+    "ret_1",
+    "ret_3",
+    "ret_7",
+    "ret_14",
+    "ret_30",
+    "ret_60",
+    "ret_90",
+    "ret_180",
+    "ret_365",
+    "trend_7",
+    "trend_20",
+    "trend_50",
+    "trend_100",
+    "trend_200",
+    "rv_1",
+    "rv_7",
+    "rv_30",
+    "drawdown_365",
+    "volume_7_30",
+    "taker_buy_7",
+    "other_ret_30"
+  ],
+  "constants": {
+    "threshold": 0.5,
+    "band": 0.2,
+    "horizon_days": 7,
+    "embargo_days": 7,
+    "refits": "first day of each calendar quarter",
+    "har_start": "2018-01-01",
+    "har_windows": {
+      "rv_d": 1,
+      "rv_w": 7,
+      "rv_m": 30
+    },
+    "sigma_star_days": 365,
+    "annual_days": 365
+  },
+  "costs": {
+    "taker_bps": 5.0,
+    "slippage_bps": 5.0
+  },
+  "validation": {
+    "start": "2021-07-01",
+    "end": "2023-07-01",
+    "sharpe": {
+      "S1": 0.1446619560116577,
+      "S2": -0.30130032671085477
+    },
+    "max_drawdown": 0.7604421356327167,
+    "btc_sharpe": 0.19462405394423254,
+    "btc_max_drawdown": 0.7662925431645939,
+    "G1": false,
+    "G2": true
+  }
+}
