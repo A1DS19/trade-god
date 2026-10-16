@@ -18,6 +18,11 @@ fetched from Binance's daily files, and three close mismatches on 2025-01-28 are
 exceptions that keep the archive's value; see §1.1.
 **Amended 2026-10-12** (owner's ruling at the data review): a settled contract's last month,
 which Binance publishes only as daily files, is fetched from them too; see §1.1.
+**Amended 2026-10-13** (owner's approval of the phase 3 plan, and the owner's ruling on weekly
+returns): §2.2, §2.4, §3.2 and §4.2 fix what the BTC and ETH arms need before any real-data run:
+daily RV across missing hours, row and refit timing, HAR's fit and history, the book's first
+day, incomplete rows, LightGBM's version and settings, selection without a Sharpe ratio, where
+the freeze lives, and weekly returns summed rather than compounded.
 
 ## Context
 
@@ -212,7 +217,10 @@ exposure, with no funding.
 - The signal is `s_t = 1` if `p_t > 0.5`, otherwise `0`.
 
 **Volatility.**
-- Daily realised variance `RV_t` is the sum of squared hourly log returns over the day.
+- Daily realised variance `RV_t` is the sum of squared hourly log returns over the day. Each
+  return runs between consecutive hourly closes and counts on the day of the later bar. A return
+  across missing hours stays in, since its square carries their variance: spot 1h has 28 gaps per
+  asset, the longest 32 hours on 2018-02-08. A day with no hourly bar has no RV.
 - A HAR regression, refit with each quarterly retrain, forecasts mean daily RV over the next 7
   days:
 
@@ -220,7 +228,11 @@ exposure, with no funding.
   mean(RV[t+1..t+7]) = b0 + b_d·RV_t + b_w·mean(RV[t−6..t]) + b_m·mean(RV[t−29..t])
   ```
 
-- `σ̂_t` is that forecast, annualised by √365.
+- HAR is fitted by OLS with an intercept, under §2.4's purge and embargo, at every quarter's first
+  day from 2018-01-01 on, so that σ̂ exists point-in-time for the 365 days σ* needs before the
+  first decision. Each day's σ̂ comes from the fit in force at its decision.
+- `σ̂_t` is that forecast, annualised by √365: `√(365 · forecast)`. A forecast below 0, which only
+  extrapolation can produce, counts as 0, so that `v_t = 1`.
 - The size scale is `v_t = min(1, σ*_t / σ̂_t)`, where `σ*_t` is the median of `σ̂` over the
   trailing 365 days.
 
@@ -229,6 +241,8 @@ exposure, with no funding.
 **Rebalancing.**
 - When `s_t` differs from yesterday's `s`, the arm moves to `e_t` immediately.
 - Otherwise it moves only if `|e_t − current| > 0.2`, and keeps the current exposure if not.
+- The book starts flat at its first decision, and "current" is the weight last decided:
+  `run_backtest` ignores drift.
 
 **Features (21),** each computed at *t* from bars closed by *t*:
 
@@ -236,14 +250,15 @@ exposure, with no funding.
 |---|---|
 | Returns | log return over 1, 3, 7, 14, 30, 60, 90, 180 and 365 days |
 | Trend | `close / SMA_n − 1` for n = 7, 20, 50, 100, 200 |
-| Volatility | `RV_t`, the 7-day mean RV and the 30-day mean RV, each annualised |
-| Drawdown | drawdown from the trailing 365-day high |
+| Volatility | `RV_t`, the 7-day mean RV and the 30-day mean RV, each annualised as `√(365 · RV)` |
+| Drawdown | the close's drawdown from the highest daily close over the trailing 365 days |
 | Volume | 7-day mean quote volume ÷ 30-day mean quote volume |
 | Flow | taker-buy share: 7-day taker-buy quote volume ÷ 7-day quote volume |
 | Cross-asset | the other asset's 30-day log return |
 
 **Training rows.** Rows with any missing feature are dropped. The first full row falls in
-2018-08, after 365 days of spot history.
+2018-08, after 365 days of spot history. A decision whose row misses a feature stops the run
+with an error, rather than holding a silent flat day.
 
 ### 2.3 Cross-sectional ranker
 
@@ -280,9 +295,11 @@ over the symbols that have a value.
 **Refits.** Each model refits at the first decision date of every calendar quarter: the quarter's
 first day for the BTC and ETH arms, and the first Monday on or after it for the ranker. It refits
 on every row whose label window ended at least 7 days before the refit date
-(`t + 7d ≤ refit − 7d`). This purges overlapping labels and adds a 7-day embargo. The same
-quarterly refitting continues through the test windows; it is part of the strategy, not a
-selection step.
+(`t + 7d ≤ refit − 7d`). This purges overlapping labels and adds a 7-day embargo. Here t is the
+decision time. A row is daily bar t′, keyed by its open_time: it is decided at t′'s close,
+t′ + 1 day, and its label is known at t′ + 8 days, so a refit at R trains on it when
+t′ + 15 days ≤ R. The same quarterly refitting continues through the test windows; it is part of
+the strategy, not a selection step.
 
 **The only search.** Each arm gets two LightGBM settings, which makes **6 trials** in total, all
 logged:
@@ -293,18 +310,25 @@ logged:
 | S2 | 15 | 4 | 0.03 | 600 | 50 | 0.8 (`subsample_freq` 1) | 0.8 | 1.0 |
 
 Both settings use `random_state = 20261002`, `deterministic = True` and a fixed thread count.
-Every other constant in this spec is fixed and never searched: the 0.5 threshold, the 0.2 band,
-the HAR windows, K = 5, the top 50, and the 7-day horizon.
+They run through LightGBM 4.7.0's native `lightgbm.train`, which accepts the table's names as
+aliases (`n_estimators` sets the boosting rounds), with objective `binary`,
+`force_row_wise = True` (LightGBM asks for it whenever `deterministic` is set) and
+`num_threads = 1`. Every other constant in this spec is fixed and never searched: the 0.5
+threshold, the 0.2 band, the HAR windows, K = 5, the top 50, and the 7-day horizon.
 
 **Selection.**
 - The validation period is decision dates from 2021-07-01 to 2023-06-30. It covers two years,
   including the 2022 bear.
 - On it, each arm keeps the setting whose book has the higher Sharpe of weekly net returns at
-  baseline costs. A tie goes to S1.
+  baseline costs. A tie goes to S1. A book whose returns do not vary has no Sharpe ratio, and it
+  ranks below one that has.
 - `study.py` asserts that it never loads a bar with `open_time ≥ 2023-07-01`.
 
 **Freeze.** Each arm's `frozen_params.json` records the chosen setting and every constant. It is
-committed in its own commit, before `oos_eval.py` runs.
+committed in its own commit, before `oos_eval.py` runs. It lives at
+`research/signals/model_lab/output/{arm}/frozen_params.json`, beside the trial log
+`output/combo_log.csv` that every trial joins. An arm that fails the stop rule (§3.4) is frozen
+with the status `failed_on_validation`.
 
 ---
 
@@ -333,9 +357,13 @@ gate.
 
 ### 3.2 Measurement
 
-- **Weekly returns.** Daily net returns are compounded from Monday 00:00 to Monday 00:00 UTC, for
-  every arm and for the benchmark. Only complete weeks count. A window's leftover days at either
-  end enter its daily drawdown, but no weekly statistic.
+- **Weekly returns.** Daily net returns are summed from Monday 00:00 to Monday 00:00 UTC, for
+  every arm and for the benchmark (owner's ruling, 2026-10-13; they were compounded).
+  `run_backtest` holds a decided weight at no cost every day, and compounding such days gave a
+  constant fraction of BTC, with no skill, a higher Sharpe ratio than BTC's and a positive alpha:
+  a constant 50% position passed G1, G2 and G4, with t(α) = 2.20 in W1. Summed, a book holding w
+  of BTC is exactly w times BTC's week. Only complete weeks count. A window's leftover days at
+  either end enter its daily drawdown, but no weekly statistic.
 - **Benchmark.** Spot `BTCUSDT` buy-and-hold: one entry cost, no funding.
 - **Costs.**
   - Baseline: `CostModel()`, 10 bp per side. On spot this assumes the 7.5 bp BNB-discounted fee
@@ -486,7 +514,8 @@ research/newslog/
 ### 4.2 Dependencies
 
 - **LightGBM**, at the latest stable version when the plan is written, with the version recorded
-  in `frozen_params.json`.
+  in `frozen_params.json`. That is 4.7.0 (released 2026-07-18), pinned in
+  `requirements-research.txt`.
 - **Jev over plain HTTPS** (`urllib`), not its SDK. The earlier review found that the SDK
   validates no responses and retries silently. Every response is checked before storage:
   probabilities lie in [0, 1], and the question keys match.
