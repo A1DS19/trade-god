@@ -9,6 +9,28 @@ morning, against an Electron design that the afternoon replaced.
 
 ---
 
+## 2026-10-13 — Weekly returns are summed, not compounded
+
+Phase 3's plan found that compounding daily returns into weeks rewards a fraction of BTC that has
+no skill. The owner ruled to sum them.
+
+- **The cause.** `run_backtest` applies a decided weight to every day's return, which is the same
+  as rebalancing back to it daily for free. Compounding those days into weeks makes a book
+  nonlinear in BTC's returns.
+- **What it did.** A constant 50% BTC position passed G1, G2 and G4, with t(α) = 2.20 in W1,
+  close to G3's 2.39. On a toy series, half of BTC scored a Sharpe ratio of 43.7 against BTC's
+  41.2, with t(α) = 5.9.
+- **What summing changes.** A book holding w of BTC is w times BTC's week, so its Sharpe ratio
+  equals BTC's and its α is 0. Drawdown stays on the compounded daily curve (G2).
+- **Where it reaches.** `stats.weekly_returns` (`3a563ec`), phase 3's selection and stop rule,
+  and every weekly statistic at the unseal: Sharpe, α and the deflated Sharpe. Spec §3.2 was
+  amended before any real-data run (`d65ca0c`).
+
+**Reversal cost:** free until the timing arms' first real-data run. After it, a change re-scores
+counted trials, which makes it a new experiment.
+
+---
+
 ## 2026-10-08 — A passing arm's paper record is 13 weeks, not 26
 
 The owner asked what Experiment 1 could deliver in the short term, and chose a shorter live paper
