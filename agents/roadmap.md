@@ -34,8 +34,8 @@ daily-to-weekly horizons?
       - Reconciliation against the existing warehouse.
       - The exclusion list, which the owner reviews.
       - The point-in-time universe, and `siglib/stats.py`.
-- [ ] **3. BTC and ETH arms:** features, HAR volatility, LightGBM, walk-forward, validation study,
-      freeze.
+- [x] **3. BTC and ETH arms:** features, HAR volatility, LightGBM, walk-forward, validation study,
+      freeze. Both arms failed on validation (G1), so neither reaches the unseal.
 - [ ] **4. Ranker:** features, model, validation study, freeze.
 - [ ] **5. Joint unseal.**
       - One run of `oos_eval.py` for all three frozen arms.
@@ -78,3 +78,4 @@ never approved. The code and its vocabulary are in `legacy/coinpicks/`, and the 
 - 2026-10-05 — phase 1 no longer gates the others (owner's ruling): phase 2 starts while the TypeSafe key is still pending.
 - 2026-10-08 — a passing arm's paper record is 13 weeks, not 26 (owner's ruling), set before any real-data run so it stays pre-registered. The TypeSafe readout stays at 26 weeks.
 - 2026-10-12 — phase 2 (data) complete: archive backfilled (4,193,700 rows), reconciled against REST (259 symbols, 253,392 shared days, 0 mismatches beyond 3 reviewed exceptions), 913 listings over 900 tickers with 0 data holes, exclusions reviewed by the owner and approved as drafted. Owner's ruling at the review: a settled contract's last month comes from its daily files. Next: phase 3's plan (BTC and ETH arms).
+- 2026-10-15 — phase 3 (BTC and ETH arms) frozen (trial log `8d90343`, freeze `951a653`): validation Sharpe of weekly returns (annualised) BTC S1 −0.176 / S2 −0.257, ETH S1 +0.145 / S2 −0.301, against buy-and-hold BTC's +0.195; BTC keeps S1 and ETH keeps S1, and both are frozen as failed on validation: G1 fails (Sharpe below BTC's), G2 holds (drawdowns 65.9% and 76.0% against BTC's 76.6%), so neither arm's out-of-sample result is ever computed. A pre-run review (62 agents; look-ahead sweep and real-data readiness clean) led to three fixes that changed no number. Weekly returns are summed (owner's ruling). Next: phase 4's plan (the ranker).

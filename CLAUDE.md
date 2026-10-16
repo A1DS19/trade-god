@@ -77,7 +77,7 @@ research/             # the live code: warehouse fetch/store/check, siglib, sign
 ├── siglib/           # backtest engine, cost models, data loading, event studies — ALL P&L here
 ├── signals/          # finished studies (carry, xs_momentum, basis_mr, intraday)
 └── warehouse/        # gitignored parquet, one file per dataset per symbol
-tests/research/       # the Python suite (195 tests)
+tests/research/       # the Python suite (244 tests)
 agents/               # paper trail: handoff.md, CONTEXT.md, decisions.md, roadmap.md
 docs/superpowers/     # specs/ (designs + findings) and plans/
 legacy/               # every retired system. Not imported, not collected, not deployed.
@@ -92,6 +92,7 @@ legacy/               # every retired system. Not imported, not collected, not d
   `requirements.txt`. All of it is dev-machine only; there is no deployment target.
 - **Libraries an experiment adds** (for example a gradient-boosting library) are pinned at the
   latest stable at the moment its plan is written, and recorded in the spec.
+- **LightGBM 4.7.0** is pinned for Experiment 1 (`requirements-research.txt`).
 - **There is no database in the live tree.** The CoinPicks Postgres is archived with its code:
   container `coinpicks-db`, volume `coinpicks_data`, port 5433, compose file now at
   `legacy/coinpicks/docker-compose.yml`. Its volume is kept, not deleted.
@@ -140,6 +141,7 @@ python -m research.intraday_universe --top 30 --save   # print + snapshot intrad
 python -m research.archive_backfill            # the public archive; resumable, 8 symbols at a time
 python -m research.archive_reconcile           # archive daily closes vs REST; exits 1 on a mismatch
 python -m research.signals.model_lab.universe  # listings, data holes, the yearly universe table
+python -m research.signals.model_lab.study     # train-only trials + freeze; ran once, never rerun
 ```
 
 **Rules:** run backfills from the DEV machine only, never from a hosted IP (the 2026-06-05 −1003
@@ -204,6 +206,11 @@ anything long-biased.
 - The train/OOS runner pattern (mechanical freeze, then a sealed judge) is in
   `research/signals/intraday/mr_vwap_train.py` and `mr_vwap_oos.py`. Reuse it.
 
+Experiment 1's frozen parameters live in
+`research/signals/model_lab/output/{arm}/frozen_params.json`. Never edit a frozen file; a change
+is a new experiment. The study ran once (2026-10-15): a rerun rewrites the trial log and both
+freezes.
+
 ---
 
 ## The archive map (`legacy/`)
@@ -230,7 +237,7 @@ Notes on the archive:
 ## How to run
 
 ```bash
-python -m pytest -q          # the research suite (195 tests)
+python -m pytest -q          # the research suite (244 tests)
 python -m compileall -q research
 ```
 
